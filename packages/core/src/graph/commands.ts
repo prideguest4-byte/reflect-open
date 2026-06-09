@@ -32,6 +32,14 @@ export async function writeNote(path: string, contents: string): Promise<void> {
   await call('note_write', { path, contents }, voidSchema)
 }
 
+/**
+ * Atomically write a binary asset (pasted/dropped image) by graph-relative
+ * path. `contentsBase64` is the file's bytes, base64-encoded for the JSON IPC.
+ */
+export async function writeAsset(path: string, contentsBase64: string): Promise<void> {
+  await call('asset_write', { path, contentsBase64 }, voidSchema)
+}
+
 /** Move/rename a note within the graph. */
 export async function moveNote(from: string, to: string): Promise<void> {
   await call('note_move', { from, to }, voidSchema)

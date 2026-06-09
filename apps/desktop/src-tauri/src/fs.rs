@@ -134,12 +134,17 @@ fn bootstrap(root: &Path) -> AppResult<()> {
 
 /// Atomically write `contents` to `target` (temp file in the same dir + rename).
 fn atomic_write(target: &Path, contents: &str) -> AppResult<()> {
+    atomic_write_bytes(target, contents.as_bytes())
+}
+
+/// Byte-level atomic write — shared by notes (text) and assets (binary).
+fn atomic_write_bytes(target: &Path, contents: &[u8]) -> AppResult<()> {
     let dir = target
         .parent()
         .ok_or_else(|| AppError::io(format!("no parent directory for {}", target.display())))?;
     fs::create_dir_all(dir)?;
     let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
-    tmp.write_all(contents.as_bytes())?;
+    tmp.write_all(contents)?;
     tmp.as_file().sync_all()?;
     tmp.persist(target)
         .map_err(|err| AppError::io(err.to_string()))?;
@@ -237,24 +242,45 @@ fn set_root(state: &State<GraphState>, root: &Path) -> AppResult<()> {
 
 // ---- commands --------------------------------------------------------------
 
+/// Let the asset protocol serve files from the graph (image rendering, Plan 05).
+/// Best-effort: a failure means images don't render, never that the open fails.
+fn allow_asset_scope(app: &tauri::AppHandle, root: &Path) {
+    use tauri::Manager;
+    if let Err(err) = app.asset_protocol_scope().allow_directory(root, true) {
+        eprintln!("reflect: failed to extend the asset scope: {err}");
+    }
+}
+
 /// Create a new graph at `path` (scaffolds the layout) and open it.
 #[tauri::command]
-pub fn graph_create(path: String, state: State<GraphState>) -> AppResult<GraphInfo> {
+pub fn graph_create(
+    path: String,
+    app: tauri::AppHandle,
+    state: State<GraphState>,
+) -> AppResult<GraphInfo> {
     let root = PathBuf::from(&path);
     fs::create_dir_all(&root)?;
     bootstrap(&root)?;
-    activate(&state, &root)
+    let info = activate(&state, &root)?;
+    allow_asset_scope(&app, &root);
+    Ok(info)
 }
 
 /// Open an existing graph at `path`, ensuring the standard layout exists.
 #[tauri::command]
-pub fn graph_open(path: String, state: State<GraphState>) -> AppResult<GraphInfo> {
+pub fn graph_open(
+    path: String,
+    app: tauri::AppHandle,
+    state: State<GraphState>,
+) -> AppResult<GraphInfo> {
     let root = PathBuf::from(&path);
     if !root.is_dir() {
         return Err(AppError::not_found(format!("not a directory: {path}")));
     }
     bootstrap(&root)?;
-    activate(&state, &root)
+    let info = activate(&state, &root)?;
+    allow_asset_scope(&app, &root);
+    Ok(info)
 }
 
 /// Read a note's markdown by graph-relative path.
@@ -269,6 +295,23 @@ pub fn note_read(path: String, state: State<GraphState>) -> AppResult<String> {
 pub fn note_write(path: String, contents: String, state: State<GraphState>) -> AppResult<()> {
     let root = current_root(&state)?;
     atomic_write(&resolve(&root, &path)?, &contents)
+}
+
+/// Atomically write a binary asset (pasted/dropped image) by graph-relative
+/// path. Contents arrive base64-encoded — Tauri IPC args are JSON, and pasted
+/// images are small enough that the ~33% encoding overhead is irrelevant.
+#[tauri::command]
+pub fn asset_write(
+    path: String,
+    contents_base64: String,
+    state: State<GraphState>,
+) -> AppResult<()> {
+    use base64::Engine;
+    let root = current_root(&state)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(contents_base64.as_bytes())
+        .map_err(|err| AppError::io(format!("invalid base64 asset payload: {err}")))?;
+    atomic_write_bytes(&resolve(&root, &path)?, &bytes)
 }
 
 /// Move/rename a note within the graph.

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
 import { isAppError, readNote, subscribeFileChanges, writeNote } from '@reflect/core'
 import type { NoteEditorHandle } from './note-editor'
+import { checkRoundTrip } from './roundtrip'
 
 /**
  * The save pipeline + external-change reconciliation for one open note
@@ -24,6 +25,12 @@ export interface NoteDocument {
   status: NoteDocumentStatus
   /** Markdown to seed the editor with once `status` is `ready`. */
   initialContent: string
+  /**
+   * True when the editor cannot faithfully round-trip this note (a converter
+   * gap, e.g. task lists today) — the note opens read-only and is **never**
+   * auto-rewritten, so no content can be silently lost.
+   */
+  protected: boolean
   /** True while the buffer has changes not yet written to disk. */
   dirty: boolean
   /** External content waiting on the user's choice (set only when dirty). */
@@ -42,6 +49,7 @@ export interface NoteDocument {
 export function useNoteDocument(path: string | null): NoteDocument {
   const [status, setStatus] = useState<NoteDocumentStatus>('loading')
   const [initialContent, setInitialContent] = useState('')
+  const [isProtected, setIsProtected] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [conflict, setConflict] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -62,8 +70,11 @@ export function useNoteDocument(path: string | null): NoteDocument {
     setDirty(dirtyRef.current)
   }, [])
 
+  /** Mirrors the `protected` state for non-reactive checks in the pipeline. */
+  const protectedRef = useRef(false)
+
   const save = useCallback(() => {
-    if (!path || !dirtyRef.current) {
+    if (!path || !dirtyRef.current || protectedRef.current) {
       return
     }
     const content = bufferRef.current
@@ -127,6 +138,9 @@ export function useNoteDocument(path: string | null): NoteDocument {
         bufferRef.current = content
         diskRef.current = content
         dirtyRef.current = false
+        // The data-loss gate: a note the editor can't reproduce opens read-only.
+        protectedRef.current = checkRoundTrip(content) === 'lossy'
+        setIsProtected(protectedRef.current)
         setDirty(false)
         setInitialContent(content)
         setStatus('ready')
@@ -169,6 +183,17 @@ export function useNoteDocument(path: string | null): NoteDocument {
         }
         bufferRef.current = content
         markClean(content)
+        // Re-gate: the external edit may have introduced (or removed) syntax the
+        // editor can't round-trip. Remount via initialContent when protection
+        // flips; otherwise reload the live editor in place.
+        const lossy = checkRoundTrip(content) === 'lossy'
+        if (lossy !== protectedRef.current) {
+          protectedRef.current = lossy
+          setIsProtected(lossy)
+          setInitialContent(content)
+          return
+        }
+        setInitialContent(content)
         editorRef.current?.setMarkdown(content)
       })()
     }).then((fn) => {
@@ -208,13 +233,22 @@ export function useNoteDocument(path: string | null): NoteDocument {
     }
     bufferRef.current = conflict
     markClean(conflict)
-    editorRef.current?.setMarkdown(conflict)
+    // Same re-gating as the clean-reload path: never load lossy content into a
+    // live editor whose next save would drop what it can't model.
+    const lossy = checkRoundTrip(conflict) === 'lossy'
+    protectedRef.current = lossy
+    setIsProtected(lossy)
+    setInitialContent(conflict)
+    if (!lossy) {
+      editorRef.current?.setMarkdown(conflict)
+    }
     setConflict(null)
   }, [conflict, markClean])
 
   return {
     status,
     initialContent,
+    protected: isProtected,
     dirty,
     conflict,
     error,

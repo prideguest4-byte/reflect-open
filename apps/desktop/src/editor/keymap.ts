@@ -1,4 +1,5 @@
 import { defineKeymap, type PlainExtension } from '@prosekit/core'
+import { setBlockType } from '@prosekit/pm/commands'
 import { TextSelection, type Command } from '@prosekit/pm/state'
 
 /**
@@ -76,11 +77,32 @@ function toggleInlineMarker(marker: string): Command {
   }
 }
 
+/**
+ * Toggle the current block between `heading` at `level` and `paragraph`.
+ * Headings are real nodes in meowdown (block syntax is reconstructed by the
+ * serializer), so a block-type change round-trips exactly.
+ */
+function toggleHeading(level: number): Command {
+  return (state, dispatch, view) => {
+    const { heading, paragraph } = state.schema.nodes
+    if (!heading || !paragraph) {
+      return false
+    }
+    const { $from } = state.selection
+    const isSame = $from.parent.type === heading && $from.parent.attrs.level === level
+    const target = isSame ? setBlockType(paragraph) : setBlockType(heading, { level })
+    return target(state, dispatch, view)
+  }
+}
+
 /** Reflect's editor-scope bindings — registered once, collision-checked. */
 export const EDITOR_BINDINGS: Record<string, Command> = registerKeymap('editor', {
   'Mod-b': toggleInlineMarker('**'),
   'Mod-i': toggleInlineMarker('_'),
   'Mod-e': toggleInlineMarker('`'),
+  'Mod-1': toggleHeading(1),
+  'Mod-2': toggleHeading(2),
+  'Mod-3': toggleHeading(3),
 })
 
 /** The editor keymap extension, composed into the editor via `union`. */

@@ -1,12 +1,12 @@
 import { parseBody } from './grammar'
 
 /**
- * Inline wiki-link scanning for the editor (Plan 05). The editor decorates
- * `[[wiki links]]` inside rendered text blocks; this scanner reuses the **one
- * canonical Lezer grammar** (`wikiLinkExtension`, shared with the indexer) so
- * the editor's chips and the index's links can never disagree on what counts
- * as a wiki link — including code contexts: a `[[target]]` inside a code span
- * is not a link in either world.
+ * Inline scanning for the editor (Plan 05). The editor decorates `[[wiki
+ * links]]` and renders `![images](…)` inside text blocks; these scanners reuse
+ * the **one canonical Lezer grammar** (shared with the indexer) so the editor
+ * and the index can never disagree on what counts as a link or image —
+ * including code contexts: `[[target]]` or `![x](y)` inside a code span is
+ * literal text in both worlds.
  */
 
 /** One `[[target]]` / `[[target|alias]]` occurrence within a scanned text. */
@@ -19,6 +19,48 @@ export interface InlineWikiLink {
   /** Span of the display text (the alias when present, else the target). */
   displayFrom: number
   displayTo: number
+}
+
+/** One `![alt](src)` image occurrence within a scanned text. */
+export interface InlineImage {
+  /** Span of the whole `![…](…)`, offsets relative to the scanned text. */
+  from: number
+  to: number
+  alt: string
+  src: string
+}
+
+// `![alt](src)`, tolerating a "title" suffix and <bracketed> src — the same
+// shape extract.ts accepts for the index.
+const IMAGE_RE = /^!\[([^\]]*)\]\(\s*(<[^>]*>|\S+?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)$/
+
+/**
+ * Find every inline image in a block's text content. Offsets are relative to
+ * the input string; the caller maps them into document positions.
+ */
+export function scanInlineImages(text: string): InlineImage[] {
+  if (!text.includes('![')) {
+    return []
+  }
+  const images: InlineImage[] = []
+  parseBody(text).iterate({
+    enter: (node) => {
+      if (node.name !== 'Image') {
+        return true
+      }
+      const match = IMAGE_RE.exec(text.slice(node.from, node.to))
+      if (match) {
+        images.push({
+          from: node.from,
+          to: node.to,
+          alt: match[1],
+          src: match[2].replace(/^<|>$/g, ''),
+        })
+      }
+      return false
+    },
+  })
+  return images
 }
 
 /**

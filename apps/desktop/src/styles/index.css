@@ -87,6 +87,31 @@ body,
   display: none;
 }
 
+/* Inline images: the literal `![alt](src)` text keeps a widget-rendered
+   preview directly beneath it (Plan 05b). */
+.reflect-editor .md-image {
+  user-select: none;
+  margin: 0.25em 0 0.5em;
+}
+.reflect-editor .md-image img {
+  max-width: 100%;
+  max-height: 28rem;
+  border-radius: var(--radius-md, 6px);
+}
+
+/* Read-only view for notes the editor can't faithfully round-trip yet. */
+.reflect-protected-note {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reflect-editor * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
 /* Wiki-link chips (decorations over the literal `[[…]]` text). */
 .reflect-editor .md-wiki-link {
   color: var(--accent-soft-text, var(--accent));

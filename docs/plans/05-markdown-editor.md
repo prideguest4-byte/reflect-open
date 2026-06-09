@@ -84,9 +84,16 @@ they are Reflect's organizing primitive.
   reconciliation (`useNoteDocument`), DS-token styling, and the workspace bound to a real
   persistent note (`notes/welcome.md`, created on first open) until Plan 06 brings
   navigation.
-- **05b** — step 7 (images/assets, incl. a Rust binary asset-write command), step 8
-  (task checkboxes), the rest of step 9 (ergonomics: indent/outdent, move line, zen),
-  step 10 (perf/a11y), and the tight-list serializer fix from Risks.
+- **05b** — step 7 (images/assets, incl. a Rust binary asset-write command), heading
+  toggles from step 9, a **round-trip safety guard** (see below), and the step 10
+  basics. **Task checkboxes (step 8) are blocked upstream:** meowdown's converter
+  currently *loses task-item text entirely* (`- [ ] todo` → empty list) — discovered
+  while building 05b. Until the first-party converter fix ships, any note the editor
+  can't faithfully round-trip opens **protected (read-only)** and is never
+  auto-rewritten, so a converter gap can degrade UX but can never destroy content.
+  Remaining for later: interactive checkboxes (after the upstream fix), ergonomics
+  (indent/outdent, move line, zen), the tight-list serializer fix (also upstream),
+  and deeper perf/a11y.
 
 ## Steps
 

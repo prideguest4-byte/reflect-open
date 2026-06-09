@@ -1,4 +1,4 @@
-import { useImperativeHandle, useMemo, useState, type Ref } from 'react'
+import { useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
 import {
   defineEditorExtension,
   defineMarkMode,
@@ -10,6 +10,7 @@ import {
 import { createEditor, defineDocChangeHandler, union, type Editor } from '@prosekit/core'
 import { ProseKit, useExtension } from '@prosekit/react'
 import '@meowdown/core/style.css'
+import { defineImages, type ImageOptions } from './images'
 import { defineReflectKeymap } from './keymap'
 import { defineWikiLinks } from './wiki-links'
 
@@ -40,13 +41,20 @@ interface NoteEditorProps {
   onChange?: (markdown: string) => void
   /** How markdown syntax characters are shown; `focus` reveals them near the caret. */
   markMode?: MarkMode
+  /** Image rendering + paste/drop persistence (Plan 05b). */
+  images?: ImageOptions
   /** Imperative handle (React 19 ref-as-prop). */
   handleRef?: Ref<NoteEditorHandle>
 }
 
-function createNoteEditor(initialContent: string): Editor {
+function createNoteEditor(initialContent: string, images: ImageOptions): Editor {
   const editor = createEditor({
-    extension: union(defineEditorExtension(), defineWikiLinks(), defineReflectKeymap()),
+    extension: union(
+      defineEditorExtension(),
+      defineWikiLinks(),
+      defineImages(images),
+      defineReflectKeymap(),
+    ),
   })
   if (initialContent) {
     // Our union schema is a superset of meowdown's; the converters only touch
@@ -60,9 +68,19 @@ export function NoteEditor({
   initialContent,
   onChange,
   markMode = 'focus',
+  images,
   handleRef,
 }: NoteEditorProps) {
-  const [editor] = useState(() => createNoteEditor(initialContent))
+  // Extensions are created once (uncontrolled editor), so the image options are
+  // read through a ref that tracks the latest props.
+  const imagesRef = useRef<ImageOptions | undefined>(images)
+  imagesRef.current = images
+  const [editor] = useState(() =>
+    createNoteEditor(initialContent, {
+      resolveUrl: (src) => imagesRef.current?.resolveUrl(src) ?? null,
+      saveImage: (file) => imagesRef.current?.saveImage?.(file) ?? Promise.resolve(null),
+    }),
+  )
 
   useExtension(
     useMemo(() => defineMarkMode(markMode), [markMode]),

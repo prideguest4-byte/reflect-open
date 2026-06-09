@@ -126,6 +126,25 @@ describe('useNoteDocument', () => {
     expect(result.current.dirty).toBe(false)
   })
 
+  it('opens a note the editor would corrupt in protected mode and never saves it', async () => {
+    vi.useFakeTimers()
+    try {
+      // meowdown's converter loses task-list text — the guard must catch it.
+      disk = '- [ ] buy milk\n- [x] done\n'
+      const hook = renderHook(() => useNoteDocument('notes/tasks.md'))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(hook.result.current.status).toBe('ready')
+      expect(hook.result.current.protected).toBe(true)
+
+      // Even if an edit somehow reaches the pipeline, nothing is written.
+      act(() => hook.result.current.onEditorChange('mangled'))
+      await act(() => vi.advanceTimersByTimeAsync(2000))
+      expect(writes).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keepMine rewrites the file with the buffer', async () => {
     const { result } = await readyHook()
     act(() => result.current.onEditorChange('# My unsaved edit\n'))

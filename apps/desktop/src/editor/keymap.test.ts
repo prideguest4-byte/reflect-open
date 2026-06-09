@@ -49,3 +49,11 @@ describe('inline marker toggling', () => {
     expect(runBinding(stateWithSelection('hello ', 7, 7), 'Mod-b')).toBe('hello ****')
   })
 })
+
+describe('heading toggles', () => {
+  it('sets and unsets the block heading level', () => {
+    expect(runBinding(stateWithSelection('hello', 2, 2), 'Mod-1')).toBe('# hello')
+    expect(runBinding(stateWithSelection('# hello', 2, 2), 'Mod-1')).toBe('hello')
+    expect(runBinding(stateWithSelection('# hello', 2, 2), 'Mod-2')).toBe('## hello')
+  })
+})
