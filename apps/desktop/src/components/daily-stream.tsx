@@ -45,10 +45,19 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
     focusPending.current = null
   }, [])
 
+  // targetDate is read at arrival time, not reacted to: on the `today` route
+  // it drifts when local midnight passes (`todayIso()` per render), and that
+  // drift is not a navigation — re-running the effect then would misread the
+  // entry's continuously-saved offset as a back/forward restore. The next real
+  // arrival (⌘D, a link) reads the fresh value and anchors to the new today.
+  const targetDateRef = useRef(targetDate)
+  targetDateRef.current = targetDate
+
   // Re-anchor on every explicit arrival (`arrivalSeq` bumps even when ⌘D is
   // pressed while already on today — the router clears the entry's saved
-  // offset for that case). A back/forward-restored entry carries its offset;
-  // a fresh navigation anchors to the target day.
+  // offset for that case; `entryId` covers back/forward between entries whose
+  // routes resolve to the same day). A back/forward-restored entry carries its
+  // offset; a fresh navigation anchors to the target day.
   useEffect(() => {
     const restored = savedScroll()
     if (restored !== null) {
@@ -59,12 +68,10 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
       virtualizer.scrollToOffset(restored)
       return
     }
-    focusPending.current = targetDate
-    virtualizer.scrollToIndex(indexOfDate(window, targetDate), { align: 'start' })
-    // entryId: back/forward between e.g. a `today` entry and a `daily` entry of
-    // the same calendar day changes neither targetDate nor arrivalSeq, but each
-    // entry carries its own scroll offset to reapply.
-  }, [arrivalSeq, entryId, targetDate, window, virtualizer, savedScroll])
+    const target = targetDateRef.current
+    focusPending.current = target
+    virtualizer.scrollToIndex(indexOfDate(window, target), { align: 'start' })
+  }, [arrivalSeq, entryId, window, virtualizer, savedScroll])
 
   return (
     <div
