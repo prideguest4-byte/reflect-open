@@ -1,0 +1,35 @@
+import { describe, expect, it } from 'vitest'
+import {
+  assetPath,
+  dailyPath,
+  dateFromDailyPath,
+  isDaily,
+  notePath,
+} from './paths'
+
+describe('graph paths', () => {
+  it('builds daily-note paths from ISO dates', () => {
+    expect(dailyPath('2026-06-09')).toBe('daily/2026-06-09.md')
+  })
+
+  it('rejects non-ISO daily dates', () => {
+    expect(() => dailyPath('June 9 2026')).toThrow()
+    expect(() => dailyPath('2026-6-9')).toThrow()
+  })
+
+  it('builds note and asset paths', () => {
+    expect(notePath('charlotte-maccaw')).toBe('notes/charlotte-maccaw.md')
+    expect(assetPath('screenshot.png')).toBe('assets/screenshot.png')
+  })
+
+  it('recognizes daily-note paths', () => {
+    expect(isDaily('daily/2026-06-09.md')).toBe(true)
+    expect(isDaily('notes/foo.md')).toBe(false)
+    expect(isDaily('daily/not-a-date.md')).toBe(false)
+  })
+
+  it('extracts the date from a daily path, else null', () => {
+    expect(dateFromDailyPath('daily/2026-06-09.md')).toBe('2026-06-09')
+    expect(dateFromDailyPath('notes/foo.md')).toBeNull()
+  })
+})

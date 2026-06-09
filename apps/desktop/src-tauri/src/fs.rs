@@ -1,0 +1,301 @@
+//! Graph file-IO primitives (Plan 02).
+//!
+//! Markdown files are the durable source of truth; this module moves bytes and
+//! paths, not meaning. All paths are **graph-relative** — the graph root lives
+//! in Rust state and the frontend can never address files outside it
+//! (path-traversal guard). Writes are atomic (temp file + rename) and deletes go
+//! to the OS trash. Parsing/indexing live in later plans.
+
+use std::fs;
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
+use std::time::UNIX_EPOCH;
+
+use serde::Serialize;
+use tauri::State;
+
+use crate::error::{AppError, AppResult};
+
+const REFLECT_DIR: &str = ".reflect";
+const META_SCHEMA_VERSION: u32 = 1;
+const TOP_LEVEL_DIRS: [&str; 4] = ["daily", "notes", "assets", REFLECT_DIR];
+/// Directories scanned by `list_files` for markdown notes.
+const NOTE_DIRS: [&str; 2] = ["daily", "notes"];
+
+/// Tauri-managed state holding the currently open graph root (absolute path).
+#[derive(Default)]
+pub struct GraphState(pub Mutex<Option<PathBuf>>);
+
+/// Identity of an open graph, returned to the frontend.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphInfo {
+    /// Absolute path of the graph root.
+    pub root: String,
+    /// Display name (the root folder name).
+    pub name: String,
+}
+
+/// Metadata for a file inside the graph.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMeta {
+    /// Graph-relative path, forward-slashed.
+    pub path: String,
+    pub size: u64,
+    /// Last-modified time in epoch milliseconds.
+    pub modified_ms: u64,
+}
+
+// ---- internal helpers (unit-tested directly) -------------------------------
+
+/// Reject a relative path that is absolute or contains `..`/root components.
+/// This is the primary path-traversal guard.
+fn ensure_relative(rel: &str) -> AppResult<PathBuf> {
+    let path = Path::new(rel);
+    for component in path.components() {
+        match component {
+            Component::Normal(_) | Component::CurDir => {}
+            _ => {
+                return Err(AppError::traversal(format!(
+                    "path escapes the graph root: {rel}"
+                )))
+            }
+        }
+    }
+    Ok(path.to_path_buf())
+}
+
+/// Resolve a graph-relative path to an absolute path inside `root`.
+fn resolve(root: &Path, rel: &str) -> AppResult<PathBuf> {
+    Ok(root.join(ensure_relative(rel)?))
+}
+
+/// Create the standard graph layout + ignore/meta files (idempotent).
+fn bootstrap(root: &Path) -> AppResult<()> {
+    for dir in TOP_LEVEL_DIRS {
+        fs::create_dir_all(root.join(dir))?;
+    }
+    let gitignore = root.join(".gitignore");
+    if !gitignore.exists() {
+        fs::write(
+            &gitignore,
+            "# Reflect local index + caches (rebuildable; never committed)\n/.reflect/\n",
+        )?;
+    }
+    let meta = root.join(REFLECT_DIR).join("meta.json");
+    if !meta.exists() {
+        fs::write(
+            &meta,
+            format!("{{\n  \"schemaVersion\": {META_SCHEMA_VERSION}\n}}\n"),
+        )?;
+    }
+    Ok(())
+}
+
+/// Atomically write `contents` to `target` (temp file in the same dir + rename).
+fn atomic_write(target: &Path, contents: &str) -> AppResult<()> {
+    let dir = target
+        .parent()
+        .ok_or_else(|| AppError::io(format!("no parent directory for {}", target.display())))?;
+    fs::create_dir_all(dir)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+    tmp.write_all(contents.as_bytes())?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(target)
+        .map_err(|err| AppError::io(err.to_string()))?;
+    Ok(())
+}
+
+fn modified_ms(meta: &fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|dur| dur.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Collect markdown files under `root/dir` into `out` (recursive).
+fn collect_markdown(root: &Path, dir: &str, out: &mut Vec<FileMeta>) -> AppResult<()> {
+    let base = root.join(dir);
+    if !base.is_dir() {
+        return Ok(());
+    }
+    let mut stack = vec![base];
+    while let Some(current) = stack.pop() {
+        for entry in fs::read_dir(&current)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+                let meta = entry.metadata()?;
+                let rel = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push(FileMeta {
+                    path: rel,
+                    size: meta.len(),
+                    modified_ms: modified_ms(&meta),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn graph_info(root: &Path) -> AppResult<GraphInfo> {
+    let name = root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(GraphInfo {
+        root: root.to_string_lossy().into_owned(),
+        name,
+    })
+}
+
+fn current_root(state: &State<GraphState>) -> AppResult<PathBuf> {
+    state
+        .0
+        .lock()
+        .map_err(|_| AppError::io("graph state lock poisoned"))?
+        .clone()
+        .ok_or_else(AppError::no_graph)
+}
+
+fn set_root(state: &State<GraphState>, root: &Path) -> AppResult<()> {
+    let mut guard = state
+        .0
+        .lock()
+        .map_err(|_| AppError::io("graph state lock poisoned"))?;
+    *guard = Some(root.to_path_buf());
+    Ok(())
+}
+
+// ---- commands --------------------------------------------------------------
+
+/// Create a new graph at `path` (scaffolds the layout) and open it.
+#[tauri::command]
+pub fn graph_create(path: String, state: State<GraphState>) -> AppResult<GraphInfo> {
+    let root = PathBuf::from(&path);
+    fs::create_dir_all(&root)?;
+    bootstrap(&root)?;
+    set_root(&state, &root)?;
+    graph_info(&root)
+}
+
+/// Open an existing graph at `path`, ensuring the standard layout exists.
+#[tauri::command]
+pub fn graph_open(path: String, state: State<GraphState>) -> AppResult<GraphInfo> {
+    let root = PathBuf::from(&path);
+    if !root.is_dir() {
+        return Err(AppError::not_found(format!("not a directory: {path}")));
+    }
+    bootstrap(&root)?;
+    set_root(&state, &root)?;
+    graph_info(&root)
+}
+
+/// Read a note's markdown by graph-relative path.
+#[tauri::command]
+pub fn note_read(path: String, state: State<GraphState>) -> AppResult<String> {
+    let root = current_root(&state)?;
+    Ok(fs::read_to_string(resolve(&root, &path)?)?)
+}
+
+/// Atomically write a note's markdown by graph-relative path.
+#[tauri::command]
+pub fn note_write(path: String, contents: String, state: State<GraphState>) -> AppResult<()> {
+    let root = current_root(&state)?;
+    atomic_write(&resolve(&root, &path)?, &contents)
+}
+
+/// Move/rename a note within the graph.
+#[tauri::command]
+pub fn note_move(from: String, to: String, state: State<GraphState>) -> AppResult<()> {
+    let root = current_root(&state)?;
+    let to_abs = resolve(&root, &to)?;
+    if let Some(parent) = to_abs.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(resolve(&root, &from)?, to_abs)?;
+    Ok(())
+}
+
+/// Send a note to the OS trash (recoverable), not a hard delete.
+#[tauri::command]
+pub fn note_delete(path: String, state: State<GraphState>) -> AppResult<()> {
+    let root = current_root(&state)?;
+    trash::delete(resolve(&root, &path)?).map_err(|err| AppError::io(err.to_string()))?;
+    Ok(())
+}
+
+/// List markdown notes under `daily/` and `notes/`.
+#[tauri::command]
+pub fn list_files(state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
+    let root = current_root(&state)?;
+    let mut out = Vec::new();
+    for dir in NOTE_DIRS {
+        collect_markdown(&root, dir, &mut out)?;
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn rejects_path_traversal() {
+        assert!(ensure_relative("../secret").is_err());
+        assert!(ensure_relative("/etc/passwd").is_err());
+        assert!(ensure_relative("notes/../../escape.md").is_err());
+        assert!(ensure_relative("notes/ok.md").is_ok());
+        assert!(ensure_relative("./daily/2026-06-09.md").is_ok());
+    }
+
+    #[test]
+    fn bootstrap_creates_layout() {
+        let dir = tempdir().unwrap();
+        bootstrap(dir.path()).unwrap();
+        for sub in TOP_LEVEL_DIRS {
+            assert!(dir.path().join(sub).is_dir(), "missing dir {sub}");
+        }
+        assert!(dir.path().join(".gitignore").exists());
+        assert!(dir.path().join(".reflect/meta.json").exists());
+    }
+
+    #[test]
+    fn atomic_write_round_trips() {
+        let dir = tempdir().unwrap();
+        bootstrap(dir.path()).unwrap();
+        let target = dir.path().join("notes/hello.md");
+        atomic_write(&target, "# Hello\n\nworld\n").unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "# Hello\n\nworld\n");
+    }
+
+    #[test]
+    fn list_finds_only_markdown_under_note_dirs() {
+        let dir = tempdir().unwrap();
+        bootstrap(dir.path()).unwrap();
+        atomic_write(&dir.path().join("notes/a.md"), "a").unwrap();
+        atomic_write(&dir.path().join("daily/2026-06-09.md"), "b").unwrap();
+        atomic_write(&dir.path().join("notes/skip.txt"), "c").unwrap();
+
+        let mut out = Vec::new();
+        for d in NOTE_DIRS {
+            collect_markdown(dir.path(), d, &mut out).unwrap();
+        }
+        let paths: Vec<&str> = out.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"notes/a.md"));
+        assert!(paths.contains(&"daily/2026-06-09.md"));
+        assert!(!paths.iter().any(|p| p.ends_with(".txt")));
+    }
+}
