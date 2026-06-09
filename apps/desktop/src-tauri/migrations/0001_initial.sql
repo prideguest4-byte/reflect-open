@@ -25,7 +25,7 @@ CREATE TABLE note_text (
 
 CREATE TABLE links (
   source_path TEXT NOT NULL REFERENCES notes(path) ON DELETE CASCADE,
-  kind TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('wiki', 'md')),
   target_raw TEXT NOT NULL,
   target_key TEXT NOT NULL,
   alias TEXT,
@@ -55,6 +55,8 @@ CREATE TABLE assets (
 );
 CREATE INDEX assets_note ON assets(note_path);
 
+-- Reserved key/value bookkeeping (e.g. last-rebuild marker). Not written yet;
+-- preserved across `index_clear` so it can hold values that outlive a rebuild.
 CREATE TABLE index_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
 
 CREATE VIRTUAL TABLE search_fts USING fts5(path UNINDEXED, title, body);

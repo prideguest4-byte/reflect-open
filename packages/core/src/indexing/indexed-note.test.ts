@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseNote } from '../markdown'
-import { buildIndexedNote } from './indexed-note'
+import { buildIndexedNote, indexedNoteSchema } from './indexed-note'
 
 describe('buildIndexedNote', () => {
   it('flattens a parsed note into the index payload', () => {
@@ -48,5 +48,17 @@ describe('buildIndexedNote', () => {
     expect(indexed.title).toBe('2026-06-09')
     expect(indexed.id).toBeNull()
     expect(indexed.isPrivate).toBe(false)
+  })
+
+  it('produces a payload that satisfies the cross-language contract schema', () => {
+    // Guards the TS half of the TS↔Rust `IndexedNote` contract: if a field is
+    // dropped or mistyped here, the schema parse fails before it can desync from
+    // the serde struct in db.rs.
+    const source = '---\naliases: [Alt]\n---\n# Title\n\n[[Link]] #tag [x](http://x)'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/n.md', source }), {
+      fileHash: 'h',
+      mtime: 1,
+    })
+    expect(() => indexedNoteSchema.parse(indexed)).not.toThrow()
   })
 })

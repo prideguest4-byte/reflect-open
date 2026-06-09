@@ -2,10 +2,19 @@
  * `@reflect/core` indexing layer (Plan 04) — the TS pipeline that turns parsed
  * notes into the SQLite projection, plus the typed read getters over it.
  */
-export { openIndex, applyIndexedNote, removeFromIndex, clearIndex } from './commands'
+export {
+  openIndex,
+  applyIndexedNote,
+  applyIndexedNotes,
+  removeFromIndex,
+  clearIndex,
+} from './commands'
 export { hashContent } from './hash'
 export {
   buildIndexedNote,
+  indexedNoteSchema,
+  indexedLinkSchema,
+  indexedAliasSchema,
   type IndexedNote,
   type IndexedLink,
   type IndexedAlias,

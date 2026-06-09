@@ -1,8 +1,8 @@
 import { listFiles, readNote } from '../graph/commands'
 import { parseNote } from '../markdown'
-import { applyIndexedNote, clearIndex, removeFromIndex } from './commands'
+import { applyIndexedNote, applyIndexedNotes, clearIndex, removeFromIndex } from './commands'
 import { hashContent } from './hash'
-import { buildIndexedNote } from './indexed-note'
+import { buildIndexedNote, type IndexedNote } from './indexed-note'
 import { getIndexedHashes } from './queries'
 
 /**
@@ -10,6 +10,13 @@ import { getIndexedHashes } from './queries'
  * (Plan 03) → hash → hand the flattened projection to Rust, which applies it in
  * one transaction. The index is a rebuildable cache.
  */
+
+/**
+ * Notes per `index_apply_batch` transaction during a full rebuild. Bounds the
+ * IPC payload and transaction size on large graphs while keeping the
+ * transaction/round-trip count far below one-per-note.
+ */
+const REBUILD_BATCH_SIZE = 256
 
 /** Read, parse, and (re)index a single note. */
 export async function indexNote(
@@ -44,9 +51,18 @@ export async function rebuildIndex(options?: IndexPassOptions): Promise<void> {
   }
   await clearIndex()
   const files = await listFiles()
+  let batch: IndexedNote[] = []
   for (const file of files) {
-    await indexNote(file.path, { mtime: file.modifiedMs })
+    const content = await readNote(file.path)
+    const parsed = parseNote({ path: file.path, source: content })
+    const fileHash = await hashContent(content)
+    batch.push(buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs }))
+    if (batch.length >= REBUILD_BATCH_SIZE) {
+      await applyIndexedNotes(batch)
+      batch = []
+    }
   }
+  await applyIndexedNotes(batch)
 }
 
 /**

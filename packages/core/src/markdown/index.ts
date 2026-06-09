@@ -24,12 +24,15 @@ export {
 export { parseBody, reflectMarkdownParser, wikiLinkExtension } from './grammar'
 export { parseNote } from './extract'
 export { appendUnderHeading, renameWikiLink } from './edit'
+export { foldKey } from './keys'
 export {
   normalizeWikiTarget,
   resolved,
   resolveWikiLink,
+  resolveWikiLinkAsync,
   unresolved,
   type NormalizedTarget,
   type Resolution,
   type WikiLookup,
+  type AsyncWikiLookup,
 } from './resolve'

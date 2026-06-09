@@ -1,43 +1,52 @@
+import { z } from 'zod'
 import { dateFromDailyPath, isDaily } from '../graph/paths'
-import { normalizeWikiTarget, type ParsedNote } from '../markdown'
+import { foldKey, normalizeWikiTarget, type ParsedNote } from '../markdown'
 
 /**
  * The index write payload (Plan 04): a {@link ParsedNote} (Plan 03) flattened into
  * the row-set the Rust `index_apply` command upserts. Pure — no IO — so it's the
- * unit-testable heart of the pipeline. Shape mirrors the Rust `IndexedNote`
- * (camelCase ↔ serde camelCase).
+ * unit-testable heart of the pipeline.
+ *
+ * The zod schemas below are the single source of truth for the payload shape —
+ * the TS types are inferred from them. They mirror the serde `IndexedNote` struct
+ * in `apps/desktop/src-tauri/src/db.rs` field-for-field (camelCase ↔ serde
+ * `rename_all = "camelCase"`); a change on either side must be mirrored on the
+ * other, and {@link indexedNoteSchema} is the contract a drift test can assert.
  */
 
-export interface IndexedLink {
-  kind: 'wiki' | 'md'
-  targetRaw: string
-  /** Normalized match key: case-folded wiki target, or the href for md links. */
-  targetKey: string
-  alias: string | null
-  posFrom: number
-  posTo: number
-}
+export const indexedLinkSchema = z.object({
+  kind: z.enum(['wiki', 'md']),
+  targetRaw: z.string(),
+  /** Normalized match key: case-folded wiki target, or the lowercased href for md links. */
+  targetKey: z.string(),
+  alias: z.string().nullable(),
+  posFrom: z.number(),
+  posTo: z.number(),
+})
+export type IndexedLink = z.infer<typeof indexedLinkSchema>
 
-export interface IndexedAlias {
-  alias: string
-  aliasKey: string
-}
+export const indexedAliasSchema = z.object({
+  alias: z.string(),
+  aliasKey: z.string(),
+})
+export type IndexedAlias = z.infer<typeof indexedAliasSchema>
 
-export interface IndexedNote {
-  path: string
-  id: string | null
-  title: string
-  titleKey: string
-  dailyDate: string | null
-  isPrivate: boolean
-  fileHash: string
-  mtime: number
-  text: string
-  links: IndexedLink[]
-  tags: string[]
-  aliases: IndexedAlias[]
-  assets: string[]
-}
+export const indexedNoteSchema = z.object({
+  path: z.string(),
+  id: z.string().nullable(),
+  title: z.string(),
+  titleKey: z.string(),
+  dailyDate: z.string().nullable(),
+  isPrivate: z.boolean(),
+  fileHash: z.string(),
+  mtime: z.number(),
+  text: z.string(),
+  links: z.array(indexedLinkSchema),
+  tags: z.array(z.string()),
+  aliases: z.array(indexedAliasSchema),
+  assets: z.array(z.string()),
+})
+export type IndexedNote = z.infer<typeof indexedNoteSchema>
 
 /** Flatten a parsed note into the index payload. */
 export function buildIndexedNote(
@@ -65,7 +74,7 @@ export function buildIndexedNote(
     path: parsed.path,
     id: parsed.id ?? null,
     title: parsed.title,
-    titleKey: parsed.title.trim().toLowerCase(),
+    titleKey: foldKey(parsed.title),
     dailyDate: isDaily(parsed.path) ? dateFromDailyPath(parsed.path) : null,
     isPrivate: parsed.frontmatter.private,
     fileHash: meta.fileHash,
@@ -75,7 +84,7 @@ export function buildIndexedNote(
     tags: parsed.tags,
     aliases: parsed.frontmatter.aliases.map((alias) => ({
       alias,
-      aliasKey: alias.trim().toLowerCase(),
+      aliasKey: foldKey(alias),
     })),
     assets: parsed.assets.map((asset) => asset.path),
   }

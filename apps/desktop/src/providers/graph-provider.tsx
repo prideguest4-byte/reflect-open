@@ -13,13 +13,12 @@ import { open } from '@tauri-apps/plugin-dialog'
 import {
   forgetRecent,
   openGraph,
-  openIndex,
-  reconcileIndex,
   recentGraphs,
   toAppError,
   type GraphInfo,
   type RecentGraph,
 } from '@reflect/core'
+import { createGraphIndex } from './graph-index'
 
 /** Lifecycle of the active graph (Plan 02 loading gate). */
 export type GraphStatus = 'loading' | 'choosing' | 'opening' | 'ready'
@@ -61,10 +60,13 @@ export function GraphProvider({ children }: { children: ReactNode }) {
   const openSeq = useRef(0)
   // Serializes backend opens (see `openRecent`).
   const openChain = useRef<Promise<unknown>>(Promise.resolve())
-  // The active graph's background index reconcile + its abort handle, so a graph
+  // The active graph's index lifecycle (open + background reconcile), so a graph
   // switch can stop the prior pass before the Rust index connection is swapped.
-  const indexAbort = useRef<AbortController | null>(null)
-  const reconcileDone = useRef<Promise<void>>(Promise.resolve())
+  const indexRef = useRef(
+    createGraphIndex({
+      onError: (stage, err) => console.error(`index ${stage} failed:`, messageOf(err)),
+    }),
+  )
 
   const loadRecents = useCallback(
     async (options?: { surfaceErrors?: boolean }): Promise<RecentGraph[]> => {
@@ -100,31 +102,21 @@ export function GraphProvider({ children }: { children: ReactNode }) {
           if (seq !== openSeq.current) {
             return // superseded by a newer open
           }
+          const index = indexRef.current
           // Stop any prior reconcile and wait for it to fully settle before the
           // Rust index connection is swapped, so a stale pass can't write into
           // this graph's index.
-          indexAbort.current?.abort()
-          await reconcileDone.current.catch(() => {})
+          await index.stop()
           // Open the index *before* 'ready' so reads can't hit the previous
           // graph's index. Best-effort: an index failure doesn't block editing.
-          let indexReady = false
-          try {
-            await openIndex()
-            indexReady = true
-          } catch (err) {
-            console.error('index open failed:', messageOf(err))
-          }
+          const indexReady = await index.open()
           if (seq !== openSeq.current) {
             return
           }
           setGraph(info)
           setStatus('ready')
           if (indexReady) {
-            const controller = new AbortController()
-            indexAbort.current = controller
-            reconcileDone.current = reconcileIndex({ signal: controller.signal }).catch((err) => {
-              console.error('index reconcile failed:', messageOf(err))
-            })
+            index.reconcile()
           }
         } catch (err) {
           if (seq !== openSeq.current) {

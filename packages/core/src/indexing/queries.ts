@@ -1,11 +1,7 @@
 import { db, type Database } from '@reflect/db'
 import { sql, type Selectable } from 'kysely'
-import {
-  normalizeWikiTarget,
-  resolved,
-  unresolved,
-  type Resolution,
-} from '../markdown'
+import { resolveWikiLinkAsync, type Resolution } from '../markdown'
+import { buildFtsMatch } from './search-query'
 
 /**
  * Index read getters (Plan 04). Queries are built with Kysely and execute over
@@ -28,19 +24,28 @@ export function getBacklinks(path: string): Promise<Backlink[]> {
     .execute()
 }
 
-/** Core columns of one note row: identity path, title, daily date, privacy flag. */
-export type NoteRow = Pick<
-  Selectable<Database['notes']>,
-  'path' | 'title' | 'dailyDate' | 'isPrivate'
->
+/** Core fields of one note row: identity path, title, daily date, privacy flag. */
+export interface NoteRow {
+  path: string
+  title: string
+  dailyDate: string | null
+  /**
+   * The `private: true` frontmatter flag — a hard block on sending content to
+   * external services. SQLite stores it as `0|1`; this getter maps it to a real
+   * boolean at the read boundary so privacy checks can't be tripped up by a
+   * truthy number.
+   */
+  isPrivate: boolean
+}
 
 /** Fetch a single note's row by graph-relative path, or `undefined` if absent. */
-export function getNote(path: string): Promise<NoteRow | undefined> {
-  return db
+export async function getNote(path: string): Promise<NoteRow | undefined> {
+  const row = await db
     .selectFrom('notes')
     .where('path', '=', path)
     .select(['path', 'title', 'dailyDate', 'isPrivate'])
     .executeTakeFirst()
+  return row ? { ...row, isPrivate: row.isPrivate !== 0 } : undefined
 }
 
 /** Graph-relative paths of every note carrying `tag`, ordered by path. */
@@ -59,13 +64,10 @@ export type SearchHit = Pick<Selectable<Database['searchFts']>, 'path' | 'title'
 
 /** Full-text search over title + body (FTS5 `MATCH`, ranked). */
 export async function searchNotes(query: string, limit = 50): Promise<SearchHit[]> {
-  const terms = query.trim().split(/\s+/).filter(Boolean)
-  if (terms.length === 0) {
-    return [] // FTS5 errors on an empty MATCH; nothing to search anyway.
+  const match = buildFtsMatch(query)
+  if (match === null) {
+    return [] // nothing to search (FTS5 also errors on an empty MATCH).
   }
-  // Quote each term so FTS5 operators in user input (e.g. `(`, `AND`, `*`) are
-  // treated as literal text instead of throwing a query-syntax error.
-  const match = terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(' ')
   return db
     .selectFrom('searchFts')
     .select(['path', 'title'])
@@ -75,53 +77,53 @@ export async function searchNotes(query: string, limit = 50): Promise<SearchHit[
     .execute()
 }
 
-/** Stored `path → fileHash` map, for content-hash reconciliation on open. */
+/**
+ * Stored `path → fileHash` map, for content-hash reconciliation on open. Loads
+ * every note's hash into memory — fine at first-wave graph sizes; revisit with a
+ * streamed/keyset scan if graphs grow large (tracked with the Plan 04b watcher).
+ */
 export async function getIndexedHashes(): Promise<Map<string, string>> {
   const rows = await db.selectFrom('notes').select(['path', 'fileHash']).execute()
   return new Map(rows.map((row) => [row.path, row.fileHash]))
 }
 
 /**
- * Resolve a `[[target]]` against the index (prefer daily-date, then title, then
- * alias), returning the note ref (its path). The DB-backed counterpart to the
- * pure {@link normalizeWikiTarget} rules in `markdown/resolve.ts`.
+ * Resolve a `[[target]]` against the index, returning the note ref (its path).
+ * The resolution *policy* (prefer daily-date, then title, then alias) lives once
+ * in {@link resolveWikiLinkAsync}; this is only the DB-backed data access.
+ *
+ * Each lookup `orderBy`s before taking the first row so a title/alias/date
+ * collision resolves to the same note every time (otherwise the row order is
+ * undefined).
  */
-export async function resolveWikiTarget(target: string): Promise<Resolution> {
-  const { raw, key, date } = normalizeWikiTarget(target)
-
-  // `orderBy` before `executeTakeFirst` so a title/alias/date collision resolves
-  // to the same note every time (otherwise the row order is undefined).
-  if (date) {
-    const daily = await db
-      .selectFrom('notes')
-      .where('dailyDate', '=', date)
-      .select('path')
-      .orderBy('path')
-      .executeTakeFirst()
-    if (daily) {
-      return resolved(daily.path)
-    }
-  }
-
-  const byTitle = await db
-    .selectFrom('notes')
-    .where('titleKey', '=', key)
-    .select('path')
-    .orderBy('path')
-    .executeTakeFirst()
-  if (byTitle) {
-    return resolved(byTitle.path)
-  }
-
-  const byAlias = await db
-    .selectFrom('aliases')
-    .where('aliasKey', '=', key)
-    .select('notePath')
-    .orderBy('notePath')
-    .executeTakeFirst()
-  if (byAlias) {
-    return resolved(byAlias.notePath)
-  }
-
-  return unresolved(raw)
+export function resolveWikiTarget(target: string): Promise<Resolution> {
+  return resolveWikiLinkAsync(target, {
+    byDate: async (date) =>
+      (
+        await db
+          .selectFrom('notes')
+          .where('dailyDate', '=', date)
+          .select('path')
+          .orderBy('path')
+          .executeTakeFirst()
+      )?.path,
+    byTitle: async (key) =>
+      (
+        await db
+          .selectFrom('notes')
+          .where('titleKey', '=', key)
+          .select('path')
+          .orderBy('path')
+          .executeTakeFirst()
+      )?.path,
+    byAlias: async (key) =>
+      (
+        await db
+          .selectFrom('aliases')
+          .where('aliasKey', '=', key)
+          .select('notePath')
+          .orderBy('notePath')
+          .executeTakeFirst()
+      )?.notePath,
+  })
 }

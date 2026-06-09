@@ -9,6 +9,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
     "db:codegen": "node scripts/generate-schema.mjs"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "better-sqlite3": "^12.10.0",
     "kysely-codegen": "^0.20.0",
-    "typescript": "~5.8.3"
+    "typescript": "~5.8.3",
+    "vitest": "^3"
   }
 }

@@ -32,6 +32,7 @@ pub fn run() {
             recents::forget_recent,
             db::index_open,
             db::index_apply,
+            db::index_apply_batch,
             db::index_remove,
             db::index_clear,
             db::db_query,

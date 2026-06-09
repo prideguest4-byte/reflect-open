@@ -18,6 +18,7 @@ beforeEach(() => {
       case 'list_files':
         return [{ path: 'notes/a.md', size: 1, modifiedMs: 5 }]
       case 'index_apply':
+      case 'index_apply_batch':
       case 'index_clear':
       case 'index_remove':
         return null
@@ -50,12 +51,16 @@ describe('indexNote', () => {
 })
 
 describe('rebuildIndex', () => {
-  it('clears, lists, then applies every file', async () => {
+  it('clears, lists, then applies every file in one batch', async () => {
     await rebuildIndex()
     const commands = mockInvoke.mock.calls.map(([cmd]) => cmd)
     expect(commands[0]).toBe('index_clear')
     expect(commands).toContain('list_files')
-    expect(commands.filter((c) => c === 'index_apply')).toHaveLength(1)
+    const batch = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_apply_batch')
+    expect(batch).toBeDefined()
+    const notes = (batch![1] as { notes: { path: string }[] }).notes
+    expect(notes.map((note) => note.path)).toEqual(['notes/a.md'])
+    expect(commands).not.toContain('index_apply') // batched, not one-by-one
   })
 })
 

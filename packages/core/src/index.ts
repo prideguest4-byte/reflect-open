@@ -55,9 +55,11 @@ export {
   parseNote,
   appendUnderHeading,
   renameWikiLink,
+  foldKey,
   normalizeWikiTarget,
   resolved,
   resolveWikiLink,
+  resolveWikiLinkAsync,
   unresolved,
   type Frontmatter,
   type Span,
@@ -71,16 +73,21 @@ export {
   type NormalizedTarget,
   type Resolution,
   type WikiLookup,
+  type AsyncWikiLookup,
 } from './markdown'
 
 // Local index (Plan 04)
 export {
   openIndex,
   applyIndexedNote,
+  applyIndexedNotes,
   removeFromIndex,
   clearIndex,
   hashContent,
   buildIndexedNote,
+  indexedNoteSchema,
+  indexedLinkSchema,
+  indexedAliasSchema,
   indexNote,
   rebuildIndex,
   reconcileIndex,

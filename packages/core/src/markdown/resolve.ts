@@ -9,6 +9,8 @@
  * id when present" is honoured at the lookup layer.
  */
 
+import { foldKey } from './keys'
+
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 /** A wiki-link target normalized for matching. */
@@ -24,7 +26,7 @@ export interface NormalizedTarget {
 /** Trim, case-fold, and detect a `YYYY-MM-DD` daily-note target. */
 export function normalizeWikiTarget(target: string): NormalizedTarget {
   const raw = target.trim()
-  const normalized: NormalizedTarget = { raw, key: raw.toLowerCase() }
+  const normalized: NormalizedTarget = { raw, key: foldKey(raw) }
   if (ISO_DATE_RE.test(raw)) {
     normalized.date = raw
   }
@@ -65,5 +67,35 @@ export function resolveWikiLink(target: string, lookup: WikiLookup): Resolution 
     (normalized.date ? lookup.byDate(normalized.date) : undefined) ??
     lookup.byTitle(normalized.key) ??
     lookup.byAlias(normalized.key)
+  return ref ? resolved(ref) : unresolved(normalized.raw)
+}
+
+/**
+ * Async counterpart of {@link WikiLookup} for lookups that hit the database. The
+ * index-backed resolver (Plan 04) queries SQLite over IPC, so its lookups are
+ * inherently asynchronous; the resolution rules are otherwise identical.
+ */
+export interface AsyncWikiLookup {
+  byDate(date: string): Promise<string | undefined>
+  byTitle(key: string): Promise<string | undefined>
+  byAlias(key: string): Promise<string | undefined>
+}
+
+/**
+ * Resolve a `[[target]]` against an async (DB-backed) lookup, with the same
+ * precedence as {@link resolveWikiLink}: explicit daily-date, then title, then
+ * alias. The `??` chain short-circuits, so a title hit means the alias lookup is
+ * never queried. This keeps the resolution *policy* in one place — the
+ * index-backed `resolveWikiTarget` supplies only the data access.
+ */
+export async function resolveWikiLinkAsync(
+  target: string,
+  lookup: AsyncWikiLookup,
+): Promise<Resolution> {
+  const normalized = normalizeWikiTarget(target)
+  const ref =
+    (normalized.date ? await lookup.byDate(normalized.date) : undefined) ??
+    (await lookup.byTitle(normalized.key)) ??
+    (await lookup.byAlias(normalized.key))
   return ref ? resolved(ref) : unresolved(normalized.raw)
 }
