@@ -101,6 +101,16 @@ export function NotePane({ path }: NotePaneProps): ReactElement {
 
   return (
     <div className="relative" aria-label={`Editing ${path}`}>
+      {document.error !== null ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300"
+        >
+          Saving failed: {document.error}. Your edits are kept in the editor and the next
+          successful save will persist them.
+        </div>
+      ) : null}
+
       {document.conflict !== null ? (
         <div
           role="alert"

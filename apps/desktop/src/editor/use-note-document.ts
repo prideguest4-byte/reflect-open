@@ -99,18 +99,32 @@ export function useNoteDocument(path: string | null): NoteDocument {
       return
     }
     const savedPath = path
-    const content = bufferRef.current
     saveChain.current = saveChain.current
-      .then(() => {
+      .then(async () => {
+        // Re-check at execution time and snapshot the buffer *now*: a queued
+        // step can run behind a slow prior write, during which the user may
+        // have reverted (dirty again false) or kept typing — writing the
+        // enqueue-time snapshot would put disk behind what they see.
+        if (
+          !dirtyRef.current ||
+          protectedRef.current ||
+          conflictRef.current !== null ||
+          pathRef.current !== savedPath
+        ) {
+          return
+        }
+        const content = bufferRef.current
         inFlightWriteRef.current = content
-        return writeNote(savedPath, content)
+        try {
+          await writeNote(savedPath, content)
+          markClean(content, savedPath)
+          setError(null) // a previous save failure is resolved by this success
+        } finally {
+          inFlightWriteRef.current = null
+        }
       })
-      .then(() => markClean(content, savedPath))
       .catch((err) => {
         setError(messageOf(err))
-      })
-      .finally(() => {
-        inFlightWriteRef.current = null
       })
   }, [path, markClean])
 

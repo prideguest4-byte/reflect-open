@@ -248,6 +248,91 @@ describe('useNoteDocument', () => {
     }
   })
 
+  it('a queued save re-checks the buffer at write time (revert during a slow write)', async () => {
+    vi.useFakeTimers()
+    try {
+      // First write hangs; the queued second save must re-evaluate when it runs.
+      let resolveWrite: (() => void) | null = null
+      let writeCount = 0
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === 'note_read') {
+          return disk
+        }
+        if (command === 'note_write') {
+          disk = (args as { contents: string }).contents
+          writes.push(disk)
+          writeCount += 1
+          if (writeCount === 1) {
+            return new Promise<null>((resolve) => {
+              resolveWrite = () => resolve(null)
+            })
+          }
+          return null
+        }
+        return null
+      })
+
+      const hook = renderHook(() => useNoteDocument('notes/a.md'))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+
+      act(() => hook.result.current.onEditorChange('# A\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000)) // write1(A) dispatched, hanging
+      expect(writes).toEqual(['# A\n'])
+
+      // More typing queues a second save; then the user reverts to A before
+      // write1 settles. The queued step must NOT persist the stale "# B".
+      act(() => hook.result.current.onEditorChange('# B\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      act(() => hook.result.current.onEditorChange('# A\n'))
+      act(() => {
+        resolveWrite?.()
+      })
+      await act(() => vi.advanceTimersByTimeAsync(2000))
+      expect(writes).toEqual(['# A\n']) // no stale second write
+      expect(hook.result.current.dirty).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('surfaces a failed save as error and clears it on the next success', async () => {
+    vi.useFakeTimers()
+    try {
+      let failNext = true
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === 'note_read') {
+          return disk
+        }
+        if (command === 'note_write') {
+          if (failNext) {
+            failNext = false
+            throw new Error('disk full')
+          }
+          disk = (args as { contents: string }).contents
+          writes.push(disk)
+          return null
+        }
+        return null
+      })
+
+      const hook = renderHook(() => useNoteDocument('notes/a.md'))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+
+      act(() => hook.result.current.onEditorChange('# Edited\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      expect(hook.result.current.error).toMatch(/disk full/)
+      expect(hook.result.current.status).toBe('ready') // editing continues
+
+      // The next (successful) save clears the surfaced error.
+      act(() => hook.result.current.onEditorChange('# Edited again\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      expect(hook.result.current.error).toBeNull()
+      expect(writes).toEqual(['# Edited again\n'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keepMine rewrites the file with the buffer', async () => {
     const { result } = await readyHook()
     act(() => result.current.onEditorChange('# My unsaved edit\n'))
