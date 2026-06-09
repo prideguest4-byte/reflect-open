@@ -9,7 +9,7 @@
 
 use std::ffi::{c_char, c_int};
 use std::path::Path;
-use std::sync::{LazyLock, Mutex, Once};
+use std::sync::{LazyLock, Mutex, OnceLock};
 
 use rusqlite::ffi::{sqlite3, sqlite3_api_routines};
 use rusqlite::{params, params_from_iter, Connection};
@@ -28,7 +28,9 @@ use crate::fs::GraphState;
 static MIGRATIONS: LazyLock<Migrations<'static>> =
     LazyLock::new(|| Migrations::new(vec![M::up(include_str!("../migrations/0001_initial.sql"))]));
 
-static VEC_INIT: Once = Once::new();
+/// Result of the one-time sqlite-vec registration; the error message is cached so
+/// every caller can surface it as an `AppError` rather than panicking.
+static VEC_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
 /// The SQLite auto-extension entry-point signature. sqlite-vec and rusqlite each
 /// link their own copy of the C types, so we transmute `sqlite3_vec_init` into
@@ -38,8 +40,10 @@ type AutoExtensionFn =
 
 /// Registers the sqlite-vec extension once per process, so every connection
 /// opened afterwards exposes the `vec0` virtual table and `vec_*` functions.
-fn register_sqlite_vec() {
-    VEC_INIT.call_once(|| {
+/// Returns the cached registration result so a failure surfaces as an `AppError`
+/// (e.g. from `index_open`) instead of panicking and crashing the backend.
+fn register_sqlite_vec() -> AppResult<()> {
+    let result = VEC_INIT.get_or_init(|| {
         // SAFETY: registering a statically-linked SQLite extension entry point
         // before opening connections — the documented sqlite-vec pattern.
         let rc = unsafe {
@@ -50,19 +54,22 @@ fn register_sqlite_vec() {
                 sqlite_vec::sqlite3_vec_init as *const ()
             )))
         };
-        assert_eq!(
-            rc,
-            rusqlite::ffi::SQLITE_OK,
-            "failed to register the sqlite-vec auto-extension (code {rc})"
-        );
+        if rc == rusqlite::ffi::SQLITE_OK {
+            Ok(())
+        } else {
+            Err(format!(
+                "failed to register the sqlite-vec auto-extension (code {rc})"
+            ))
+        }
     });
+    result.clone().map_err(AppError::io)
 }
 
 /// Opens an in-memory connection with sqlite-vec available (used by tests).
 #[allow(dead_code)]
-pub fn open_in_memory() -> rusqlite::Result<Connection> {
-    register_sqlite_vec();
-    Connection::open_in_memory()
+pub fn open_in_memory() -> AppResult<Connection> {
+    register_sqlite_vec()?;
+    Ok(Connection::open_in_memory()?)
 }
 
 /// The open index connection for the active graph (`None` until `index_open`).
@@ -78,7 +85,7 @@ fn migrate(conn: &mut Connection) -> AppResult<()> {
 
 /// Open (creating if needed) and migrate `<root>/.reflect/index.sqlite`.
 fn open_index_at(root: &Path) -> AppResult<Connection> {
-    register_sqlite_vec();
+    register_sqlite_vec()?;
     let dir = root.join(".reflect");
     std::fs::create_dir_all(&dir)?;
     let mut conn = Connection::open(dir.join("index.sqlite"))?;
@@ -296,6 +303,9 @@ pub fn index_open(graph: State<GraphState>, index: State<IndexState>) -> AppResu
         .map_err(|_| AppError::io("graph state lock poisoned"))?
         .clone()
         .ok_or_else(AppError::no_graph)?;
+    // Drop the previous graph's connection first, so a failed open can't leave a
+    // stale connection that later reads would hit (wrong graph's data).
+    *lock_index(&index)? = None;
     let conn = open_index_at(&root)?;
     *lock_index(&index)? = Some(conn);
     Ok(())

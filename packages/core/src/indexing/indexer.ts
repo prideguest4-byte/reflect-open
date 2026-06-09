@@ -76,6 +76,9 @@ export async function reconcileIndex(options?: IndexPassOptions): Promise<void> 
     if (stored.get(file.path) === fileHash) {
       continue // unchanged
     }
+    if (signal?.aborted) {
+      return // re-check after the awaits — don't write for a superseded pass
+    }
     const parsed = parseNote({ path: file.path, source: content })
     await applyIndexedNote(buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs }))
   }

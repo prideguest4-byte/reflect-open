@@ -26,16 +26,19 @@ const dbPath = join(tmp, 'index.sqlite')
 
 try {
   const db = new Database(dbPath)
-  const files = readdirSync(migrationsDir)
-    .filter((file) => file.endsWith('.sql'))
-    .sort()
-  if (files.length === 0) {
-    throw new Error(`no .sql migrations found in ${migrationsDir}`)
+  try {
+    const files = readdirSync(migrationsDir)
+      .filter((file) => file.endsWith('.sql'))
+      .sort()
+    if (files.length === 0) {
+      throw new Error(`no .sql migrations found in ${migrationsDir}`)
+    }
+    for (const file of files) {
+      db.exec(readFileSync(join(migrationsDir, file), 'utf8'))
+    }
+  } finally {
+    db.close() // always close, even if a migration exec throws
   }
-  for (const file of files) {
-    db.exec(readFileSync(join(migrationsDir, file), 'utf8'))
-  }
-  db.close()
 
   // Resolve the kysely-codegen bin so we don't depend on PATH.
   const pkgPath = require.resolve('kysely-codegen/package.json')

@@ -27,11 +27,15 @@ describe('buildIndexedNote', () => {
     expect(indexed.tags).toEqual(['status'])
 
     const wiki = indexed.links.filter((link) => link.kind === 'wiki')
-    expect(wiki.map((l) => ({ targetRaw: l.targetRaw, targetKey: l.targetKey, alias: l.alias }))).toEqual([
+    expect(
+      wiki.map((link) => ({ targetRaw: link.targetRaw, targetKey: link.targetKey, alias: link.alias })),
+    ).toEqual([
       { targetRaw: 'Charlotte', targetKey: 'charlotte', alias: null },
       { targetRaw: 'Note', targetKey: 'note', alias: 'alias' },
     ])
-    expect(indexed.links.some((l) => l.kind === 'md' && l.targetRaw === 'https://x.com')).toBe(true)
+    expect(indexed.links.some((link) => link.kind === 'md' && link.targetRaw === 'https://x.com')).toBe(
+      true,
+    )
     expect(indexed.assets).toEqual(['assets/p.png'])
   })
 

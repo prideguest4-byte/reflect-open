@@ -28,11 +28,13 @@ export function getBacklinks(path: string): Promise<Backlink[]> {
     .execute()
 }
 
+/** Core columns of one note row: identity path, title, daily date, privacy flag. */
 export type NoteRow = Pick<
   Selectable<Database['notes']>,
   'path' | 'title' | 'dailyDate' | 'isPrivate'
 >
 
+/** Fetch a single note's row by graph-relative path, or `undefined` if absent. */
 export function getNote(path: string): Promise<NoteRow | undefined> {
   return db
     .selectFrom('notes')
@@ -41,6 +43,7 @@ export function getNote(path: string): Promise<NoteRow | undefined> {
     .executeTakeFirst()
 }
 
+/** Graph-relative paths of every note carrying `tag`, ordered by path. */
 export async function getNotesByTag(tag: string): Promise<string[]> {
   const rows = await db
     .selectFrom('tags')
@@ -51,6 +54,7 @@ export async function getNotesByTag(tag: string): Promise<string[]> {
   return rows.map((row) => row.notePath)
 }
 
+/** A full-text search result: the note's path and title. */
 export type SearchHit = Pick<Selectable<Database['searchFts']>, 'path' | 'title'>
 
 /** Full-text search over title + body (FTS5 `MATCH`, ranked). */
