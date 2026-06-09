@@ -46,14 +46,14 @@ Markdown is the source of truth, so the parser is load-bearing. Two hard require
    "no frontmatter" + a non-fatal warning, never an unreadable note.
 
    ```ts
-   // src/lib/markdown/frontmatter.ts
+   // packages/core/src/markdown/frontmatter.ts
    import { z } from 'zod'
 
    export const frontmatterSchema = z.object({
-     id: z.string().optional(),
+     id: z.string().optional(), // reserved; not auto-written in the first wave (see step 5)
      aliases: z.array(z.string()).default([]),
      private: z.boolean().default(false),
-   }).passthrough() // preserve unknown keys
+   }).passthrough() // preserve unknown keys (incl. a user's `tags:`)
    export type Frontmatter = z.infer<typeof frontmatterSchema>
    ```
 
@@ -61,8 +61,8 @@ Markdown is the source of truth, so the parser is load-bearing. Two hard require
    - `title` (frontmatter, else first H1, else filename).
    - Outgoing `[[wiki links]]` with target + optional `|alias` + source position.
    - Standard markdown links (href, text) and their domains.
-   - Tags (`#tag` in body and/or frontmatter — decide one canonical source; first wave:
-     body `#tag` + optional frontmatter `tags`).
+   - Tags: **body `#tag` only** (decided 2026-06-09). A frontmatter `tags:` key, if present,
+     is preserved via passthrough but is **not** a tag source in the first wave.
    - Headings (for section anchors + chunking in Plan 09).
    - Asset references (relative links into `assets/`).
    - Plain text (for FTS + AI context).
@@ -75,8 +75,14 @@ Markdown is the source of truth, so the parser is load-bearing. Two hard require
 
 5. **Wiki-link resolution model.** Define resolution rules used everywhere:
    case-insensitive title match, alias match, and `[[YYYY-MM-DD]]` → daily note. Return
-   a typed result: `resolved(noteId)` | `unresolved(text)` so the editor (Plan 05/07)
-   can offer "create note."
+   a typed result: `resolved(ref)` | `unresolved(text)` so the editor (Plan 05/07) can
+   offer "create note." **Note identity = the file path/title in the first wave** (decided
+   2026-06-09): `ref` is the note's path, resolution **prefers a frontmatter `id` when one
+   is present** but we don't auto-write ids yet. This keeps files clean and externally
+   editable; rename-stable ids (the V1 model) are reserved in the schema and revisited when
+   sync (Plan 12) makes them matter. The lookup itself is **injected** (DI per conventions
+   §3) — `resolve.ts` owns only the pure normalization + the `Resolution` type; the
+   index-backed resolver lands in Plan 04/07.
 
 6. **Tests.** Golden round-trip corpus (Reflect notes, Obsidian notes, GFM edge cases,
    broken frontmatter, mixed line endings). Property test: `serialize(parse(x))` is
@@ -109,6 +115,10 @@ the canonical model. (Even that can be done from the Lezer tree if we prefer zer
   string. (Answers the indexing-doc open question; supersedes the remark recommendation.)
 - **Unknown frontmatter is preserved, never dropped.** zod `.passthrough()` at the
   boundary; only the known subset is typed.
+- **Note identity = path/title in the first wave** (decided 2026-06-09). `id` is reserved
+  in the schema and resolution prefers it when present, but ids aren't auto-written yet.
+- **Tags = body `#tag` only** (decided 2026-06-09). A frontmatter `tags:` key passes through
+  untouched but isn't a tag source this wave.
 - **Edits are minimal-diff** to keep sync quiet.
 - **The extraction output is a stable, versioned interface** — Plan 04 depends on it.
 
