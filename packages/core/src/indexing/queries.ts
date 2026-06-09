@@ -1,0 +1,119 @@
+import { db } from '@reflect/db'
+import { sql } from 'kysely'
+import {
+  normalizeWikiTarget,
+  resolved,
+  unresolved,
+  type Resolution,
+} from '../markdown'
+
+/**
+ * Index read getters (Plan 04). Queries are built with Kysely and execute over
+ * the IPC bridge (`@reflect/db`). Rows are our own projection — trusted, not
+ * re-validated per row (see Plan 04 §2).
+ */
+
+export interface Backlink {
+  sourcePath: string
+  targetRaw: string
+  alias: string | null
+  posFrom: number
+  posTo: number
+}
+
+/** Notes that link to `path` (resolved at query time via the `backlinks` view). */
+export function getBacklinks(path: string): Promise<Backlink[]> {
+  return db
+    .selectFrom('backlinks')
+    .where('targetPath', '=', path)
+    .select(['sourcePath', 'targetRaw', 'alias', 'posFrom', 'posTo'])
+    .orderBy('sourcePath')
+    .execute()
+}
+
+export interface NoteRow {
+  path: string
+  title: string
+  dailyDate: string | null
+  isPrivate: number
+}
+
+export function getNote(path: string): Promise<NoteRow | undefined> {
+  return db
+    .selectFrom('notes')
+    .where('path', '=', path)
+    .select(['path', 'title', 'dailyDate', 'isPrivate'])
+    .executeTakeFirst()
+}
+
+export async function getNotesByTag(tag: string): Promise<string[]> {
+  const rows = await db
+    .selectFrom('tags')
+    .where('tag', '=', tag)
+    .select('notePath')
+    .orderBy('notePath')
+    .execute()
+  return rows.map((row) => row.notePath)
+}
+
+export interface SearchHit {
+  path: string
+  title: string
+}
+
+/** Full-text search over title + body (FTS5 `MATCH`, ranked). */
+export function searchNotes(query: string, limit = 50): Promise<SearchHit[]> {
+  return db
+    .selectFrom('searchFts')
+    .select(['path', 'title'])
+    .where(sql<boolean>`search_fts MATCH ${query}`)
+    .orderBy(sql`rank`)
+    .limit(limit)
+    .execute()
+}
+
+/** Stored `path → fileHash` map, for content-hash reconciliation on open. */
+export async function getIndexedHashes(): Promise<Map<string, string>> {
+  const rows = await db.selectFrom('notes').select(['path', 'fileHash']).execute()
+  return new Map(rows.map((row) => [row.path, row.fileHash]))
+}
+
+/**
+ * Resolve a `[[target]]` against the index (prefer daily-date, then title, then
+ * alias), returning the note ref (its path). The DB-backed counterpart to the
+ * pure {@link normalizeWikiTarget} rules in `markdown/resolve.ts`.
+ */
+export async function resolveWikiTarget(target: string): Promise<Resolution> {
+  const { raw, key, date } = normalizeWikiTarget(target)
+
+  if (date) {
+    const daily = await db
+      .selectFrom('notes')
+      .where('dailyDate', '=', date)
+      .select('path')
+      .executeTakeFirst()
+    if (daily) {
+      return resolved(daily.path)
+    }
+  }
+
+  const byTitle = await db
+    .selectFrom('notes')
+    .where('titleKey', '=', key)
+    .select('path')
+    .executeTakeFirst()
+  if (byTitle) {
+    return resolved(byTitle.path)
+  }
+
+  const byAlias = await db
+    .selectFrom('aliases')
+    .where('aliasKey', '=', key)
+    .select('notePath')
+    .executeTakeFirst()
+  if (byAlias) {
+    return resolved(byAlias.notePath)
+  }
+
+  return unresolved(raw)
+}

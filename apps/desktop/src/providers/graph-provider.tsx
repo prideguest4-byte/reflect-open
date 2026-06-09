@@ -13,6 +13,8 @@ import { open } from '@tauri-apps/plugin-dialog'
 import {
   forgetRecent,
   openGraph,
+  openIndex,
+  reconcileIndex,
   recentGraphs,
   toAppError,
   type GraphInfo,
@@ -136,6 +138,29 @@ export function GraphProvider({ children }: { children: ReactNode }) {
       active = false
     }
   }, [loadRecents, openRecent])
+
+  // Once a graph is open, open + reconcile its index in the background. Best
+  // effort: a failure means search/backlinks are stale, not that the graph is
+  // unusable, so it must not block editing. (Plan 04b adds the live watcher.)
+  useEffect(() => {
+    if (status !== 'ready' || !graph) {
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        await openIndex()
+        if (!cancelled) {
+          await reconcileIndex()
+        }
+      } catch (err) {
+        console.error('index sync failed:', messageOf(err))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [status, graph])
 
   const pickAndOpen = useCallback(async (): Promise<void> => {
     let selected: string | null = null

@@ -131,6 +131,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.0
+      kysely:
+        specifier: ^0.28.17
+        version: 0.28.17
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -147,6 +150,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@tauri-apps/api':
+        specifier: ^2.11.0
+        version: 2.11.0
       kysely:
         specifier: ^0.28.0
         version: 0.28.17
