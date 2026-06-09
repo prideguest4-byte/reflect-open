@@ -60,21 +60,28 @@ export function GraphProvider({ children }: { children: ReactNode }) {
   // Serializes backend opens (see `openRecent`).
   const openChain = useRef<Promise<unknown>>(Promise.resolve())
 
-  const loadRecents = useCallback(async (): Promise<RecentGraph[]> => {
-    if (!isTauri()) {
-      return [] // browser dev — there's no backend store to read.
-    }
-    try {
-      const list = await recentGraphs()
-      setRecents(list)
-      return list
-    } catch (err) {
-      // A real failure (e.g. a corrupt recent-graphs.json, which Rust reports as
-      // an error rather than an empty list) should surface, not vanish.
-      setError(messageOf(err))
-      return []
-    }
-  }, [])
+  const loadRecents = useCallback(
+    async (options?: { surfaceErrors?: boolean }): Promise<RecentGraph[]> => {
+      if (!isTauri()) {
+        return [] // browser dev — there's no backend store to read.
+      }
+      try {
+        const list = await recentGraphs()
+        setRecents(list)
+        return list
+      } catch (err) {
+        // Surface a real failure (e.g. a corrupt recent-graphs.json, which Rust
+        // reports as an error rather than an empty list) only when this is the
+        // primary load. As a post-open refresh it must not clobber an open error
+        // or set one on a screen (the workspace) that never shows it.
+        if (options?.surfaceErrors) {
+          setError(messageOf(err))
+        }
+        return []
+      }
+    },
+    [],
+  )
 
   const openRecent = useCallback(
     (root: string): Promise<void> => {
@@ -115,7 +122,7 @@ export function GraphProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true
     void (async () => {
-      const list = await loadRecents()
+      const list = await loadRecents({ surfaceErrors: true })
       if (!active) {
         return
       }
