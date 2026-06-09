@@ -24,6 +24,13 @@ class IpcConnection implements DatabaseConnection {
       sql: compiled.sql,
       params: compiled.parameters as unknown[],
     })
+    // Index reads are our own projection (Rust serializes from a known schema),
+    // so per Plan 04 §2 we deliberately don't zod-parse every row (real overhead
+    // on large FTS scans). A cheap O(1) shape check still fails fast on a
+    // malformed payload at the boundary rather than deep in a query consumer.
+    if (!Array.isArray(rows)) {
+      throw new Error('db_query did not return a row array')
+    }
     return { rows }
   }
 

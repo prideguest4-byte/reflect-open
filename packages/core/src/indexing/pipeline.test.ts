@@ -69,6 +69,12 @@ describe('Kysely → db_query bridge', () => {
     expect(hits).toEqual([{ path: 'notes/a.md', title: 'A' }])
   })
 
+  it('searchNotes returns [] for a blank query without touching the DB', async () => {
+    const before = mockInvoke.mock.calls.length
+    expect(await searchNotes('   ')).toEqual([])
+    expect(mockInvoke.mock.calls.length).toBe(before)
+  })
+
   it('getBacklinks maps snake_case rows back to camelCase', async () => {
     const backlinks = await getBacklinks('notes/a.md')
     expect(backlinks).toEqual([

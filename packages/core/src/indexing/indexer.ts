@@ -33,6 +33,9 @@ export interface IndexPassOptions {
 
 /** Full rebuild: wipe derived tables and re-index every markdown file. */
 export async function rebuildIndex(options?: IndexPassOptions): Promise<void> {
+  if (options?.signal?.aborted) {
+    return // don't wipe the current index for an already-cancelled pass
+  }
   await clearIndex()
   const files = await listFiles()
   for (const file of files) {
@@ -61,7 +64,14 @@ export async function reconcileIndex(options?: IndexPassOptions): Promise<void> 
     if (signal?.aborted) {
       return
     }
-    const content = await readNote(file.path)
+    let content: string
+    try {
+      content = await readNote(file.path)
+    } catch {
+      // The file moved/was deleted/locked between listFiles() and here (TOCTOU)
+      // — skip it rather than aborting the whole pass; a later pass will catch up.
+      continue
+    }
     const fileHash = await hashContent(content)
     if (stored.get(file.path) === fileHash) {
       continue // unchanged

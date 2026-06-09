@@ -54,11 +54,18 @@ export async function getNotesByTag(tag: string): Promise<string[]> {
 export type SearchHit = Pick<Selectable<Database['searchFts']>, 'path' | 'title'>
 
 /** Full-text search over title + body (FTS5 `MATCH`, ranked). */
-export function searchNotes(query: string, limit = 50): Promise<SearchHit[]> {
+export async function searchNotes(query: string, limit = 50): Promise<SearchHit[]> {
+  const terms = query.trim().split(/\s+/).filter(Boolean)
+  if (terms.length === 0) {
+    return [] // FTS5 errors on an empty MATCH; nothing to search anyway.
+  }
+  // Quote each term so FTS5 operators in user input (e.g. `(`, `AND`, `*`) are
+  // treated as literal text instead of throwing a query-syntax error.
+  const match = terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(' ')
   return db
     .selectFrom('searchFts')
     .select(['path', 'title'])
-    .where(sql<boolean>`search_fts MATCH ${query}`)
+    .where(sql<boolean>`search_fts MATCH ${match}`)
     .orderBy(sql`rank`)
     .limit(limit)
     .execute()
@@ -78,11 +85,14 @@ export async function getIndexedHashes(): Promise<Map<string, string>> {
 export async function resolveWikiTarget(target: string): Promise<Resolution> {
   const { raw, key, date } = normalizeWikiTarget(target)
 
+  // `orderBy` before `executeTakeFirst` so a title/alias/date collision resolves
+  // to the same note every time (otherwise the row order is undefined).
   if (date) {
     const daily = await db
       .selectFrom('notes')
       .where('dailyDate', '=', date)
       .select('path')
+      .orderBy('path')
       .executeTakeFirst()
     if (daily) {
       return resolved(daily.path)
@@ -93,6 +103,7 @@ export async function resolveWikiTarget(target: string): Promise<Resolution> {
     .selectFrom('notes')
     .where('titleKey', '=', key)
     .select('path')
+    .orderBy('path')
     .executeTakeFirst()
   if (byTitle) {
     return resolved(byTitle.path)
@@ -102,6 +113,7 @@ export async function resolveWikiTarget(target: string): Promise<Resolution> {
     .selectFrom('aliases')
     .where('aliasKey', '=', key)
     .select('notePath')
+    .orderBy('notePath')
     .executeTakeFirst()
   if (byAlias) {
     return resolved(byAlias.notePath)

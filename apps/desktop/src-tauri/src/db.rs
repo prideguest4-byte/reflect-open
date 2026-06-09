@@ -119,6 +119,11 @@ fn column_to_json(row: &rusqlite::Row, index: usize) -> AppResult<Value> {
 /// Execute a read query the frontend compiled with Kysely; rows as JSON objects.
 fn run_query(conn: &Connection, sql: &str, params: &[Value]) -> AppResult<Vec<Map<String, Value>>> {
     let mut stmt = conn.prepare(sql)?;
+    // `db_query` is a read-only bridge — writes go through the `index_*` commands.
+    // Reject any mutating statement so a compromised/buggy caller can't write.
+    if !stmt.readonly() {
+        return Err(AppError::io("db_query only executes read-only statements"));
+    }
     let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
     let bound: Vec<rusqlite::types::Value> = params.iter().map(json_to_sql).collect();
     let mut rows = stmt.query(params_from_iter(bound))?;
@@ -433,6 +438,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn db_query_rejects_mutating_statements() {
+        let conn = migrated();
+        assert!(run_query(&conn, "DELETE FROM notes", &[]).is_err());
+        assert!(run_query(&conn, "SELECT count(*) FROM notes", &[]).is_ok());
     }
 
     #[test]
