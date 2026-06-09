@@ -1,21 +1,21 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { invoke } from '@tauri-apps/api/core'
+import { setBridge } from '@reflect/core'
 import type { NoteEditorHandle } from './note-editor'
 import { useNoteDocument } from './use-note-document'
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true }))
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn((_, handler: (event: { payload: unknown }) => void) => {
-    emitChange = (payload) => handler({ payload })
-    return Promise.resolve(() => {
-      emitChange = null
-    })
-  }),
-}))
-
 let emitChange: ((payload: unknown) => void) | null = null
-const mockInvoke = vi.mocked(invoke)
+const mockInvoke = vi.fn<(command: string, args: Record<string, unknown>) => Promise<unknown>>()
+
+setBridge({
+  invoke: mockInvoke,
+  listen: async (_event, handler) => {
+    emitChange = handler
+    return () => {
+      emitChange = null
+    }
+  },
+})
 
 /** The fake on-disk file + a write log, behind the mocked IPC. */
 let disk: string

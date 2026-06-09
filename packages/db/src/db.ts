@@ -1,18 +1,20 @@
 import { CamelCasePlugin, Kysely } from 'kysely'
-import { IpcDialect } from './dialect'
+import { IpcDialect, type QueryRunner } from './dialect'
 import type { Database } from './schema'
 
 /**
- * Build a Kysely instance bound to the IPC SQLite bridge. The `CamelCasePlugin`
- * maps the camelCase {@link Database} interface to the snake_case columns/tables
- * in the Rust schema (and result rows back to camelCase).
+ * Build a Kysely instance over an injected {@link QueryRunner}. The
+ * `CamelCasePlugin` maps the camelCase {@link Database} interface to the
+ * snake_case columns/tables in the Rust schema (and result rows back to
+ * camelCase).
+ *
+ * `@reflect/core` owns the shared instance wired to the IPC bridge; tests and
+ * other hosts (e.g. the Plan 14 CLI reading the index file directly) construct
+ * their own with a suitable runner.
  */
-export function createDb(): Kysely<Database> {
+export function createDb(runQuery: QueryRunner): Kysely<Database> {
   return new Kysely<Database>({
-    dialect: new IpcDialect(),
+    dialect: new IpcDialect(runQuery),
     plugins: [new CamelCasePlugin()],
   })
 }
-
-/** The shared query builder for the active graph's index. */
-export const db = createDb()

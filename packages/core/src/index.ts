@@ -3,10 +3,15 @@
  *
  * Per the architecture conventions, all reads, orchestration, AI/provider
  * calls, and privacy guards live here; the Rust shell provides only native
- * primitives. The per-domain `actions/` modules grow over the plans; this entry
- * point exposes the IPC boundary, the shared error contract, and the graph
- * file-storage layer (Plan 02).
+ * primitives reached through the injected bridge. "Plan NN" references point
+ * at the design docs in `docs/plans/`.
+ *
+ * API stability: the typed command bindings, schemas, and error contract are
+ * the surface apps build on. Exports marked `(plumbing)` below are shared
+ * internals (normalization keys, low-level parsers) published for the editor
+ * and tests — they track internal contracts and may change with them.
  */
+export { setBridge, hasBridge, type IpcBridge, type Unlisten } from './ipc/bridge'
 export { call } from './ipc/invoke'
 export { getAppVersion } from './ipc/commands'
 export { appErrorSchema, isAppError, toAppError, type AppError } from './errors'
@@ -47,23 +52,24 @@ export {
 export {
   frontmatterSchema,
   PARSED_NOTE_VERSION,
+  parseNote,
+  appendUnderHeading,
+  renameWikiLink,
+  resolved,
+  resolveWikiLink,
+  resolveWikiLinkAsync,
+  unresolved,
+  // (plumbing) shared by the editor + indexer so grammar and key rules can't drift:
   splitFrontmatter,
   parseFrontmatter,
   upsertFrontmatter,
   parseBody,
   reflectMarkdownParser,
   wikiLinkExtension,
-  parseNote,
   scanInlineWikiLinks,
   scanInlineImages,
-  appendUnderHeading,
-  renameWikiLink,
   foldKey,
   normalizeWikiTarget,
-  resolved,
-  resolveWikiLink,
-  resolveWikiLinkAsync,
-  unresolved,
   type Frontmatter,
   type Span,
   type WikiLink,

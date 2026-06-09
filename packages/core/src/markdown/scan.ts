@@ -1,4 +1,5 @@
 import { parseBody } from './grammar'
+import { parseInlineLink } from './link-syntax'
 
 /**
  * Inline scanning for the editor (Plan 05). The editor decorates `[[wiki
@@ -30,13 +31,11 @@ export interface InlineImage {
   src: string
 }
 
-// `![alt](src)`, tolerating a "title" suffix and <bracketed> src — the same
-// shape extract.ts accepts for the index.
-const IMAGE_RE = /^!\[([^\]]*)\]\(\s*(<[^>]*>|\S+?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)$/
-
 /**
  * Find every inline image in a block's text content. Offsets are relative to
- * the input string; the caller maps them into document positions.
+ * the input string; the caller maps them into document positions. Source
+ * decomposition is shared with the indexer (`link-syntax.ts`), so the editor
+ * renders exactly what the index records.
  */
 export function scanInlineImages(text: string): InlineImage[] {
   if (!text.includes('![')) {
@@ -48,14 +47,9 @@ export function scanInlineImages(text: string): InlineImage[] {
       if (node.name !== 'Image') {
         return true
       }
-      const match = IMAGE_RE.exec(text.slice(node.from, node.to))
-      if (match) {
-        images.push({
-          from: node.from,
-          to: node.to,
-          alt: match[1],
-          src: match[2].replace(/^<|>$/g, ''),
-        })
+      const parsed = parseInlineLink(text.slice(node.from, node.to))
+      if (parsed?.isImage) {
+        images.push({ from: node.from, to: node.to, alt: parsed.text, src: parsed.href })
       }
       return false
     },

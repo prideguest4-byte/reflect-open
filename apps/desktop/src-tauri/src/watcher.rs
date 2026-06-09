@@ -69,23 +69,30 @@ fn collect_changes(paths: &[PathBuf], root: &Path) -> Vec<FileChange> {
 fn lock_watcher<'a>(
     watcher: &'a State<WatcherState>,
 ) -> AppResult<std::sync::MutexGuard<'a, Option<Debouncer<RecommendedWatcher, RecommendedCache>>>> {
-    watcher
-        .0
-        .lock()
-        .map_err(|_| AppError::io("watcher state lock poisoned"))
+    watcher.0.lock().map_err(|err| {
+        tracing::error!(?err, "watcher state lock poisoned by an earlier panic");
+        AppError::io("watcher state lock poisoned")
+    })
 }
 
 /// Start (or restart) watching the active graph; emits `index:changed` batches.
+///
+/// The graph lock is held from reading the root until the new debouncer is
+/// installed, so a concurrent `graph_open` can't swap the root mid-install and
+/// leave a watcher bound to the previous graph emitting events attributed to
+/// the new one. Lock order is graph → watcher; nothing locks the reverse way,
+/// so this can't deadlock.
 #[tauri::command]
 pub fn watch_start(
     app: AppHandle,
     graph: State<GraphState>,
     watcher: State<WatcherState>,
 ) -> AppResult<()> {
-    let root = graph
-        .0
-        .lock()
-        .map_err(|_| AppError::io("graph state lock poisoned"))?
+    let graph_guard = graph.0.lock().map_err(|err| {
+        tracing::error!(?err, "graph state lock poisoned by an earlier panic");
+        AppError::io("graph state lock poisoned")
+    })?;
+    let root = graph_guard
         .root
         .clone()
         .ok_or_else(AppError::no_graph)?;
@@ -121,6 +128,7 @@ pub fn watch_start(
 
     // Dropping any previous debouncer here stops its thread.
     *lock_watcher(&watcher)? = Some(debouncer);
+    drop(graph_guard);
     Ok(())
 }
 

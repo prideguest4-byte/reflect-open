@@ -1,12 +1,12 @@
-import { invoke } from '@tauri-apps/api/core'
 import type { ZodType } from 'zod'
 import { toAppError, type AppError } from '../errors'
+import { getBridge } from './bridge'
 
 /**
- * The single boundary where an untyped Tauri IPC response becomes a typed,
+ * The single boundary where an untyped native IPC response becomes a typed,
  * validated domain value.
  *
- * Components and hooks must never call `invoke` from `@tauri-apps/api`
+ * Components and hooks must never reach for the bridge (or `@tauri-apps/api`)
  * directly — they call a typed binding (see the per-domain command modules)
  * that funnels through here. Every response is validated with a zod schema;
  * Rust emits camelCase keys so the parsed value needs no further normalization.
@@ -25,9 +25,10 @@ export async function call<TOutput>(
   args: Record<string, unknown>,
   schema: ZodType<TOutput>,
 ): Promise<TOutput> {
+  const bridge = getBridge()
   let raw: unknown
   try {
-    raw = await invoke(command, args)
+    raw = await bridge.invoke(command, args)
   } catch (error) {
     throw toAppError(error)
   }

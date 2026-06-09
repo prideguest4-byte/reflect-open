@@ -7,6 +7,6 @@
  * The table/view types in `Database` are generated from the Rust migrations
  * (`pnpm --filter @reflect/db db:codegen`); `schema.gen.ts` is the output.
  */
-export { db, createDb } from './db'
-export { IpcDialect } from './dialect'
+export { createDb } from './db'
+export { IpcDialect, type QueryRunner } from './dialect'
 export type { Database } from './schema'

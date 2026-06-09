@@ -1,18 +1,18 @@
-import { invoke } from '@tauri-apps/api/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { setBridge } from '../ipc/bridge'
 import { getBacklinks, resolveWikiTarget, searchNotes } from './queries'
 import { indexNote, rebuildIndex } from './indexer'
-import { applyIndexChanges } from './watch'
+import { applyIndexChanges } from './live'
 
-// Mock the Tauri bridge so both core's `call` and @reflect/db's dialect resolve
+// Install a fake bridge so both core's `call` and the Kysely runner resolve
 // against an in-test fake — exercises the pipeline + the Kysely→db_query bridge.
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
-const mockInvoke = vi.mocked(invoke)
+const mockInvoke = vi.fn<(command: string, args: Record<string, unknown>) => Promise<unknown>>()
+setBridge({ invoke: mockInvoke, listen: async () => () => {} })
 
 beforeEach(() => {
   mockInvoke.mockReset()
   mockInvoke.mockImplementation(async (command, args) => {
-    const sql = String((args as { sql?: string } | undefined)?.sql ?? '')
+    const sql = String(args.sql ?? '')
     switch (command) {
       case 'note_read':
         return '# Hello\n\n[[World]]'

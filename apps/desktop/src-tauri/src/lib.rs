@@ -1,3 +1,12 @@
+//! The Reflect desktop shell: native primitives only.
+//!
+//! Per the architecture conventions, Rust owns *capabilities* (file IO, SQLite,
+//! watching, recents) and TypeScript (`@reflect/core`) owns *policy and
+//! composition* — a command here never encodes product rules beyond the
+//! primitive it exposes. Each module wires one capability:
+//! [`fs`] (graph file IO), [`db`] (SQLite index), [`watcher`] (file events),
+//! [`recents`] (recent-graphs store), [`error`] (the shared error contract).
+
 mod db;
 mod error;
 mod fs;
@@ -13,8 +22,17 @@ fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Route `tracing` output to stderr, honoring `RUST_LOG` (default `info`).
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    // `try_init` so a second call (tests, mobile re-entry) is a no-op, not a panic.
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    init_tracing();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

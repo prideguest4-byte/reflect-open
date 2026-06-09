@@ -13,7 +13,6 @@
     "db:codegen": "node scripts/generate-schema.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.0",
     "kysely": "^0.28.0"
   },
   "devDependencies": {

@@ -1,6 +1,7 @@
 import { dateFromDailyPath, isDaily } from '../graph/paths'
 import { parseFrontmatter, splitFrontmatter } from './frontmatter'
 import { parseBody } from './grammar'
+import { parseInlineLink } from './link-syntax'
 import type {
   AssetRef,
   Frontmatter,
@@ -21,8 +22,6 @@ import type {
  * ranges, and tags are scanned from the body while skipping code/URL regions.
  */
 
-// `[text](href)` / `![alt](href)`, tolerating a trailing "title" and <bracketed> href.
-const LINK_RE = /^!?\[([^\]]*)\]\(\s*(<[^>]*>|\S+?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)$/
 // A `#tag`: boundary, a leading letter, then tag chars. Excludes `##`, `#123`, `a#b`.
 const TAG_RE = /(^|\s)#(\p{L}[\p{L}\p{N}/_-]*)/gu
 // Inner of a wiki link, for plain-text rendering.
@@ -107,12 +106,12 @@ function readWikiLink(body: string, from: number, to: number, offset: number): W
 }
 
 function readLink(body: string, from: number, to: number, offset: number): MarkdownLink | null {
-  const match = LINK_RE.exec(body.slice(from, to))
-  if (!match) {
+  const parsed = parseInlineLink(body.slice(from, to))
+  if (!parsed) {
     return null // reference-style or otherwise non-inline link — skipped this wave
   }
-  const href = match[2].replace(/^<|>$/g, '')
-  return { href, text: match[1], from: from + offset, to: to + offset, domain: hostOf(href) }
+  const { href, text } = parsed
+  return { href, text, from: from + offset, to: to + offset, domain: hostOf(href) }
 }
 
 /** Body text minus the cut (syntax) ranges, with wiki brackets/pipes flattened. */

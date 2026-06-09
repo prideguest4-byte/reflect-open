@@ -1,32 +1,12 @@
-import { useCallback, useMemo, type ReactElement } from 'react'
-import { convertFileSrc } from '@tauri-apps/api/core'
-import { assetPath, writeAsset } from '@reflect/core'
+import type { ReactElement } from 'react'
 import { NoteEditor } from '@/editor/note-editor'
-import type { ImageOptions } from '@/editor/images'
+import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
 import { useGraph } from '@/providers/graph-provider'
 
 interface NotePaneProps {
   /** Graph-relative path of the note to edit. */
   path: string
-}
-
-const EXTENSION_BY_MIME: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-  'image/svg+xml': 'svg',
-}
-
-function base64Of(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  }
-  return btoa(binary)
 }
 
 /**
@@ -42,34 +22,10 @@ export function NotePane({ path }: NotePaneProps): ReactElement {
   const graphRoot = graph?.root ?? null
   const generation = graph?.generation ?? null
   const document = useNoteDocument(path, generation)
-
-  const resolveUrl = useCallback(
-    (src: string): string | null => {
-      if (/^https?:\/\//.test(src)) {
-        return src
-      }
-      if (graphRoot && src.startsWith('assets/')) {
-        return convertFileSrc(`${graphRoot}/${src}`)
-      }
-      return null
-    },
-    [graphRoot],
+  const { options: images, saveError: imageSaveError } = useImagePersistence(
+    graphRoot,
+    generation,
   )
-
-  const saveImage = useCallback(
-    async (file: File): Promise<string | null> => {
-      const extension = EXTENSION_BY_MIME[file.type]
-      if (!extension || generation === null) {
-        return null
-      }
-      const target = assetPath(`pasted-${Date.now()}.${extension}`)
-      await writeAsset(target, base64Of(await file.arrayBuffer()), generation)
-      return target
-    },
-    [generation],
-  )
-
-  const images = useMemo<ImageOptions>(() => ({ resolveUrl, saveImage }), [resolveUrl, saveImage])
 
   if (document.status === 'loading') {
     return (
@@ -112,6 +68,15 @@ export function NotePane({ path }: NotePaneProps): ReactElement {
         >
           Saving failed: {document.error}. Your edits are kept in the editor and the next
           successful save will persist them.
+        </div>
+      ) : null}
+
+      {imageSaveError !== null ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300"
+        >
+          Couldn’t save the pasted image: {imageSaveError}. It was not added to the note.
         </div>
       ) : null}
 

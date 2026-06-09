@@ -12,11 +12,15 @@ export {
   watchStop,
 } from './commands'
 export {
-  subscribeIndexChanges,
+  FILE_CHANGES_EVENT,
   subscribeFileChanges,
-  applyIndexChanges,
   type FileChange,
-} from './watch'
+} from './file-changes'
+export {
+  subscribeIndexChanges,
+  applyIndexChanges,
+  type ApplyErrorHandler,
+} from './live'
 export { hashContent } from './hash'
 export {
   buildIndexedNote,

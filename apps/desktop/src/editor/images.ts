@@ -29,6 +29,11 @@ export interface ImageOptions {
    * paste/drop of images falls through to the default behavior.
    */
   saveImage?: (file: File) => Promise<string | null>
+  /**
+   * Called when persisting a pasted/dropped image fails, so the host can show
+   * the user their image was not saved. Defaults to `console.error`.
+   */
+  onSaveError?: (error: unknown, file: File) => void
 }
 
 const imageKey = new PluginKey<DecorationSet>('reflect-images')
@@ -127,16 +132,20 @@ function imageFiles(data: DataTransfer | null): File[] {
 function insertSavedImages(
   view: EditorView,
   files: File[],
-  saveImage: (file: File) => Promise<string | null>,
+  options: ImageOptions & { saveImage: NonNullable<ImageOptions['saveImage']> },
   at?: number,
 ): void {
   void (async () => {
     for (const file of files) {
       let saved: string | null
       try {
-        saved = await saveImage(file)
+        saved = await options.saveImage(file)
       } catch (err) {
-        console.error('failed to save pasted image:', err)
+        if (options.onSaveError) {
+          options.onSaveError(err, file)
+        } else {
+          console.error('failed to save pasted image:', err)
+        }
         continue
       }
       if (saved === null || view.isDestroyed) {
@@ -163,19 +172,21 @@ function createImageInputPlugin(options: ImageOptions): Plugin {
     props: {
       handlePaste: (view, event) => {
         const files = imageFiles(event.clipboardData)
-        if (files.length === 0 || !options.saveImage) {
+        const saveImage = options.saveImage
+        if (files.length === 0 || !saveImage) {
           return false
         }
-        insertSavedImages(view, files, options.saveImage)
+        insertSavedImages(view, files, { ...options, saveImage })
         return true
       },
       handleDrop: (view, event) => {
         const files = imageFiles(event.dataTransfer)
-        if (files.length === 0 || !options.saveImage) {
+        const saveImage = options.saveImage
+        if (files.length === 0 || !saveImage) {
           return false
         }
         const drop = view.posAtCoords({ left: event.clientX, top: event.clientY })
-        insertSavedImages(view, files, options.saveImage, drop?.pos)
+        insertSavedImages(view, files, { ...options, saveImage }, drop?.pos)
         return true
       },
     },

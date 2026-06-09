@@ -1,0 +1,139 @@
+//! The index write path: note projections in, rows out.
+//!
+//! The TS↔Rust payload contract lives here ([`IndexedNote`]); all mutations are
+//! plain functions over a [`Connection`] so the command layer ([`super`]) owns
+//! transactions and generation gating while these stay directly unit-testable.
+
+use rusqlite::{params, Connection};
+use serde::Deserialize;
+
+use crate::error::AppResult;
+
+/// A note's extracted projection, built in TS (Plan 03) and applied as one
+/// row-set. Mirrors the `indexedNoteSchema` zod contract in
+/// `packages/core/src/indexing/indexed-note.ts` field-for-field (serde
+/// `rename_all = "camelCase"` matches the camelCase payload); a change on either
+/// side must be mirrored on the other.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexedNote {
+    pub(super) path: String,
+    pub(super) id: Option<String>,
+    pub(super) title: String,
+    pub(super) title_key: String,
+    pub(super) daily_date: Option<String>,
+    pub(super) is_private: bool,
+    pub(super) file_hash: String,
+    pub(super) mtime: i64,
+    pub(super) text: String,
+    pub(super) links: Vec<IndexedLink>,
+    pub(super) tags: Vec<String>,
+    pub(super) aliases: Vec<IndexedAlias>,
+    pub(super) assets: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct IndexedLink {
+    pub(super) kind: String,
+    pub(super) target_raw: String,
+    pub(super) target_key: String,
+    pub(super) alias: Option<String>,
+    pub(super) pos_from: i64,
+    pub(super) pos_to: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct IndexedAlias {
+    pub(super) alias: String,
+    pub(super) alias_key: String,
+}
+
+/// Replace all rows for `note.path` with its current projection. Caller wraps
+/// this in a transaction; statements are cached so a batch rebuild reuses them.
+///
+/// We clear the note via `remove_note` (which deletes the `notes` row and lets
+/// `ON DELETE CASCADE` clear every child table) and then insert fresh rows.
+/// The schema's foreign keys — not a hand-maintained `DELETE` list here — are the
+/// single source of truth for what belongs to a note, so new child tables (Plan
+/// 09 embeddings, etc.) need no change to this function.
+pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()> {
+    remove_note(conn, &note.path)?;
+
+    conn.prepare_cached(
+        "INSERT INTO notes(path, id, title, title_key, daily_date, is_private, file_hash, mtime, updated_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+    )?
+    .execute(params![
+        note.path,
+        note.id,
+        note.title,
+        note.title_key,
+        note.daily_date,
+        i64::from(note.is_private),
+        note.file_hash,
+        note.mtime,
+    ])?;
+    conn.prepare_cached("INSERT INTO note_text(note_path, text) VALUES(?1, ?2)")?
+        .execute(params![note.path, note.text])?;
+    {
+        let mut stmt = conn.prepare_cached(
+            "INSERT INTO links(source_path, kind, target_raw, target_key, alias, pos_from, pos_to)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        )?;
+        for link in &note.links {
+            stmt.execute(params![
+                note.path,
+                link.kind,
+                link.target_raw,
+                link.target_key,
+                link.alias,
+                link.pos_from,
+                link.pos_to
+            ])?;
+        }
+    }
+    {
+        let mut stmt = conn.prepare_cached("INSERT INTO tags(note_path, tag) VALUES(?1, ?2)")?;
+        for tag in &note.tags {
+            stmt.execute(params![note.path, tag])?;
+        }
+    }
+    {
+        let mut stmt = conn.prepare_cached(
+            "INSERT INTO aliases(note_path, alias, alias_key) VALUES(?1, ?2, ?3)",
+        )?;
+        for alias in &note.aliases {
+            stmt.execute(params![note.path, alias.alias, alias.alias_key])?;
+        }
+    }
+    {
+        let mut stmt =
+            conn.prepare_cached("INSERT INTO assets(note_path, asset_path) VALUES(?1, ?2)")?;
+        for asset in &note.assets {
+            stmt.execute(params![note.path, asset])?;
+        }
+    }
+    conn.prepare_cached("INSERT INTO search_fts(path, title, body) VALUES(?1, ?2, ?3)")?
+        .execute(params![note.path, note.title, note.text])?;
+    Ok(())
+}
+
+/// Wipe every derived table (for a full rebuild driven by TS). Deleting `notes`
+/// cascades to every child table; `search_fts` (a virtual table, no FK) is
+/// cleared explicitly. `index_meta` is intentionally preserved across a rebuild.
+pub(super) fn clear_index(conn: &Connection) -> AppResult<()> {
+    conn.execute_batch("DELETE FROM notes; DELETE FROM search_fts;")?;
+    Ok(())
+}
+
+/// Drop every row belonging to `path` (the `notes` row cascades to child
+/// tables; `search_fts` is standalone).
+pub(super) fn remove_note(conn: &Connection, path: &str) -> AppResult<()> {
+    conn.prepare_cached("DELETE FROM notes WHERE path = ?1")?
+        .execute(params![path])?;
+    conn.prepare_cached("DELETE FROM search_fts WHERE path = ?1")?
+        .execute(params![path])?;
+    Ok(())
+}

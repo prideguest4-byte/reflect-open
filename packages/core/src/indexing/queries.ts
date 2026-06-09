@@ -1,6 +1,7 @@
-import { db, type Database } from '@reflect/db'
+import type { Database } from '@reflect/db'
 import { sql, type Selectable } from 'kysely'
 import { resolveWikiLinkAsync, type Resolution } from '../markdown'
+import { db } from './db'
 import { buildFtsMatch } from './search-query'
 
 /**

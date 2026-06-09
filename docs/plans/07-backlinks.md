@@ -62,6 +62,13 @@ exists in Plan 09).
 
 ## Key decisions / contracts
 
+- **Adopt TanStack Query here.** This plan is where projection reads multiply
+  (backlinks panel, `[[` autocomplete), so it's the agreed point to introduce
+  `@tanstack/react-query` per [architecture-conventions §5](architecture-conventions.md):
+  `queryFn`s are `@reflect/core` getters (`getBacklinks`, `searchNotes`), the
+  watcher's `index:changed` events drive targeted `queryClient.invalidateQueries`,
+  and markdown setters invalidate after writing. Decided during the post-Plan-05
+  refactor (June 2026) rather than retrofitting earlier file-only screens.
 - **Backlinks stay plain.** No typed-entity layer in first wave; entities can later be
   projections over notes + aliases.
 - **Frontmatter `aliases` is the alias contract** (not title `//`).
