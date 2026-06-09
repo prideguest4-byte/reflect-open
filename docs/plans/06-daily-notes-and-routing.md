@@ -82,7 +82,7 @@ seam).
    shareable app routes and a small router over them:
    - `today`
    - `daily/:date` (`YYYY-MM-DD`)
-   - `note/:id` (regular note)
+   - `note/:path` (regular note — path-as-identity, Plan 03; `id` joins later)
    - `search/:query` (Plan 08)
    These are **product routes**, not page names. Back/forward (`⌘[` / `⌘]`) traverse a
    route history stack; focus + scroll position restore on navigation. Routes are the
@@ -93,7 +93,7 @@ seam).
    export type Route =
      | { kind: 'today' }
      | { kind: 'daily'; date: string }
-     | { kind: 'note'; id: string }
+     | { kind: 'note'; path: string }
      | { kind: 'search'; query: string }
    ```
 

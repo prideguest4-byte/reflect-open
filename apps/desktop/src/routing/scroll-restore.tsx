@@ -13,15 +13,17 @@ interface ScrollRestoredProps {
  * through its virtualizer; this is for plain views (note, search).
  */
 export function ScrollRestored({ className, children }: ScrollRestoredProps): ReactElement {
-  const { saveScrollState, savedScroll } = useRouter()
+  const { entryId, saveScrollState, savedScroll } = useRouter()
   const ref = useRef<HTMLDivElement | null>(null)
 
+  // Re-run whenever the history entry changes (back/forward, or note→note in
+  // the same mounted container): restore the entry's offset, or reset to the
+  // top for an entry that has none — never carry the previous view's position.
   useEffect(() => {
-    const restored = savedScroll()
-    if (restored !== null && ref.current) {
-      ref.current.scrollTop = restored
+    if (ref.current) {
+      ref.current.scrollTop = savedScroll() ?? 0
     }
-  }, [savedScroll])
+  }, [entryId, savedScroll])
 
   return (
     <div

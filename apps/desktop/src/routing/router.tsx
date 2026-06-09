@@ -23,6 +23,14 @@ import { routesEqual, type Route } from './route'
 
 interface RouterValue {
   route: Route
+  /** Stable identity of the current history entry (changes on back/forward). */
+  entryId: number
+  /**
+   * Increments on every `navigate` call — including a no-op re-navigation to
+   * the current route — so views can re-anchor on explicit intent (e.g. ⌘D
+   * while already on today re-scrolls the stream to today).
+   */
+  arrivalSeq: number
   navigate: (route: Route) => void
   back: () => void
   forward: () => void
@@ -61,6 +69,7 @@ export function RouterProvider({
     stack: [{ id: 0, route: initialRoute }],
     index: 0,
   })
+  const [arrivalSeq, setArrivalSeq] = useState(0)
   const nextId = useRef(1)
   /** Scroll offsets by entry id — a ref so scroll reporting never re-renders. */
   const scrollById = useRef(new Map<number, number>())
@@ -71,7 +80,11 @@ export function RouterProvider({
   const navigate = useCallback((route: Route) => {
     setHistory((current) => {
       if (routesEqual(current.stack[current.index].route, route)) {
-        return current // no-op navigation must not grow the stack
+        // No stack growth — but this is still an explicit arrival: forget the
+        // entry's saved offset so the view re-anchors to its target instead of
+        // restoring the old scroll position.
+        scrollById.current.delete(current.stack[current.index].id)
+        return current
       }
       const dropped = current.stack.slice(current.index + 1)
       for (const entry of dropped) {
@@ -83,6 +96,7 @@ export function RouterProvider({
       ]
       return { stack, index: stack.length - 1 }
     })
+    setArrivalSeq((seq) => seq + 1)
   }, [])
 
   const back = useCallback(() => {
@@ -109,6 +123,8 @@ export function RouterProvider({
   const value = useMemo<RouterValue>(
     () => ({
       route: history.stack[history.index].route,
+      entryId: history.stack[history.index].id,
+      arrivalSeq,
       navigate,
       back,
       forward,
@@ -117,7 +133,7 @@ export function RouterProvider({
       saveScrollState,
       savedScroll,
     }),
-    [history, navigate, back, forward, saveScrollState, savedScroll],
+    [history, arrivalSeq, navigate, back, forward, saveScrollState, savedScroll],
   )
 
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>

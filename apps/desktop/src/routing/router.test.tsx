@@ -74,6 +74,27 @@ describe('router', () => {
     expect(result.current.savedScroll()).toBe(40) // the note's own offset
   })
 
+  it('re-navigating to the current route clears its saved scroll (re-anchor intent)', () => {
+    const { result } = routerHook()
+    const seqBefore = result.current.arrivalSeq
+    act(() => result.current.saveScrollState(500)) // user scrolled away on today
+    act(() => result.current.navigate({ kind: 'today' })) // ⌘D while on today
+    expect(result.current.savedScroll()).toBeNull() // re-anchor, don't restore
+    expect(result.current.arrivalSeq).toBe(seqBefore + 1) // views are notified
+  })
+
+  it('entryId is stable per entry and changes across back/forward', () => {
+    const { result } = routerHook()
+    const todayId = result.current.entryId
+    act(() => result.current.navigate({ kind: 'note', path: 'notes/a.md' }))
+    const noteId = result.current.entryId
+    expect(noteId).not.toBe(todayId)
+    act(() => result.current.back())
+    expect(result.current.entryId).toBe(todayId)
+    act(() => result.current.forward())
+    expect(result.current.entryId).toBe(noteId)
+  })
+
   it('drops scroll offsets for a truncated forward branch', () => {
     const { result } = routerHook()
     act(() => result.current.navigate({ kind: 'note', path: 'notes/a.md' }))

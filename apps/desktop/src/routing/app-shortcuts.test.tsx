@@ -49,6 +49,22 @@ describe('app shortcuts', () => {
     expect(result.current.route).toEqual({ kind: 'today' })
   })
 
+  it('matches uppercase keys (caps lock) and ignores auto-repeat', () => {
+    const { result } = shortcutsHook()
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'N', metaKey: true }))
+    })
+    expect(result.current.route.kind).toBe('note') // caps lock still triggers
+
+    const opened = result.current.route
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'n', metaKey: true, repeat: true }),
+      )
+    })
+    expect(result.current.route).toEqual(opened) // held key doesn't spam notes
+  })
+
   it('ignores chords with extra modifiers', () => {
     const { result } = shortcutsHook()
     window.dispatchEvent(

@@ -1,13 +1,13 @@
 import { useCallback, useMemo, type ReactElement } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { assetPath, dateFromDailyPath, isDaily, resolveWikiTarget, writeAsset } from '@reflect/core'
+import { assetPath, resolveWikiTarget, writeAsset } from '@reflect/core'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import type { ImageOptions } from '@/editor/images'
 import { useNoteDocument } from '@/editor/use-note-document'
 import { isIsoDate } from '@/lib/dates'
 import { useGraph } from '@/providers/graph-provider'
 import { useRouter } from '@/routing/router'
-import type { Route } from '@/routing/route'
+import { routeForPath } from '@/routing/route'
 
 interface NotePaneProps {
   /** Graph-relative path of the note to edit. */
@@ -16,12 +16,8 @@ interface NotePaneProps {
   lazy?: boolean
   /** Focus the editor when it mounts (the navigated-to day/note). */
   autoFocus?: boolean
-}
-
-/** The route a resolved note path (daily or regular) navigates to. */
-function routeForPath(path: string): Route {
-  const date = isDaily(path) ? dateFromDailyPath(path) : null
-  return date ? { kind: 'daily', date } : { kind: 'note', path }
+  /** Called once the autofocus actually happened (the editor mounted). */
+  onAutoFocused?: () => void
 }
 
 const EXTENSION_BY_MIME: Record<string, string> = {
@@ -50,7 +46,12 @@ function base64Of(buffer: ArrayBuffer): string {
  * so a converter gap can never silently rewrite a file. Plan 06 mounts one of
  * these per day in the daily stream.
  */
-export function NotePane({ path, lazy = false, autoFocus = false }: NotePaneProps): ReactElement {
+export function NotePane({
+  path,
+  lazy = false,
+  autoFocus = false,
+  onAutoFocused,
+}: NotePaneProps): ReactElement {
   const { graph } = useGraph()
   const { navigate } = useRouter()
   const graphRoot = graph?.root ?? null
@@ -112,9 +113,10 @@ export function NotePane({ path, lazy = false, autoFocus = false }: NotePaneProp
       bindEditor(handle)
       if (handle && autoFocus) {
         handle.focus()
+        onAutoFocused?.()
       }
     },
-    [bindEditor, autoFocus],
+    [bindEditor, autoFocus, onAutoFocused],
   )
 
   if (document.status === 'loading') {

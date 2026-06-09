@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { dailyPath } from '@reflect/core'
 import { NotePane } from '@/components/note-pane'
@@ -21,7 +21,7 @@ interface DailyStreamProps {
  * bookkeeping; index↔date is pure offset math.
  */
 export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
-  const { saveScrollState, savedScroll } = useRouter()
+  const { arrivalSeq, saveScrollState, savedScroll } = useRouter()
   const scrollRef = useRef<HTMLDivElement | null>(null)
   // The window anchors at today-on-mount and stays stable for the view's life.
   const [window] = useState(() => createDayWindow(todayIso()))
@@ -37,11 +37,19 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
 
   // Only the day navigated to receives focus, once per navigation — a row that
   // scrolls offscreen and back must not steal focus from wherever the user is.
+  // The flag is consumed when the editor actually mounts and focuses (not at
+  // render time), so a virtualizer re-render before the lazy load completes
+  // can't drop the focus.
   const focusPending = useRef<string | null>(null)
+  const consumeFocus = useCallback(() => {
+    focusPending.current = null
+  }, [])
 
+  // Re-anchor on every explicit arrival (`arrivalSeq` bumps even when ⌘D is
+  // pressed while already on today — the router clears the entry's saved
+  // offset for that case). A back/forward-restored entry carries its offset;
+  // a fresh navigation anchors to the target day.
   useEffect(() => {
-    // A back/forward-restored entry carries its scroll offset; a fresh
-    // navigation does not and anchors to the target day instead.
     const restored = savedScroll()
     if (restored !== null) {
       virtualizer.scrollToOffset(restored)
@@ -49,7 +57,7 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
     }
     focusPending.current = targetDate
     virtualizer.scrollToIndex(indexOfDate(window, targetDate), { align: 'start' })
-  }, [targetDate, window, virtualizer, savedScroll])
+  }, [arrivalSeq, targetDate, window, virtualizer, savedScroll])
 
   return (
     <div
@@ -65,9 +73,6 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
           const date = dateAtIndex(window, item.index)
           const isToday = date === today
           const autoFocus = focusPending.current === date
-          if (autoFocus) {
-            focusPending.current = null
-          }
           return (
             <div
               key={date}
@@ -85,7 +90,12 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
                     </span>
                   ) : null}
                 </h2>
-                <NotePane path={dailyPath(date)} lazy autoFocus={autoFocus} />
+                <NotePane
+                  path={dailyPath(date)}
+                  lazy
+                  autoFocus={autoFocus}
+                  onAutoFocused={consumeFocus}
+                />
               </section>
             </div>
           )

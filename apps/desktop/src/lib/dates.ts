@@ -7,11 +7,11 @@ import { addDays, format, isValid, parse } from 'date-fns'
  * repeat a day. Nothing else in the app may compute dates by hand.
  */
 
-const ISO_DATE = 'yyyy-MM-dd'
+const ISO_DATE_FORMAT = 'yyyy-MM-dd'
 
 /** Today's local calendar date as `YYYY-MM-DD`. */
 export function todayIso(): string {
-  return format(new Date(), ISO_DATE)
+  return format(new Date(), ISO_DATE_FORMAT)
 }
 
 /** Is `value` a real calendar date in ISO `YYYY-MM-DD` form? */
@@ -19,15 +19,15 @@ export function isIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false
   }
-  return isValid(parse(value, ISO_DATE, new Date()))
+  return isValid(parse(value, ISO_DATE_FORMAT, new Date()))
 }
 
 /** The ISO date `days` after `date` (negative for before). DST-safe. */
 export function addDaysIso(date: string, days: number): string {
-  return format(addDays(parse(date, ISO_DATE, new Date()), days), ISO_DATE)
+  return format(addDays(parse(date, ISO_DATE_FORMAT, new Date()), days), ISO_DATE_FORMAT)
 }
 
 /** Human label for an ISO date, e.g. `Tuesday, June 9`. */
 export function formatDayLabel(date: string): string {
-  return format(parse(date, ISO_DATE, new Date()), 'EEEE, MMMM d')
+  return format(parse(date, ISO_DATE_FORMAT, new Date()), 'EEEE, MMMM d')
 }

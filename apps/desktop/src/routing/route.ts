@@ -7,6 +7,9 @@
  * note route carries `path` — the reserved frontmatter `id` can join it later
  * without breaking the shape.
  */
+import { dateFromDailyPath, isDaily } from '@reflect/core'
+import { isIsoDate } from '@/lib/dates'
+
 export type Route =
   | { kind: 'today' }
   | { kind: 'daily'; date: string }
@@ -28,4 +31,15 @@ export function routesEqual(a: Route, b: Route): boolean {
     case 'search':
       return a.query === (b as Extract<Route, { kind: 'search' }>).query
   }
+}
+
+/**
+ * The route a resolved note path navigates to: a real-calendar daily date opens
+ * the daily view; anything else — including a `daily/…` file whose name is a
+ * well-formed but impossible date (e.g. `2026-02-31`), which `dailyPath` would
+ * reject — opens as a plain note so navigation can never crash the workspace.
+ */
+export function routeForPath(path: string): Route {
+  const date = isDaily(path) ? dateFromDailyPath(path) : null
+  return date !== null && isIsoDate(date) ? { kind: 'daily', date } : { kind: 'note', path }
 }

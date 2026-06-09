@@ -3,7 +3,7 @@ import { getAppVersion, type GraphInfo } from '@reflect/core'
 import { AppShell } from '@/components/app-shell'
 import { DailyStream } from '@/components/daily-stream'
 import { NotePane } from '@/components/note-pane'
-import { todayIso } from '@/lib/dates'
+import { isIsoDate, todayIso } from '@/lib/dates'
 import { useGraph } from '@/providers/graph-provider'
 import { useTheme } from '@/providers/theme-provider'
 import { useAppShortcuts } from '@/routing/app-shortcuts'
@@ -123,7 +123,9 @@ function RouteContent(): ReactElement {
     case 'today':
       return <DailyStream targetDate={todayIso()} />
     case 'daily':
-      return <DailyStream targetDate={route.date} />
+      // A malformed date (impossible calendar day) anchors to today instead of
+      // letting dailyPath throw mid-render.
+      return <DailyStream targetDate={isIsoDate(route.date) ? route.date : todayIso()} />
     case 'note':
       return (
         <ScrollRestored className="h-full overflow-auto px-6 py-8">
