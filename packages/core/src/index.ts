@@ -24,8 +24,10 @@ export {
 } from './graph/paths'
 export {
   graphInfoSchema,
+  recentGraphSchema,
   fileMetaSchema,
   type GraphInfo,
+  type RecentGraph,
   type FileMeta,
 } from './graph/schemas'
 export {
@@ -36,4 +38,6 @@ export {
   moveNote,
   deleteNote,
   listFiles,
+  recentGraphs,
+  forgetRecent,
 } from './graph/commands'

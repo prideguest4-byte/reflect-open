@@ -35,6 +35,10 @@ pub struct GraphInfo {
     pub root: String,
     /// Display name (the root folder name).
     pub name: String,
+    /// File-sync provider this graph appears to live inside (e.g. `"icloud"`),
+    /// or `None`. A `Some(_)` means the UI should warn — Reflect syncs via
+    /// GitHub only and a cloud-synced graph risks index corruption (Plan 12/04).
+    pub cloud_sync: Option<String>,
 }
 
 /// Metadata for a file inside the graph.
@@ -149,15 +153,24 @@ fn collect_markdown(root: &Path, dir: &str, out: &mut Vec<FileMeta>) -> AppResul
     Ok(())
 }
 
-fn graph_info(root: &Path) -> AppResult<GraphInfo> {
+fn graph_info(root: &Path) -> GraphInfo {
     let name = root
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    Ok(GraphInfo {
+    GraphInfo {
         root: root.to_string_lossy().into_owned(),
         name,
-    })
+        cloud_sync: crate::recents::detect_cloud_sync(root).map(str::to_string),
+    }
+}
+
+/// Set the active root, record it in recents, and return its info.
+fn activate(state: &State<GraphState>, root: &Path) -> AppResult<GraphInfo> {
+    set_root(state, root)?;
+    let info = graph_info(root);
+    crate::recents::record(root, &info.name)?;
+    Ok(info)
 }
 
 fn current_root(state: &State<GraphState>) -> AppResult<PathBuf> {
@@ -186,8 +199,7 @@ pub fn graph_create(path: String, state: State<GraphState>) -> AppResult<GraphIn
     let root = PathBuf::from(&path);
     fs::create_dir_all(&root)?;
     bootstrap(&root)?;
-    set_root(&state, &root)?;
-    graph_info(&root)
+    activate(&state, &root)
 }
 
 /// Open an existing graph at `path`, ensuring the standard layout exists.
@@ -198,8 +210,7 @@ pub fn graph_open(path: String, state: State<GraphState>) -> AppResult<GraphInfo
         return Err(AppError::not_found(format!("not a directory: {path}")));
     }
     bootstrap(&root)?;
-    set_root(&state, &root)?;
-    graph_info(&root)
+    activate(&state, &root)
 }
 
 /// Read a note's markdown by graph-relative path.

@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import { call } from '../ipc/invoke'
-import { fileMetaSchema, graphInfoSchema, type FileMeta, type GraphInfo } from './schemas'
+import {
+  fileMetaSchema,
+  graphInfoSchema,
+  recentGraphSchema,
+  type FileMeta,
+  type GraphInfo,
+  type RecentGraph,
+} from './schemas'
 
 /** Commands that return `()` from Rust serialize as `null` over IPC. */
 const voidSchema = z.unknown()
@@ -38,4 +45,14 @@ export async function deleteNote(path: string): Promise<void> {
 /** List markdown notes under `daily/` and `notes/`. */
 export async function listFiles(): Promise<FileMeta[]> {
   return call('list_files', {}, z.array(fileMetaSchema))
+}
+
+/** The recently-opened graphs, newest first. */
+export async function recentGraphs(): Promise<RecentGraph[]> {
+  return call('recent_graphs', {}, z.array(recentGraphSchema))
+}
+
+/** Drop a graph from the recents list (by root path). */
+export async function forgetRecent(root: string): Promise<void> {
+  await call('forget_recent', { root }, voidSchema)
 }
