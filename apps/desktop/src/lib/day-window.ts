@@ -1,5 +1,5 @@
-import { differenceInCalendarDays, parse } from 'date-fns'
-import { addDaysIso } from './dates'
+import { differenceInCalendarDays } from 'date-fns'
+import { addDaysIso, parseIsoDate } from './dates'
 
 /**
  * The daily stream's virtual window (Plan 06b): a **fixed** chronological range
@@ -40,9 +40,6 @@ export function dateAtIndex(window: DayWindow, index: number): string {
  * outside the window still scrolls to the nearest edge instead of erroring.
  */
 export function indexOfDate(window: DayWindow, date: string): number {
-  const offset = differenceInCalendarDays(
-    parse(date, 'yyyy-MM-dd', new Date()),
-    parse(window.start, 'yyyy-MM-dd', new Date()),
-  )
+  const offset = differenceInCalendarDays(parseIsoDate(date), parseIsoDate(window.start))
   return Math.max(0, Math.min(window.count - 1, offset))
 }

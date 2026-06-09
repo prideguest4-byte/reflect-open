@@ -21,7 +21,7 @@ interface DailyStreamProps {
  * bookkeeping; index↔date is pure offset math.
  */
 export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
-  const { arrivalSeq, saveScrollState, savedScroll } = useRouter()
+  const { arrivalSeq, entryId, saveScrollState, savedScroll } = useRouter()
   const scrollRef = useRef<HTMLDivElement | null>(null)
   // The window anchors at today-on-mount and stays stable for the view's life.
   const [window] = useState(() => createDayWindow(todayIso()))
@@ -57,7 +57,10 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
     }
     focusPending.current = targetDate
     virtualizer.scrollToIndex(indexOfDate(window, targetDate), { align: 'start' })
-  }, [arrivalSeq, targetDate, window, virtualizer, savedScroll])
+    // entryId: back/forward between e.g. a `today` entry and a `daily` entry of
+    // the same calendar day changes neither targetDate nor arrivalSeq, but each
+    // entry carries its own scroll offset to reapply.
+  }, [arrivalSeq, entryId, targetDate, window, virtualizer, savedScroll])
 
   return (
     <div
