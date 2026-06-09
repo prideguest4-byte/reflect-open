@@ -31,7 +31,13 @@ export interface IndexPassOptions {
   signal?: AbortSignal
 }
 
-/** Full rebuild: wipe derived tables and re-index every markdown file. */
+/**
+ * Full rebuild: wipe derived tables and re-index every markdown file. Used for
+ * explicit repair / schema-bump triggers, not the hot graph-switch path (that's
+ * {@link reconcileIndex}). Abort is checked **only before** the wipe — once we've
+ * cleared, we run to completion so an interrupted rebuild can't leave the index
+ * empty or half-populated.
+ */
 export async function rebuildIndex(options?: IndexPassOptions): Promise<void> {
   if (options?.signal?.aborted) {
     return // don't wipe the current index for an already-cancelled pass
@@ -39,9 +45,6 @@ export async function rebuildIndex(options?: IndexPassOptions): Promise<void> {
   await clearIndex()
   const files = await listFiles()
   for (const file of files) {
-    if (options?.signal?.aborted) {
-      return
-    }
     await indexNote(file.path, { mtime: file.modifiedMs })
   }
 }
@@ -50,6 +53,14 @@ export async function rebuildIndex(options?: IndexPassOptions): Promise<void> {
  * Reconcile the index with disk (the open path): re-index files whose content
  * hash changed, and drop rows for files that no longer exist. Cheaper than a full
  * rebuild on an already-populated index, and abortable on graph switch.
+ *
+ * The caller (GraphProvider) aborts the prior reconcile and **awaits its
+ * settlement before calling `openIndex` to swap the Rust connection**, so a pass
+ * cannot run concurrently with a connection swap. The abort checks here make a
+ * superseded pass stop promptly; a generation token bound to the index
+ * connection in Rust — making stale writes caller-independent — is planned with
+ * the live watcher (Plan 04b), where indexing also runs outside this serialized
+ * open flow.
  */
 export async function reconcileIndex(options?: IndexPassOptions): Promise<void> {
   const signal = options?.signal
