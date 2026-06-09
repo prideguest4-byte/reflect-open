@@ -32,11 +32,19 @@ export function toAppError(value: unknown): AppError {
   if (parsed.success) {
     return parsed.data
   }
-  const message =
-    value instanceof Error
-      ? value.message
-      : typeof value === 'string'
-        ? value
-        : JSON.stringify(value)
+  let message: string
+  if (value instanceof Error) {
+    message = value.message
+  } else if (typeof value === 'string') {
+    message = value
+  } else {
+    try {
+      // `JSON.stringify` can throw (BigInt, circular refs); never let the error
+      // path itself throw.
+      message = JSON.stringify(value)
+    } catch {
+      message = String(value)
+    }
+  }
   return { kind: 'unknown', message }
 }

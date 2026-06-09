@@ -18,6 +18,17 @@ export function dailyPath(date: string): string {
   if (!ISO_DATE_RE.test(date)) {
     throw new Error(`dailyPath expects an ISO YYYY-MM-DD date, got: ${date}`)
   }
+  // Reject well-formatted but invalid dates (e.g. 2026-13-99, 2026-02-31) by
+  // round-tripping through UTC and comparing the components.
+  const [year, month, day] = date.split('-').map(Number)
+  const utc = new Date(Date.UTC(year, month - 1, day))
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== month - 1 ||
+    utc.getUTCDate() !== day
+  ) {
+    throw new Error(`dailyPath expects a valid calendar date, got: ${date}`)
+  }
   return `${DAILY_DIR}/${date}.md`
 }
 

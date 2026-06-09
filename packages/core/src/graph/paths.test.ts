@@ -17,6 +17,11 @@ describe('graph paths', () => {
     expect(() => dailyPath('2026-6-9')).toThrow()
   })
 
+  it('rejects well-formatted but invalid calendar dates', () => {
+    expect(() => dailyPath('2026-13-01')).toThrow()
+    expect(() => dailyPath('2026-02-31')).toThrow()
+  })
+
   it('builds note and asset paths', () => {
     expect(notePath('charlotte-maccaw')).toBe('notes/charlotte-maccaw.md')
     expect(assetPath('screenshot.png')).toBe('assets/screenshot.png')
