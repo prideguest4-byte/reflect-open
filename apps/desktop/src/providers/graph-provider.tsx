@@ -123,36 +123,41 @@ export function GraphProvider({ children }: { children: ReactNode }) {
           }
           setGraph(info)
           setStatus('ready')
-          // Always tear down the previous graph's subscription + watcher, even
-          // when this open's index failed — otherwise a failed openIndex leaves
-          // the old live subscription attached to a different graph.
+          // Tear down the previous graph's live subscription unconditionally, so
+          // a failed openIndex can't leave it attached to a different graph.
           indexUnlisten.current?.()
           indexUnlisten.current = null
-          void watchStop().catch(() => {})
-          if (generation !== null) {
+
+          if (generation === null) {
+            // No index for this graph — stop any watcher from the previous one.
+            void watchStop().catch(() => {})
+          } else {
+            // Index sync, sequenced so the passes never write concurrently:
+            // reconcile the whole graph first, then subscribe (listener up), then
+            // start the Rust watcher (which replaces any previous one). reconcile
+            // is abortable; seq checks bail if a newer open supersedes us.
             const controller = new AbortController()
             indexAbort.current = controller
-            reconcileDone.current = reconcileIndex({
-              generation,
-              signal: controller.signal,
-            }).catch((err) => {
-              console.error('index reconcile failed:', messageOf(err))
-            })
-            // Start the live watcher and subscribe with this generation, so
-            // ongoing edits re-index incrementally. Stale events from a previous
-            // graph carry the old generation and are dropped by Rust.
-            void (async () => {
+            reconcileDone.current = (async () => {
               try {
-                await watchStart()
-                const unlisten = await subscribeIndexChanges(generation)
+                await reconcileIndex({ generation, signal: controller.signal })
                 if (seq !== openSeq.current) {
-                  unlisten() // a newer open superseded us mid-setup — tear down
                   return
                 }
-                indexUnlisten.current?.() // drop any racing setup before binding
+                const unlisten = await subscribeIndexChanges(generation)
+                if (seq !== openSeq.current) {
+                  unlisten()
+                  return
+                }
+                await watchStart()
+                if (seq !== openSeq.current) {
+                  unlisten()
+                  return
+                }
+                indexUnlisten.current?.()
                 indexUnlisten.current = unlisten
               } catch (err) {
-                console.error('index watcher start failed:', messageOf(err))
+                console.error('index sync failed:', messageOf(err))
               }
             })()
           }
