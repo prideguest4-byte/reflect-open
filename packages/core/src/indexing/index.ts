@@ -8,7 +8,10 @@ export {
   applyIndexedNotes,
   removeFromIndex,
   clearIndex,
+  watchStart,
+  watchStop,
 } from './commands'
+export { subscribeIndexChanges, applyIndexChanges, type FileChange } from './watch'
 export { hashContent } from './hash'
 export {
   buildIndexedNote,

@@ -60,8 +60,8 @@ export function GraphProvider({ children }: { children: ReactNode }) {
   const openSeq = useRef(0)
   // Serializes backend opens (see `openRecent`).
   const openChain = useRef<Promise<unknown>>(Promise.resolve())
-  // The active graph's index lifecycle (open + background reconcile), so a graph
-  // switch can stop the prior pass before the Rust index connection is swapped.
+  // The active graph's index lifecycle (open → reconcile → subscribe → watch), so
+  // a graph switch can stop the prior pass before the Rust connection is swapped.
   const indexRef = useRef(
     createGraphIndex({
       onError: (stage, err) => console.error(`index ${stage} failed:`, messageOf(err)),
@@ -109,15 +109,15 @@ export function GraphProvider({ children }: { children: ReactNode }) {
           await index.stop()
           // Open the index *before* 'ready' so reads can't hit the previous
           // graph's index. Best-effort: an index failure doesn't block editing.
-          const indexReady = await index.open()
+          const generation = await index.open()
           if (seq !== openSeq.current) {
             return
           }
           setGraph(info)
           setStatus('ready')
-          if (indexReady) {
-            index.reconcile()
-          }
+          // Background-sync the index (reconcile → subscribe → watch), bailing if
+          // a newer open supersedes this one.
+          index.sync(generation, () => seq !== openSeq.current)
         } catch (err) {
           if (seq !== openSeq.current) {
             return
