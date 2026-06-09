@@ -21,6 +21,16 @@ describe('meowdown markdown round-trip', () => {
     'Link to [[2026-06-09]] daily note.',
     '**bold** and _em_ and `code`',
     '> a quote',
+    // Tight lists stay tight as of meowdown 0.3.0 (no blank line between
+    // items), so list edits no longer create spurious sync diffs (Plan 12).
+    '- item one\n- item two',
+    '- parent\n  - child',
+    // Task lists (meowdown 0.3.0): `- [ ]`/`- [x]` parse to flat-list nodes
+    // with kind "task" + checked, keep their text, and serialize back
+    // byte-identically. Foundation for Plan 05 step 8 (checkbox toggling).
+    '- [ ] todo',
+    '- [x] done',
+    '- [ ] todo\n- [x] done\n- plain item',
   ]
 
   for (const markdown of cases) {
@@ -35,12 +45,11 @@ describe('meowdown markdown round-trip', () => {
     expect(roundtrip('# Heading')).toBe('# Heading\n')
   })
 
-  // KNOWN NORMALIZATION (Plan 05 follow-up): docToMarkdown emits "loose" lists,
-  // inserting a blank line between items. Not content loss, but it would create
-  // spurious sync diffs (Plan 12) against tight-list input, so the editor needs
-  // a tight-list serializer option or a normalize-on-import step before relying
-  // on byte-stable round-trips.
-  it('serializes lists as loose (documents the normalization)', () => {
-    expect(roundtrip('- item one\n- item two')).toBe('- item one\n\n- item two\n')
+  it('parses a task item to the flat-list task kind with its text intact', () => {
+    const editor: TypedEditor = createEditor({ extension: defineEditorExtension() })
+    const doc = markdownToDoc(editor, '- [x] done').toJSON() as {
+      content: Array<{ attrs: { kind: string; checked: boolean } }>
+    }
+    expect(doc.content[0].attrs).toMatchObject({ kind: 'task', checked: true })
   })
 })

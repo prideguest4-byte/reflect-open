@@ -71,7 +71,8 @@ either **remount** with `key={notePath}` or drive the instance imperatively
 |---|---|
 | paragraph, heading, blockquote, list, code block (highlight TBD), table, horizontal rule | **`[[wiki links]]`** node/mark + Lezer rule + converter (→ Plan 07 autocomplete) |
 | marks: strong, em, code, strikethrough, link | **images** — Lezer parses `Image`, but there is no PM `image` node yet |
-| `MarkMode` live-preview + clean clipboard copy | **task checkboxes** — Lezer parses `Task`/`TaskMarker`, no interactive PM node yet |
+| `MarkMode` live-preview + clean clipboard copy | |
+| **task checkboxes** (≥0.3.0) — `- [ ]`/`- [x]` ↔ flat-list `kind:"task"`+`checked`, click-to-toggle via prosekit's list extension | |
 
 Gaps are met by writing local ProseKit/Lezer extensions and, where it makes sense,
 upstreaming to meowdown (same author as ProseKit). Wiki-links are the priority because
@@ -114,9 +115,11 @@ they are Reflect's organizing primitive.
    `Image`). Paste/drop an image → write to `assets/` (Plan 02) → insert a relative
    markdown link → render inline. Large-file guardrail hook for Plan 12.
 
-8. **Task checkboxes.** Add an interactive checkbox node mapped to `- [ ]`/`- [x]` (Lezer
-   emits `Task`/`TaskMarker`) that toggles the underlying markdown. (Tasks-as-a-feature
-   stay deferred; this is just faithful editor rendering.)
+8. **Task checkboxes.** ✅ Done via meowdown 0.3.0: `markdownToDoc` converts
+   `- [ ]`/`- [x]` to flat-list `kind:"task"` nodes, prosekit's list extension toggles
+   `checked` on marker click, and `docToMarkdown` serializes the toggle back. Pinned by
+   `src/editor/task-checkbox.test.tsx`. (Tasks-as-a-feature stay deferred; this is just
+   faithful editor rendering.)
 
 9. **Keyboard ergonomics (product identity).** meowdown ships base keymap/commands/
    history. Layer Reflect shortcuts (bold/italic, toggle heading, toggle checkbox, indent/
@@ -153,11 +156,11 @@ they are Reflect's organizing primitive.
 
 ## Risks
 
-- **Round-trip normalization** in `docToMarkdown` — **confirmed** by the Plan 01 spike:
-  inline content (incl. wiki-links) is byte-identical, but lists serialize "loose" (a blank
-  line between items). Mitigate: add a tight-list serializer option or normalize-on-import,
-  and gate with the round-trip corpus; for edits to *closed* notes, prefer Plan 03 splice
-  edits over re-serializing.
+- **Round-trip normalization** in `docToMarkdown` — **resolved** in meowdown 0.3.0: tight
+  lists stay tight and task lists round-trip byte-identically. Remaining (acceptable)
+  normalizations: loose single-paragraph lists come back tight, `[X]` → `[x]`, ordered
+  start numbers don't auto-increment. Gate with the round-trip corpus; for edits to
+  *closed* notes, prefer Plan 03 splice edits over re-serializing.
 - **meowdown maturity (v0.2.0, empty README, missing nodes).** We own the editor (first-
   party) so we can extend/upstream directly, but it's pre-1.0: pin versions, budget time
   for the wiki-link/image/checkbox extensions, and track ProseKit `0.x` churn.
