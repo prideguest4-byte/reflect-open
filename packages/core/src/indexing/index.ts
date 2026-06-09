@@ -5,6 +5,7 @@
 export {
   openIndex,
   applyIndexedNote,
+  applyIndexedNotes,
   removeFromIndex,
   clearIndex,
   watchStart,
@@ -14,6 +15,9 @@ export { subscribeIndexChanges, applyIndexChanges, type FileChange } from './wat
 export { hashContent } from './hash'
 export {
   buildIndexedNote,
+  indexedNoteSchema,
+  indexedLinkSchema,
+  indexedAliasSchema,
   type IndexedNote,
   type IndexedLink,
   type IndexedAlias,

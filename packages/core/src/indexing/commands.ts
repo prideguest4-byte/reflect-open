@@ -20,6 +20,19 @@ export async function applyIndexedNote(note: IndexedNote, generation: number): P
   await call('index_apply', { note, generation }, voidSchema)
 }
 
+/**
+ * Apply many notes' projections in one Rust transaction (for `generation`). Used
+ * by the full rebuild, where a transaction (and prepared-statement reuse) per
+ * note would be needless overhead. A no-op for an empty batch — it never touches
+ * the backend.
+ */
+export async function applyIndexedNotes(notes: IndexedNote[], generation: number): Promise<void> {
+  if (notes.length === 0) {
+    return
+  }
+  await call('index_apply_batch', { notes, generation }, voidSchema)
+}
+
 /** Remove a note (deleted on disk) from the index (for `generation`). */
 export async function removeFromIndex(path: string, generation: number): Promise<void> {
   await call('index_remove', { path, generation }, voidSchema)

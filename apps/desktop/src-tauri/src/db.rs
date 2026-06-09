@@ -80,6 +80,10 @@ pub fn open_in_memory() -> AppResult<Connection> {
 /// (or vice versa) — so a reconcile/reindex pass from a previous graph can never
 /// mutate a newly-opened index, regardless of caller timing (needed once the
 /// watcher in Plan 04b indexes outside the serialized open flow).
+///
+/// The single connection also means reads (`db_query`) and writes (`index_*`)
+/// are serialized — a long FTS scan briefly blocks an apply and vice versa.
+/// Acceptable at first-wave scale; a read-pool / WAL reader split can come later.
 #[derive(Default)]
 struct IndexInner {
     generation: u64,
@@ -161,7 +165,11 @@ fn run_query(conn: &Connection, sql: &str, params: &[Value]) -> AppResult<Vec<Ma
 
 // ---- write path ------------------------------------------------------------
 
-/// A note's extracted projection, built in TS (Plan 03) and applied as one row-set.
+/// A note's extracted projection, built in TS (Plan 03) and applied as one
+/// row-set. Mirrors the `indexedNoteSchema` zod contract in
+/// `packages/core/src/indexing/indexed-note.ts` field-for-field (serde
+/// `rename_all = "camelCase"` matches the camelCase payload); a change on either
+/// side must be mirrored on the other.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexedNote {
@@ -198,54 +206,40 @@ struct IndexedAlias {
     alias_key: String,
 }
 
-/// Replace all derived rows for `note.path` and upsert its `notes` row. Caller
-/// wraps this in a transaction.
+/// Replace all rows for `note.path` with its current projection. Caller wraps
+/// this in a transaction; statements are cached so a batch rebuild reuses them.
+///
+/// We clear the note via `remove_note` (which deletes the `notes` row and lets
+/// `ON DELETE CASCADE` clear every child table) and then insert fresh rows.
+/// The schema's foreign keys — not a hand-maintained `DELETE` list here — are the
+/// single source of truth for what belongs to a note, so new child tables (Plan
+/// 09 embeddings, etc.) need no change to this function.
 fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()> {
-    conn.execute(
-        "DELETE FROM links WHERE source_path = ?1",
-        params![note.path],
-    )?;
-    conn.execute("DELETE FROM tags WHERE note_path = ?1", params![note.path])?;
-    conn.execute(
-        "DELETE FROM aliases WHERE note_path = ?1",
-        params![note.path],
-    )?;
-    conn.execute(
-        "DELETE FROM assets WHERE note_path = ?1",
-        params![note.path],
-    )?;
-    conn.execute(
-        "DELETE FROM note_text WHERE note_path = ?1",
-        params![note.path],
-    )?;
-    conn.execute("DELETE FROM search_fts WHERE path = ?1", params![note.path])?;
+    remove_note(conn, &note.path)?;
 
-    conn.execute(
+    conn.prepare_cached(
         "INSERT INTO notes(path, id, title, title_key, daily_date, is_private, file_hash, mtime, updated_at)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
-         ON CONFLICT(path) DO UPDATE SET
-           id = ?2, title = ?3, title_key = ?4, daily_date = ?5,
-           is_private = ?6, file_hash = ?7, mtime = ?8, updated_at = ?8",
-        params![
-            note.path,
-            note.id,
-            note.title,
-            note.title_key,
-            note.daily_date,
-            i64::from(note.is_private),
-            note.file_hash,
-            note.mtime,
-        ],
-    )?;
-    conn.execute(
-        "INSERT INTO note_text(note_path, text) VALUES(?1, ?2)",
-        params![note.path, note.text],
-    )?;
-    for link in &note.links {
-        conn.execute(
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+    )?
+    .execute(params![
+        note.path,
+        note.id,
+        note.title,
+        note.title_key,
+        note.daily_date,
+        i64::from(note.is_private),
+        note.file_hash,
+        note.mtime,
+    ])?;
+    conn.prepare_cached("INSERT INTO note_text(note_path, text) VALUES(?1, ?2)")?
+        .execute(params![note.path, note.text])?;
+    {
+        let mut stmt = conn.prepare_cached(
             "INSERT INTO links(source_path, kind, target_raw, target_key, alias, pos_from, pos_to)
              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
+        )?;
+        for link in &note.links {
+            stmt.execute(params![
                 note.path,
                 link.kind,
                 link.target_raw,
@@ -253,47 +247,49 @@ fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()> {
                 link.alias,
                 link.pos_from,
                 link.pos_to
-            ],
-        )?;
+            ])?;
+        }
     }
-    for tag in &note.tags {
-        conn.execute(
-            "INSERT INTO tags(note_path, tag) VALUES(?1, ?2)",
-            params![note.path, tag],
-        )?;
+    {
+        let mut stmt = conn.prepare_cached("INSERT INTO tags(note_path, tag) VALUES(?1, ?2)")?;
+        for tag in &note.tags {
+            stmt.execute(params![note.path, tag])?;
+        }
     }
-    for alias in &note.aliases {
-        conn.execute(
+    {
+        let mut stmt = conn.prepare_cached(
             "INSERT INTO aliases(note_path, alias, alias_key) VALUES(?1, ?2, ?3)",
-            params![note.path, alias.alias, alias.alias_key],
         )?;
+        for alias in &note.aliases {
+            stmt.execute(params![note.path, alias.alias, alias.alias_key])?;
+        }
     }
-    for asset in &note.assets {
-        conn.execute(
-            "INSERT INTO assets(note_path, asset_path) VALUES(?1, ?2)",
-            params![note.path, asset],
-        )?;
+    {
+        let mut stmt =
+            conn.prepare_cached("INSERT INTO assets(note_path, asset_path) VALUES(?1, ?2)")?;
+        for asset in &note.assets {
+            stmt.execute(params![note.path, asset])?;
+        }
     }
-    conn.execute(
-        "INSERT INTO search_fts(path, title, body) VALUES(?1, ?2, ?3)",
-        params![note.path, note.title, note.text],
-    )?;
+    conn.prepare_cached("INSERT INTO search_fts(path, title, body) VALUES(?1, ?2, ?3)")?
+        .execute(params![note.path, note.title, note.text])?;
     Ok(())
 }
 
-/// Wipe every derived table (for a full rebuild driven by TS).
+/// Wipe every derived table (for a full rebuild driven by TS). Deleting `notes`
+/// cascades to every child table; `search_fts` (a virtual table, no FK) is
+/// cleared explicitly. `index_meta` is intentionally preserved across a rebuild.
 fn clear_index(conn: &Connection) -> AppResult<()> {
-    conn.execute_batch(
-        "DELETE FROM notes; DELETE FROM note_text; DELETE FROM links; DELETE FROM tags;
-         DELETE FROM aliases; DELETE FROM assets; DELETE FROM search_fts;",
-    )?;
+    conn.execute_batch("DELETE FROM notes; DELETE FROM search_fts;")?;
     Ok(())
 }
 
 fn remove_note(conn: &Connection, path: &str) -> AppResult<()> {
     // notes cascades to child tables; search_fts is standalone.
-    conn.execute("DELETE FROM notes WHERE path = ?1", params![path])?;
-    conn.execute("DELETE FROM search_fts WHERE path = ?1", params![path])?;
+    conn.prepare_cached("DELETE FROM notes WHERE path = ?1")?
+        .execute(params![path])?;
+    conn.prepare_cached("DELETE FROM search_fts WHERE path = ?1")?
+        .execute(params![path])?;
     Ok(())
 }
 
@@ -326,19 +322,42 @@ pub fn index_open(graph: State<GraphState>, index: State<IndexState>) -> AppResu
     Ok(state.generation)
 }
 
-/// Apply one note's extracted projection in a single transaction (no-op if the
-/// generation is stale — a superseded pass must not write the new graph's index).
-#[tauri::command]
-pub fn index_apply(note: IndexedNote, generation: u64, index: State<IndexState>) -> AppResult<()> {
-    let mut state = lock_state(&index)?;
+/// Apply a batch of note projections in a single transaction (shared by the
+/// one-note and batch commands). No-op if the generation is stale — a superseded
+/// pass must not write the new graph's index. One transaction + cached statements
+/// keeps a full rebuild cheap; an empty batch commits a no-op transaction.
+fn apply_in_txn(
+    index: &State<IndexState>,
+    generation: u64,
+    notes: &[IndexedNote],
+) -> AppResult<()> {
+    let mut state = lock_state(index)?;
     if state.generation != generation {
         return Ok(());
     }
     let conn = state.conn.as_mut().ok_or_else(AppError::no_graph)?;
     let tx = conn.transaction()?;
-    apply_note(&tx, &note)?;
+    for note in notes {
+        apply_note(&tx, note)?;
+    }
     tx.commit()?;
     Ok(())
+}
+
+/// Apply one note's extracted projection in a single transaction.
+#[tauri::command]
+pub fn index_apply(note: IndexedNote, generation: u64, index: State<IndexState>) -> AppResult<()> {
+    apply_in_txn(&index, generation, std::slice::from_ref(&note))
+}
+
+/// Apply many notes' projections in one transaction (the full-rebuild path).
+#[tauri::command]
+pub fn index_apply_batch(
+    notes: Vec<IndexedNote>,
+    generation: u64,
+    index: State<IndexState>,
+) -> AppResult<()> {
+    apply_in_txn(&index, generation, &notes)
 }
 
 /// Remove a note (e.g. deleted on disk) from the index (no-op if stale).
@@ -483,12 +502,76 @@ mod tests {
     }
 
     #[test]
-    fn clear_empties_derived_tables() {
+    fn clear_cascades_to_child_tables() {
         let conn = migrated();
         apply_note(&conn, &note("notes/a.md", "A", vec![wiki("X")])).unwrap();
         clear_index(&conn).unwrap();
-        let rows = run_query(&conn, "SELECT count(*) AS n FROM notes", &[]).unwrap();
+        // Deleting notes cascades to children; search_fts is cleared explicitly.
+        for table in [
+            "notes",
+            "note_text",
+            "links",
+            "tags",
+            "aliases",
+            "assets",
+            "search_fts",
+        ] {
+            let rows =
+                run_query(&conn, &format!("SELECT count(*) AS n FROM {table}"), &[]).unwrap();
+            assert_eq!(rows[0]["n"], Value::from(0), "{table} should be empty");
+        }
+    }
+
+    #[test]
+    fn reapplying_a_note_cascades_away_stale_children() {
+        let conn = migrated();
+        apply_note(&conn, &note("notes/a.md", "A", vec![wiki("X"), wiki("Y")])).unwrap();
+        // Re-applying clears the note (cascade) before reinserting, so the old
+        // tags/links don't linger even though apply_note lists no explicit deletes.
+        apply_note(&conn, &note("notes/a.md", "A", vec![])).unwrap();
+        let rows = run_query(&conn, "SELECT count(*) AS n FROM links", &[]).unwrap();
         assert_eq!(rows[0]["n"], Value::from(0));
+    }
+
+    #[test]
+    fn link_kind_check_rejects_unknown_kinds() {
+        let conn = migrated();
+        apply_note(&conn, &note("notes/a.md", "A", vec![])).unwrap();
+        let bogus = conn.execute(
+            "INSERT INTO links(source_path, kind, target_raw, target_key, pos_from, pos_to)
+             VALUES('notes/a.md', 'bogus', 'X', 'x', 0, 0)",
+            [],
+        );
+        assert!(
+            bogus.is_err(),
+            "CHECK should reject kinds other than wiki/md"
+        );
+    }
+
+    #[test]
+    fn open_index_at_creates_migrates_and_reopens() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+
+        let conn = open_index_at(root).expect("first open");
+        assert!(root.join(".reflect/index.sqlite").exists());
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 1);
+        let journal: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(journal, "wal");
+        drop(conn);
+
+        // Reopening an existing index is a no-op migration and preserves data.
+        let conn = open_index_at(root).expect("first open");
+        apply_note(&conn, &note("notes/a.md", "A", vec![])).unwrap();
+        drop(conn);
+        let conn = open_index_at(root).expect("reopen");
+        let rows = run_query(&conn, "SELECT count(*) AS n FROM notes", &[]).unwrap();
+        assert_eq!(rows[0]["n"], Value::from(1));
     }
 
     #[test]
