@@ -1,0 +1,96 @@
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { dailyPath } from '@reflect/core'
+import { NotePane } from '@/components/note-pane'
+import { formatDayLabel, todayIso } from '@/lib/dates'
+import { createDayWindow, dateAtIndex, indexOfDate } from '@/lib/day-window'
+import { useRouter } from '@/routing/router'
+
+interface DailyStreamProps {
+  /** The day to anchor/scroll to (from the `today` or `daily/:date` route). */
+  targetDate: string
+}
+
+/**
+ * The daily stream (Plan 06b): a virtualized chronological run of days — past
+ * above, future below — where **every day is a virtual note**. Each visible row
+ * mounts the Plan 05 editor lazily (`createIfMissing`), so a day only becomes a
+ * real `daily/*.md` when edited. Offscreen rows unmount and flush through the
+ * save pipeline's final-flush path. The window is a fixed ±range around today
+ * (virtual rows are free), so there is no bidirectional infinite-scroll
+ * bookkeeping; index↔date is pure offset math.
+ */
+export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
+  const { saveScrollState, savedScroll } = useRouter()
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  // The window anchors at today-on-mount and stays stable for the view's life.
+  const [window] = useState(() => createDayWindow(todayIso()))
+  const today = todayIso()
+
+  const virtualizer = useVirtualizer({
+    count: window.count,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 220,
+    overscan: 2,
+    paddingEnd: 240,
+  })
+
+  // Only the day navigated to receives focus, once per navigation — a row that
+  // scrolls offscreen and back must not steal focus from wherever the user is.
+  const focusPending = useRef<string | null>(null)
+
+  useEffect(() => {
+    // A back/forward-restored entry carries its scroll offset; a fresh
+    // navigation does not and anchors to the target day instead.
+    const restored = savedScroll()
+    if (restored !== null) {
+      virtualizer.scrollToOffset(restored)
+      return
+    }
+    focusPending.current = targetDate
+    virtualizer.scrollToIndex(indexOfDate(window, targetDate), { align: 'start' })
+  }, [targetDate, window, virtualizer, savedScroll])
+
+  return (
+    <div
+      ref={scrollRef}
+      className="h-full overflow-auto px-6"
+      onScroll={(event) => saveScrollState(event.currentTarget.scrollTop)}
+    >
+      <div
+        className="relative mx-auto w-full max-w-2xl"
+        style={{ height: virtualizer.getTotalSize() }}
+      >
+        {virtualizer.getVirtualItems().map((item) => {
+          const date = dateAtIndex(window, item.index)
+          const isToday = date === today
+          const autoFocus = focusPending.current === date
+          if (autoFocus) {
+            focusPending.current = null
+          }
+          return (
+            <div
+              key={date}
+              data-index={item.index}
+              ref={virtualizer.measureElement}
+              className="absolute inset-x-0"
+              style={{ transform: `translateY(${item.start}px)` }}
+            >
+              <section className="border-b border-black/5 py-6 dark:border-white/5">
+                <h2 className="mb-3 text-lg font-semibold">
+                  {formatDayLabel(date)}
+                  {isToday ? (
+                    <span className="ml-2 align-middle text-xs font-medium text-[color:var(--accent)]">
+                      Today
+                    </span>
+                  ) : null}
+                </h2>
+                <NotePane path={dailyPath(date)} lazy autoFocus={autoFocus} />
+              </section>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}

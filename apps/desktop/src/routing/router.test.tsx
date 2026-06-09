@@ -59,4 +59,29 @@ describe('router', () => {
     act(() => result.current.forward())
     expect(result.current.route).toEqual({ kind: 'today' })
   })
+
+  it('restores a saved scroll offset on back/forward, per entry', () => {
+    const { result } = routerHook()
+    act(() => result.current.saveScrollState(120)) // scrolling on today
+    act(() => result.current.navigate({ kind: 'note', path: 'notes/a.md' }))
+    expect(result.current.savedScroll()).toBeNull() // fresh entry: no offset yet
+
+    act(() => result.current.saveScrollState(40))
+    act(() => result.current.back())
+    expect(result.current.savedScroll()).toBe(120) // today's offset restored
+
+    act(() => result.current.forward())
+    expect(result.current.savedScroll()).toBe(40) // the note's own offset
+  })
+
+  it('drops scroll offsets for a truncated forward branch', () => {
+    const { result } = routerHook()
+    act(() => result.current.navigate({ kind: 'note', path: 'notes/a.md' }))
+    act(() => result.current.saveScrollState(99))
+    act(() => result.current.back())
+    // Navigating from a back position truncates the branch holding notes/a.md.
+    act(() => result.current.navigate({ kind: 'search', query: 'x' }))
+    act(() => result.current.navigate({ kind: 'note', path: 'notes/a.md' }))
+    expect(result.current.savedScroll()).toBeNull() // a new entry, not the old one
+  })
 })

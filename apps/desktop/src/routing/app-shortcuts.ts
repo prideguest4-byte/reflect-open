@@ -29,10 +29,10 @@ export function useAppShortcuts(): void {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!isModKey(event) || event.altKey || event.shiftKey) {
-        return
+      if (!isModKey(event) || event.altKey || event.shiftKey || event.repeat) {
+        return // held keys must not spam navigations (e.g. a stack of new notes)
       }
-      switch (event.key) {
+      switch (event.key.toLowerCase()) {
         case 'd':
           event.preventDefault()
           navigate({ kind: 'today' })

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, type ReactElement } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { assetPath, dateFromDailyPath, isDaily, resolveWikiTarget, writeAsset } from '@reflect/core'
-import { NoteEditor } from '@/editor/note-editor'
+import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import type { ImageOptions } from '@/editor/images'
 import { useNoteDocument } from '@/editor/use-note-document'
 import { isIsoDate } from '@/lib/dates'
@@ -14,6 +14,8 @@ interface NotePaneProps {
   path: string
   /** Treat a missing file as empty (created on first keystroke) — Plan 06. */
   lazy?: boolean
+  /** Focus the editor when it mounts (the navigated-to day/note). */
+  autoFocus?: boolean
 }
 
 /** The route a resolved note path (daily or regular) navigates to. */
@@ -48,7 +50,7 @@ function base64Of(buffer: ArrayBuffer): string {
  * so a converter gap can never silently rewrite a file. Plan 06 mounts one of
  * these per day in the daily stream.
  */
-export function NotePane({ path, lazy = false }: NotePaneProps): ReactElement {
+export function NotePane({ path, lazy = false, autoFocus = false }: NotePaneProps): ReactElement {
   const { graph } = useGraph()
   const { navigate } = useRouter()
   const graphRoot = graph?.root ?? null
@@ -103,6 +105,17 @@ export function NotePane({ path, lazy = false }: NotePaneProps): ReactElement {
   )
 
   const images = useMemo<ImageOptions>(() => ({ resolveUrl, saveImage }), [resolveUrl, saveImage])
+
+  const bindEditor = document.bindEditor
+  const handleRef = useCallback(
+    (handle: NoteEditorHandle | null) => {
+      bindEditor(handle)
+      if (handle && autoFocus) {
+        handle.focus()
+      }
+    },
+    [bindEditor, autoFocus],
+  )
 
   if (document.status === 'loading') {
     return (
@@ -187,7 +200,7 @@ export function NotePane({ path, lazy = false }: NotePaneProps): ReactElement {
         onChange={document.onEditorChange}
         images={images}
         onWikiLinkClick={onWikiLinkClick}
-        handleRef={document.bindEditor}
+        handleRef={handleRef}
       />
     </div>
   )

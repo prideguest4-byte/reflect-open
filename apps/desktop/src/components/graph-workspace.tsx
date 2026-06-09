@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import { getAppVersion, type GraphInfo } from '@reflect/core'
 import { AppShell } from '@/components/app-shell'
-import { DailyView } from '@/components/daily-view'
+import { DailyStream } from '@/components/daily-stream'
 import { NotePane } from '@/components/note-pane'
 import { todayIso } from '@/lib/dates'
+import { useGraph } from '@/providers/graph-provider'
 import { useTheme } from '@/providers/theme-provider'
 import { useAppShortcuts } from '@/routing/app-shortcuts'
 import { RouterProvider, useRouter } from '@/routing/router'
+import { ScrollRestored } from '@/routing/scroll-restore'
 
 const CLOUD_LABELS: Record<string, string> = {
   icloud: 'iCloud Drive',
@@ -35,6 +37,7 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
 
 function WorkspaceContent({ graph }: GraphWorkspaceProps): ReactElement {
   const { resolvedTheme, setTheme } = useTheme()
+  const { indexing } = useGraph()
   const [version, setVersion] = useState<string | null>(null)
   useAppShortcuts()
 
@@ -78,6 +81,14 @@ function WorkspaceContent({ graph }: GraphWorkspaceProps): ReactElement {
             {graph.name}
           </h1>
           <div className="flex items-center gap-3">
+            {indexing ? (
+              <span
+                role="status"
+                className="text-xs text-[color:var(--text-muted)] motion-safe:animate-pulse"
+              >
+                Indexing…
+              </span>
+            ) : null}
             <span className="text-xs text-[color:var(--text-muted)]">v{version ?? '—'}</span>
             <button
               type="button"
@@ -97,7 +108,7 @@ function WorkspaceContent({ graph }: GraphWorkspaceProps): ReactElement {
           </div>
         ) : null}
 
-        <div className="mx-auto w-full max-w-2xl flex-1 overflow-auto px-6 py-8">
+        <div className="min-h-0 flex-1">
           <RouteContent />
         </div>
       </div>
@@ -110,14 +121,20 @@ function RouteContent(): ReactElement {
   const { route } = useRouter()
   switch (route.kind) {
     case 'today':
-      return <DailyView date={todayIso()} />
+      return <DailyStream targetDate={todayIso()} />
     case 'daily':
-      return <DailyView date={route.date} />
+      return <DailyStream targetDate={route.date} />
     case 'note':
-      return <NotePane path={route.path} lazy />
+      return (
+        <ScrollRestored className="h-full overflow-auto px-6 py-8">
+          <div className="mx-auto w-full max-w-2xl">
+            <NotePane path={route.path} lazy autoFocus />
+          </div>
+        </ScrollRestored>
+      )
     case 'search':
       return (
-        <div className="text-sm text-[color:var(--text-muted)]">
+        <div className="p-6 text-sm text-[color:var(--text-muted)]">
           Search arrives in Plan 08.
         </div>
       )

@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactElement,
   type ReactNode,
@@ -14,6 +15,10 @@ import { routesEqual, type Route } from './route'
  * no dependency. `navigate` pushes (truncating any forward entries, like a
  * browser), `back`/`forward` move the cursor. Mount it per graph (keyed by the
  * graph root) so switching graphs starts a fresh history.
+ *
+ * Each history entry can carry a **scroll offset** (Plan 06b): views report
+ * theirs via `saveScrollState` (a ref write — safe from scroll handlers, never
+ * re-renders) and read `savedScroll()` after a back/forward restores an entry.
  */
 
 interface RouterValue {
@@ -23,6 +28,10 @@ interface RouterValue {
   forward: () => void
   canBack: boolean
   canForward: boolean
+  /** Record the active view's scroll offset on the current history entry. */
+  saveScrollState: (offset: number) => void
+  /** The current entry's recorded offset (present when revisited), or `null`. */
+  savedScroll: () => number | null
 }
 
 const RouterContext = createContext<RouterValue | null>(null)
@@ -33,8 +42,14 @@ interface RouterProviderProps {
   children: ReactNode
 }
 
+interface HistoryEntry {
+  /** Stable identity for scroll bookkeeping (indices shift on truncation). */
+  id: number
+  route: Route
+}
+
 interface HistoryState {
-  stack: Route[]
+  stack: HistoryEntry[]
   index: number
 }
 
@@ -42,14 +57,30 @@ export function RouterProvider({
   initialRoute = { kind: 'today' },
   children,
 }: RouterProviderProps): ReactElement {
-  const [history, setHistory] = useState<HistoryState>({ stack: [initialRoute], index: 0 })
+  const [history, setHistory] = useState<HistoryState>({
+    stack: [{ id: 0, route: initialRoute }],
+    index: 0,
+  })
+  const nextId = useRef(1)
+  /** Scroll offsets by entry id — a ref so scroll reporting never re-renders. */
+  const scrollById = useRef(new Map<number, number>())
+  /** The active entry id, readable without depending on render order. */
+  const currentId = useRef(0)
+  currentId.current = history.stack[history.index].id
 
   const navigate = useCallback((route: Route) => {
     setHistory((current) => {
-      if (routesEqual(current.stack[current.index], route)) {
+      if (routesEqual(current.stack[current.index].route, route)) {
         return current // no-op navigation must not grow the stack
       }
-      const stack = [...current.stack.slice(0, current.index + 1), route]
+      const dropped = current.stack.slice(current.index + 1)
+      for (const entry of dropped) {
+        scrollById.current.delete(entry.id) // truncated branch — free its offsets
+      }
+      const stack = [
+        ...current.stack.slice(0, current.index + 1),
+        { id: nextId.current++, route },
+      ]
       return { stack, index: stack.length - 1 }
     })
   }, [])
@@ -66,16 +97,27 @@ export function RouterProvider({
     )
   }, [])
 
+  const saveScrollState = useCallback((offset: number) => {
+    scrollById.current.set(currentId.current, offset)
+  }, [])
+
+  const savedScroll = useCallback(
+    () => scrollById.current.get(currentId.current) ?? null,
+    [],
+  )
+
   const value = useMemo<RouterValue>(
     () => ({
-      route: history.stack[history.index],
+      route: history.stack[history.index].route,
       navigate,
       back,
       forward,
       canBack: history.index > 0,
       canForward: history.index < history.stack.length - 1,
+      saveScrollState,
+      savedScroll,
     }),
-    [history, navigate, back, forward],
+    [history, navigate, back, forward, saveScrollState, savedScroll],
   )
 
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>
