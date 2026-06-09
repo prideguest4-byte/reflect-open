@@ -89,6 +89,11 @@ pub fn watch_start(
         .clone()
         .ok_or_else(AppError::no_graph)?;
 
+    // Drop any previous watcher first: if installing the new one fails we're then
+    // left with no watcher, rather than the previous graph's still driving
+    // index:changed against the now-current graph.
+    *lock_watcher(&watcher)? = None;
+
     let handler_root = root.clone();
     let mut debouncer = new_debouncer(
         Duration::from_millis(400),

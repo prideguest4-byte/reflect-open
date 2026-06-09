@@ -139,25 +139,29 @@ export function GraphProvider({ children }: { children: ReactNode }) {
             const controller = new AbortController()
             indexAbort.current = controller
             reconcileDone.current = (async () => {
+              let unlisten: (() => void) | null = null
               try {
                 await reconcileIndex({ generation, signal: controller.signal })
                 if (seq !== openSeq.current) {
                   return
                 }
-                const unlisten = await subscribeIndexChanges(generation)
+                unlisten = await subscribeIndexChanges(generation)
                 if (seq !== openSeq.current) {
-                  unlisten()
                   return
                 }
                 await watchStart()
                 if (seq !== openSeq.current) {
-                  unlisten()
                   return
                 }
                 indexUnlisten.current?.()
                 indexUnlisten.current = unlisten
+                unlisten = null // ownership transferred to the ref
               } catch (err) {
                 console.error('index sync failed:', messageOf(err))
+              } finally {
+                // Tear down a subscription that was created but never bound
+                // (superseded, or a later step threw) so listeners can't leak.
+                unlisten?.()
               }
             })()
           }
