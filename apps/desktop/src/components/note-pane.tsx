@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type ReactElement } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { assetPath, resolveWikiTarget, writeAsset } from '@reflect/core'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
@@ -58,6 +58,14 @@ export function NotePane({
   const generation = graph?.generation ?? null
   const document = useNoteDocument(path, generation, { createIfMissing: lazy })
 
+  const unmountedRef = useRef(false)
+  useEffect(() => {
+    unmountedRef.current = false
+    return () => {
+      unmountedRef.current = true
+    }
+  }, [])
+
   // Mod+click on a [[wiki link]]: resolve via the index; an unresolved ISO date
   // is still a valid daily target (created lazily on first write). Unresolved
   // non-date targets are a no-op until Plan 07 adds the "create note" offer.
@@ -66,6 +74,12 @@ export function NotePane({
       void (async () => {
         try {
           const resolution = await resolveWikiTarget(target)
+          // The pane can unmount while resolution is in flight (route change,
+          // graph switch) — a late navigate would yank the user somewhere
+          // they've already left.
+          if (unmountedRef.current) {
+            return
+          }
           if (resolution.kind === 'resolved') {
             navigate(routeForPath(resolution.ref))
           } else if (isIsoDate(resolution.text)) {

@@ -78,6 +78,13 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
       ref={scrollRef}
       className="h-full overflow-auto px-6"
       onScroll={(event) => saveScrollState(event.currentTarget.scrollTop)}
+      // An explicit click/touch picks its own focus target — a focus still
+      // pending for a day whose editor hasn't mounted yet must not steal the
+      // caret later. Typing is deliberately not a cancel: ⌘D-then-type should
+      // still land focus in today once its editor mounts.
+      onPointerDownCapture={() => {
+        focusPending.current = null
+      }}
     >
       <div
         className="relative mx-auto w-full max-w-2xl"
