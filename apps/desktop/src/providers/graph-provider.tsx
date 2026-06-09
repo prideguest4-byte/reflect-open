@@ -19,6 +19,7 @@ import {
   subscribeIndexChanges,
   toAppError,
   watchStart,
+  watchStop,
   type GraphInfo,
   type RecentGraph,
 } from '@reflect/core'
@@ -122,6 +123,12 @@ export function GraphProvider({ children }: { children: ReactNode }) {
           }
           setGraph(info)
           setStatus('ready')
+          // Always tear down the previous graph's subscription + watcher, even
+          // when this open's index failed — otherwise a failed openIndex leaves
+          // the old live subscription attached to a different graph.
+          indexUnlisten.current?.()
+          indexUnlisten.current = null
+          void watchStop().catch(() => {})
           if (generation !== null) {
             const controller = new AbortController()
             indexAbort.current = controller
@@ -131,11 +138,9 @@ export function GraphProvider({ children }: { children: ReactNode }) {
             }).catch((err) => {
               console.error('index reconcile failed:', messageOf(err))
             })
-            // Start the live watcher and (re)subscribe with this generation, so
+            // Start the live watcher and subscribe with this generation, so
             // ongoing edits re-index incrementally. Stale events from a previous
             // graph carry the old generation and are dropped by Rust.
-            indexUnlisten.current?.()
-            indexUnlisten.current = null
             void (async () => {
               try {
                 await watchStart()
@@ -144,6 +149,7 @@ export function GraphProvider({ children }: { children: ReactNode }) {
                   unlisten() // a newer open superseded us mid-setup — tear down
                   return
                 }
+                indexUnlisten.current?.() // drop any racing setup before binding
                 indexUnlisten.current = unlisten
               } catch (err) {
                 console.error('index watcher start failed:', messageOf(err))

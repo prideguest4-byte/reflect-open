@@ -41,10 +41,17 @@ export async function applyIndexChanges(changes: FileChange[], generation: numbe
  * active graph changes.
  */
 export function subscribeIndexChanges(generation: number): Promise<UnlistenFn> {
+  // Serialize batches so overlapping events for the same path can't reorder
+  // (e.g. an upsert landing after a later remove, leaving a ghost row).
+  let applyQueue: Promise<void> = Promise.resolve()
   return listen('index:changed', (event) => {
     const parsed = fileChangesSchema.safeParse(event.payload)
     if (parsed.success) {
-      void applyIndexChanges(parsed.data, generation)
+      applyQueue = applyQueue
+        .then(() => applyIndexChanges(parsed.data, generation))
+        .catch((err) => {
+          console.error('failed to apply watcher batch:', err)
+        })
     }
   })
 }
