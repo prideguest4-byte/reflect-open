@@ -39,6 +39,7 @@ Updated: 2026-06-09
   tests; the sidebar reuses the `AppShell` region that already collapses
   below the `lg` breakpoint, so narrow viewports keep the editor full-width.
 
-## Next
+## Shipped
 
-- Final report, commit, push, PR against `master`.
+- PR: https://github.com/team-reflect/reflect-open/pull/24
+- Implementation commit `5796356`; see `final-report.md` for the full record.
