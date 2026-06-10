@@ -1,6 +1,6 @@
-import { useCallback, useEffect, type ReactElement } from 'react'
+import { useEffect, type ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
-import { Settings } from 'lucide-react'
+import { PanelLeft } from 'lucide-react'
 import { AppShell } from '@/components/app-shell'
 import { CommandPalette } from '@/components/command-palette/command-palette'
 import { EmbeddingsSync } from '@/components/embeddings-sync'
@@ -8,12 +8,11 @@ import { PaletteProvider, usePalette } from '@/components/command-palette/palett
 import { DailyStream } from '@/components/daily-stream'
 import { NotePane } from '@/components/note-pane'
 import { SettingsScreen } from '@/components/settings-screen'
-import { useAppVersion } from '@/hooks/use-app-version'
+import { Sidebar } from '@/components/sidebar/sidebar'
 import { isIsoDate } from '@/lib/dates'
 import { useToday } from '@/lib/use-today'
 import { OperationsStatus } from '@/components/operations-status'
-import { useGraph } from '@/providers/graph-provider'
-import { useTheme } from '@/providers/theme-provider'
+import { SidebarProvider, useSidebar } from '@/providers/sidebar-provider'
 import { useAppShortcuts } from '@/routing/app-shortcuts'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { ScrollRestored } from '@/routing/scroll-restore'
@@ -30,7 +29,7 @@ interface GraphWorkspaceProps {
 }
 
 /**
- * The main surface once a graph is open: the shell + header around the
+ * The main surface once a graph is open: the sidebar + note pane around the
  * route-driven content (Plan 06). The app opens to today's daily note — the
  * chronological spine — and all navigation goes through the typed router.
  * Keyed by the graph root so switching graphs starts a fresh history.
@@ -39,67 +38,34 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
   return (
     <RouterProvider key={graph.root}>
       <PaletteProvider>
-        <WorkspaceContent graph={graph} />
+        <SidebarProvider>
+          <WorkspaceContent graph={graph} />
+        </SidebarProvider>
       </PaletteProvider>
     </RouterProvider>
   )
 }
 
 function WorkspaceContent({ graph }: GraphWorkspaceProps): ReactElement {
-  const { resolvedTheme, setTheme } = useTheme()
-  const { indexing } = useGraph()
-  const { navigate } = useRouter()
-  const version = useAppVersion()
+  const { collapsed } = useSidebar()
   const commandContext = useAppShortcuts()
-
-  const toggleTheme = useCallback((): void => {
-    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
-  }, [resolvedTheme, setTheme])
 
   const cloudLabel = graph.cloudSync ? (CLOUD_LABELS[graph.cloudSync] ?? graph.cloudSync) : null
 
   return (
-    <AppShell
-      rail={
-        <span className="text-xs font-semibold text-[color:var(--text-secondary)]">R</span>
-      }
-      sidebar={
-        <div className="p-4 text-sm text-[color:var(--text-secondary)]">Context</div>
-      }
-    >
-      <div className="flex h-full flex-col">
-        <header className="flex items-center justify-between gap-4 border-b border-black/10 px-6 py-3 dark:border-white/10">
-          <h1 className="truncate text-sm font-semibold" title={graph.root}>
-            {graph.name}
-          </h1>
-          <div className="flex items-center gap-3">
-            {indexing ? (
-              <span
-                role="status"
-                className="text-xs text-[color:var(--text-muted)] motion-safe:animate-pulse"
-              >
-                Indexing…
-              </span>
-            ) : null}
-            <span className="text-xs text-[color:var(--text-muted)]">v{version ?? '—'}</span>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="rounded-md border border-black/10 px-2.5 py-1 text-xs font-medium dark:border-white/10"
-            >
-              {resolvedTheme === 'dark' ? 'Light' : 'Dark'} mode
-            </button>
-            <button
-              type="button"
-              aria-label="Open settings"
-              title="Settings (⌘,)"
-              onClick={() => navigate({ kind: 'settings' })}
-              className="rounded-md border border-black/10 p-1.5 text-[color:var(--text-secondary)] dark:border-white/10"
-            >
-              <Settings aria-hidden className="size-3.5" />
-            </button>
-          </div>
-        </header>
+    <AppShell sidebar={collapsed ? undefined : <Sidebar graph={graph} context={commandContext} />}>
+      <div className="relative flex h-full flex-col">
+        {collapsed ? (
+          <button
+            type="button"
+            aria-label="Show sidebar"
+            title="Show sidebar"
+            onClick={() => commandContext.toggleSidebar()}
+            className="absolute top-2.5 left-3 z-10 rounded-md p-1 text-[color:var(--text-muted)] transition-colors duration-100 hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-secondary)]"
+          >
+            <PanelLeft aria-hidden strokeWidth={1.75} className="size-4" />
+          </button>
+        ) : null}
 
         {cloudLabel ? (
           <div className="border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-xs text-amber-700 dark:text-amber-300">

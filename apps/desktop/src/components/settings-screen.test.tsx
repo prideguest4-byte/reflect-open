@@ -74,7 +74,9 @@ describe('SettingsScreen', () => {
 
     fireEvent.click(radio(/^show/i))
 
-    await waitFor(() => expect(saved).toEqual([{ editorMarkdownSyntax: 'show' }]))
+    await waitFor(() =>
+      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system' }]),
+    )
     expect(radio(/^show/i).checked).toBe(true)
     expect(radio(/^focus/i).checked).toBe(false)
   })
