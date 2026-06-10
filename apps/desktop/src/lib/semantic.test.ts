@@ -6,19 +6,9 @@ import {
   retryFailedEmbeddings,
 } from './semantic'
 
-const startOperation = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/operations', () => ({ startOperation }))
-
 afterEach(() => {
   setBridge(null)
-  startOperation.mockReset()
 })
-
-function operationHandle() {
-  const handle = { progress: vi.fn(), done: vi.fn(), fail: vi.fn() }
-  startOperation.mockReturnValue(handle)
-  return handle
-}
 
 describe('consumeLegacySemanticOptIn', () => {
   it('returns a stored opt-in exactly once (the settings document owns it after)', () => {
@@ -47,7 +37,6 @@ describe('retryFailedEmbeddings', () => {
   }
 
   it('re-kicks a failed load', async () => {
-    operationHandle()
     const invoked = bridgeWithStatus({ status: 'failed', message: 'offline' })
     await retryFailedEmbeddings()
     expect(invoked).toContain('embed_ensure')
@@ -61,8 +50,7 @@ describe('retryFailedEmbeddings', () => {
 })
 
 describe('ensureEmbeddingsVisibly', () => {
-  it('resolves the operation only at a terminal status (a racing ensure returns loading)', async () => {
-    const handle = operationHandle()
+  it('resolves only at a terminal status (a racing ensure returns loading)', async () => {
     // Boxed: TS control-flow analysis doesn't track closure assignments and
     // would narrow a plain `let` to `never` at the call site below.
     const emitter: { fire: ((payload: unknown) => void) | null } = { fire: null }
@@ -86,23 +74,19 @@ describe('ensureEmbeddingsVisibly', () => {
 
     const pending = ensureEmbeddingsVisibly()
     await vi.waitFor(() => expect(emitter.fire).not.toBeNull())
-    expect(handle.done).not.toHaveBeenCalled() // still loading — not "done"
 
     emitter.fire?.({ status: 'ready', model: 'all-MiniLM-L6-v2' })
     const status = await pending
     expect(status).toEqual({ status: 'ready', model: 'all-MiniLM-L6-v2' })
-    expect(handle.done).toHaveBeenCalledTimes(1)
   })
 
-  it('a failed load fails the operation with the message', async () => {
-    const handle = operationHandle()
+  it('returns a failed status when the load fails', async () => {
     setBridge({
       invoke: async (command) =>
         command === 'embed_ensure' ? { status: 'failed', message: 'no disk space' } : null,
       listen: async () => () => {},
     })
     const status = await ensureEmbeddingsVisibly()
-    expect(status.status).toBe('failed')
-    expect(handle.fail).toHaveBeenCalledWith('no disk space')
+    expect(status).toEqual({ status: 'failed', message: 'no disk space' })
   })
 })
