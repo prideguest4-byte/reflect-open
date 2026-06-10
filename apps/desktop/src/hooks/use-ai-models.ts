@@ -42,39 +42,45 @@ interface UseAiModelsValue {
 }
 
 export function useAiModels(): UseAiModelsValue {
-  const { settings, updateSettings } = useSettings()
+  const { settings, updateSettingsWith } = useSettings()
   const models = settings.aiModels
+
+  // Every write goes through `updateSettingsWith` so the list is rebuilt from
+  // the settings as they are when the update applies — not from this render's
+  // snapshot. The keychain awaits make these genuinely concurrent: a second
+  // add/remove can land mid-flight, and a snapshot-based write would clobber
+  // it (or resurrect an entry whose key was already deleted).
 
   const addModel = useCallback(
     async (draft: NewAiModel): Promise<void> => {
       const id = crypto.randomUUID()
       await setSecret(aiKeySecretName(id), draft.apiKey)
-      updateSettings({
-        aiModels: withAiModelAdded(models, {
+      updateSettingsWith((current) => ({
+        aiModels: withAiModelAdded(current.aiModels, {
           id,
           provider: draft.provider,
           model: draft.model,
           keyHint: apiKeyHint(draft.apiKey),
           isDefault: draft.isDefault,
         }),
-      })
+      }))
     },
-    [models, updateSettings],
+    [updateSettingsWith],
   )
 
   const removeModel = useCallback(
     async (id: string): Promise<void> => {
       await deleteSecret(aiKeySecretName(id))
-      updateSettings({ aiModels: withAiModelRemoved(models, id) })
+      updateSettingsWith((current) => ({ aiModels: withAiModelRemoved(current.aiModels, id) }))
     },
-    [models, updateSettings],
+    [updateSettingsWith],
   )
 
   const makeDefault = useCallback(
     (id: string): void => {
-      updateSettings({ aiModels: withDefaultAiModel(models, id) })
+      updateSettingsWith((current) => ({ aiModels: withDefaultAiModel(current.aiModels, id) }))
     },
-    [models, updateSettings],
+    [updateSettingsWith],
   )
 
   return { models, addModel, removeModel, makeDefault }

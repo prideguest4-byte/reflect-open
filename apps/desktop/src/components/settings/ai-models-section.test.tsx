@@ -174,6 +174,33 @@ describe('AiModelsSection', () => {
     expect(secrets.has('ai-api-key:a')).toBe(false)
   })
 
+  it('overlapping removes both land instead of clobbering each other', async () => {
+    stored = {
+      aiModels: [
+        entry({ id: 'a', isDefault: true }),
+        entry({ id: 'b', provider: 'openai', model: 'gpt-5.1', keyHint: 'abcd2' }),
+      ],
+    }
+    secrets.set('ai-api-key:a', 'sk-a')
+    secrets.set('ai-api-key:b', 'sk-b')
+    renderSection()
+    await waitFor(() =>
+      expect(screen.getByText('Anthropic — Claude Opus 4.8')).toBeTruthy(),
+    )
+
+    // Both removes fire in the same tick; each suspends on its keychain
+    // delete, so each settings update applies after the other's snapshot
+    // went stale. A snapshot-based write would leave one row behind with
+    // its key already gone from the keychain.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Remove Anthropic — Claude Opus 4.8' }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Remove OpenAI — GPT-5.1' }))
+
+    await waitFor(() => expect(lastSavedModels()).toEqual([]))
+    expect(secrets.size).toBe(0)
+  })
+
   it('make default moves the flag', async () => {
     stored = {
       aiModels: [

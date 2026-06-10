@@ -37,6 +37,14 @@ interface SettingsContextValue {
   settings: Settings
   /** Merge `patch` into the settings: applied immediately, persisted async. */
   updateSettings: (patch: Partial<Settings>) => void
+  /**
+   * Like {@link updateSettings}, but the patch is computed from the latest
+   * merged settings at apply time. Use this for read-modify-write updates
+   * (e.g. list edits after an `await`): React applies functional updaters
+   * sequentially, so concurrent edits compose instead of clobbering each
+   * other through a stale render-time snapshot.
+   */
+  updateSettingsWith: (updater: (current: Settings) => Partial<Settings>) => void
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null)
@@ -60,6 +68,8 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
     staleTime: Infinity,
   })
   const [overrides, setOverrides] = useState<Partial<Settings>>({})
+  const loadedRef = useRef(loaded)
+  loadedRef.current = loaded
 
   // Defaults are usable before the IPC load settles — no loading gate.
   const settings = useMemo<Settings>(
@@ -70,6 +80,20 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     setOverrides((current) => ({ ...current, ...patch }))
   }, [])
+
+  const updateSettingsWith = useCallback(
+    (updater: (current: Settings) => Partial<Settings>) => {
+      setOverrides((current) => {
+        // Rebuild the merged document from the *queued* overrides, not the
+        // render-time `settings` value — React applies these updaters in
+        // order, so each one sees the result of the previous edit even when
+        // both were dispatched from stale closures.
+        const merged: Settings = { ...DEFAULT_SETTINGS, ...loadedRef.current, ...current }
+        return { ...current, ...updater(merged) }
+      })
+    },
+    [],
+  )
 
   // A corrupt store fails the load *by design* (Rust errors rather than
   // reading empty, so a later save can't wipe the real document). Changes
@@ -93,8 +117,6 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
   const lastPersisted = useRef<Settings | null>(null)
   const settingsRef = useRef(settings)
   settingsRef.current = settings
-  const loadedRef = useRef(loaded)
-  loadedRef.current = loaded
 
   const persistIfChanged = useCallback((): Promise<void> => {
     const disk = loadedRef.current
@@ -133,8 +155,8 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
   }, [persistIfChanged])
 
   const value = useMemo<SettingsContextValue>(
-    () => ({ settings, updateSettings }),
-    [settings, updateSettings],
+    () => ({ settings, updateSettings, updateSettingsWith }),
+    [settings, updateSettings, updateSettingsWith],
   )
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>

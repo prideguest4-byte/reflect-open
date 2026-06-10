@@ -165,6 +165,30 @@ describe('SettingsProvider', () => {
     expect(result.current.settings.editorMarkdownSyntax).toBe('focus')
   })
 
+  it('updateSettingsWith builds each patch from the latest settings, not the closure', async () => {
+    stored = {
+      aiModels: [
+        { id: 'a', provider: 'openai', model: 'gpt-5.1', keyHint: '11111', isDefault: true },
+        { id: 'b', provider: 'openai', model: 'gpt-5', keyHint: '22222', isDefault: false },
+      ],
+    }
+    const { result } = renderHook(() => useSettings(), { wrapper })
+    await loadSettled()
+
+    // Both updaters are dispatched from the same render — equally "stale"
+    // closures. Sequential application means the second still sees the
+    // first's result; a snapshot-based merge would resurrect entry 'a'.
+    act(() => {
+      result.current.updateSettingsWith((current) => ({
+        aiModels: current.aiModels.filter((model) => model.id !== 'a'),
+      }))
+      result.current.updateSettingsWith((current) => ({
+        aiModels: current.aiModels.filter((model) => model.id !== 'b'),
+      }))
+    })
+    expect(result.current.settings.aiModels).toEqual([])
+  })
+
   it('keeps the applied value and surfaces a failed save as an operation', async () => {
     const { result } = renderHook(
       () => ({ ...useSettings(), operations: useOperations() }),
