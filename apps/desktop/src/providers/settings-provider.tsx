@@ -61,6 +61,8 @@ interface SettingsContextValue {
 /** How the initial settings load ended (`'failed'` ⇒ session-only mode). */
 export type SettingsLoadOutcome = 'loaded' | 'failed'
 
+type SettingsLoadState = SettingsLoadOutcome | 'pending'
+
 const SettingsContext = createContext<SettingsContextValue | null>(null)
 
 interface LoadSettle {
@@ -97,6 +99,14 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
   const [overrides, setOverrides] = useState<Partial<Settings>>({})
   const loadedRef = useRef(loaded)
   loadedRef.current = loaded
+
+  // One derived load-state drives everything that waits on hydration (the
+  // updater queue drain, the settle promise). With no bridge installed
+  // (plain-browser dev) the query never runs, so there is nothing to wait
+  // for: that settles immediately as 'failed' — i.e. session-only — instead
+  // of leaving waiters hanging on a load that will never happen.
+  const loadState: SettingsLoadState =
+    !hasBridge() || loadError !== null ? 'failed' : loaded !== undefined ? 'loaded' : 'pending'
 
   // Defaults are usable before the IPC load settles — no loading gate.
   const settings = useMemo<Settings>(
@@ -138,10 +148,10 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
   )
 
   useEffect(() => {
-    // Drain once the load settles either way — after a failed load the
-    // updaters apply over defaults and changes stay session-only, matching
-    // the scalar-update semantics below.
-    if ((loaded === undefined && !loadError) || pendingUpdaters.current === null) {
+    // Drain once the load settles either way — after 'failed' the updaters
+    // apply over defaults and changes stay session-only, matching the
+    // scalar-update semantics below.
+    if (loadState === 'pending' || pendingUpdaters.current === null) {
       return
     }
     const queued = pendingUpdaters.current
@@ -149,7 +159,7 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
     for (const updater of queued) {
       applyUpdater(updater)
     }
-  }, [loaded, loadError, applyUpdater])
+  }, [loadState, applyUpdater])
 
   // Settling the load outcome as a promise lets callers *await* it; resolving
   // an already-resolved promise is a no-op, so the effect can stay simple.
@@ -158,12 +168,10 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
     loadSettle.current = createLoadSettle()
   }
   useEffect(() => {
-    if (loaded !== undefined) {
-      loadSettle.current?.resolve('loaded')
-    } else if (loadError !== null) {
-      loadSettle.current?.resolve('failed')
+    if (loadState !== 'pending') {
+      loadSettle.current?.resolve(loadState)
     }
-  }, [loaded, loadError])
+  }, [loadState])
   const whenSettingsLoaded = useCallback(
     (): Promise<SettingsLoadOutcome> =>
       loadSettle.current?.promise ?? Promise.resolve('failed'),

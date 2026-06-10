@@ -252,6 +252,22 @@ describe('SettingsProvider', () => {
     expect(saved).toEqual([])
   })
 
+  it('with no bridge (browser dev) the load settles as failed instead of hanging', async () => {
+    setBridge(null)
+    const { result } = renderHook(() => useSettings(), { wrapper })
+
+    // Waiters must not hang on a query that will never run.
+    await expect(result.current.whenSettingsLoaded()).resolves.toBe('failed')
+
+    // Read-modify-write updates drain immediately (session-only) rather than
+    // queueing forever, and nothing is ever persisted.
+    act(() => {
+      result.current.updateSettingsWith(() => ({ editorMarkdownSyntax: 'show' }))
+    })
+    expect(result.current.settings.editorMarkdownSyntax).toBe('show')
+    expect(saved).toEqual([])
+  })
+
   it('keeps the applied value and surfaces a failed save as an operation', async () => {
     const { result } = renderHook(
       () => ({ ...useSettings(), operations: useOperations() }),
