@@ -82,6 +82,16 @@ describe('app shortcuts', () => {
     expect(result.current.router.route).toEqual(opened) // held key doesn't spam notes
   })
 
+  it('is inert while the palette is open (modal owns the keyboard)', () => {
+    const { result } = shortcutsHook()
+    act(() => result.current.palette.openPalette())
+    act(() => press('n'))
+    expect(result.current.router.route).toEqual({ kind: 'today' }) // nothing behind the overlay
+    act(() => result.current.palette.closePalette())
+    act(() => press('n'))
+    expect(result.current.router.route.kind).toBe('note') // resumes after close
+  })
+
   it('ignores chords with extra modifiers', () => {
     const { result } = shortcutsHook()
     act(() => {

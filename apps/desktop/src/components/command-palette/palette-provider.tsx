@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 
 /**
  * Palette open/query state (Plan 08), provided once per workspace so both the
@@ -16,7 +24,7 @@ interface PaletteContextValue {
 
 const PaletteContext = createContext<PaletteContextValue | null>(null)
 
-export function PaletteProvider({ children }: { children: ReactNode }) {
+export function PaletteProvider({ children }: { children: ReactNode }): ReactElement {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 

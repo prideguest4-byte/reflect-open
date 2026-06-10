@@ -18,6 +18,7 @@ describe('buildPaletteSections', () => {
   it('an empty query is the recall feed: suggestions only, no commands', () => {
     const sections = buildPaletteSections({
       query: '',
+      dataQuery: '',
       suggestions: [suggestion('notes/a.md', 'Alpha')],
       hits: [],
       commands: COMMANDS,
@@ -27,11 +28,25 @@ describe('buildPaletteSections', () => {
     expect(sections.commandsOnly).toBe(false)
   })
 
+  it('a cleared input ignores suggestions still answering the previous query', () => {
+    const sections = buildPaletteSections({
+      query: '',
+      dataQuery: 'rust', // the deferred value hasn't caught up yet
+      suggestions: [
+        { target: 'Rust', path: 'notes/rust.md', title: 'Rust', alias: null, date: null },
+      ],
+      hits: [hit('notes/stale.md', 'Stale Hit')],
+      commands: [],
+    })
+    expect(sections.notes).toEqual([]) // momentarily empty beats momentarily wrong
+  })
+
   it('an empty query ignores lagging FTS hits (recall feed only)', () => {
     // The deferred index query can still hold the previous search's results
     // when the input is cleared — they must not leak into the recall feed.
     const sections = buildPaletteSections({
       query: '',
+      dataQuery: '',
       suggestions: [],
       hits: [hit('notes/stale.md', 'Stale Hit')],
       commands: [],
@@ -42,6 +57,7 @@ describe('buildPaletteSections', () => {
   it('title matches lead and FTS hits dedupe behind them', () => {
     const sections = buildPaletteSections({
       query: 'alpha',
+      dataQuery: 'alpha',
       suggestions: [suggestion('notes/a.md', 'Alpha')],
       hits: [hit('notes/a.md', 'Alpha'), hit('notes/b.md', 'Beta', 'about alpha')],
       commands: [],
@@ -54,6 +70,7 @@ describe('buildPaletteSections', () => {
   it('a not-yet-created daily (pathless suggestion) is still jumpable', () => {
     const sections = buildPaletteSections({
       query: '2026-08-01',
+      dataQuery: '2026-08-01',
       suggestions: [
         { target: '2026-08-01', path: null, title: '2026-08-01', alias: null, date: '2026-08-01' },
       ],
@@ -68,6 +85,7 @@ describe('buildPaletteSections', () => {
   it('commands match on title and keywords once a query exists', () => {
     const sections = buildPaletteSections({
       query: 'dark',
+      dataQuery: 'dark',
       suggestions: [],
       hits: [],
       commands: COMMANDS,
@@ -78,6 +96,7 @@ describe('buildPaletteSections', () => {
   it('a > prefix filters to commands only', () => {
     const sections = buildPaletteSections({
       query: '> today',
+      dataQuery: '> today',
       suggestions: [suggestion('notes/today-plan.md', 'Today plan')],
       hits: [],
       commands: COMMANDS,
@@ -90,6 +109,7 @@ describe('buildPaletteSections', () => {
   it('daily suggestions keep their date for day-label rendering', () => {
     const sections = buildPaletteSections({
       query: '2026',
+      dataQuery: '2026',
       suggestions: [
         { target: '2026-06-09', path: 'daily/2026-06-09.md', title: '2026-06-09', alias: null, date: '2026-06-09' },
       ],

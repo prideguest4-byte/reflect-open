@@ -67,11 +67,12 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
     () =>
       buildPaletteSections({
         query,
+        dataQuery: trimmed,
         suggestions: suggestions ?? [],
         hits: hits ?? [],
         commands: listCommands(),
       }),
-    [query, suggestions, hits],
+    [query, trimmed, suggestions, hits],
   )
 
   if (!open) {
@@ -118,7 +119,7 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
             <Command.Empty className="reflect-palette-empty">No results</Command.Empty>
             {sections.notes.length > 0 ? (
               <Command.Group
-                heading={trimmed === '' ? 'Recent' : 'Notes'}
+                heading={query.trim() === '' ? 'Recent' : 'Notes'}
                 className="reflect-palette-group"
               >
                 {sections.notes.map((entry) => (

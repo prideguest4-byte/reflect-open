@@ -40,7 +40,12 @@ export function useAppShortcuts(): CommandContext {
   const { navigate, back, forward } = useRouter()
   const { resolvedTheme, setTheme } = useTheme()
   const { graph } = useGraph()
-  const { openPalette } = usePalette()
+  const { openPalette, open: paletteOpen } = usePalette()
+
+  // The palette is modal: app shortcuts must not navigate behind its overlay.
+  // A ref keeps the listener stable across open/close renders.
+  const paletteOpenRef = useRef(paletteOpen)
+  paletteOpenRef.current = paletteOpen
 
   // Read at run time, not captured: a command can fire long after the render
   // that created the context (palette open across an index rebuild, etc.).
@@ -61,6 +66,9 @@ export function useAppShortcuts(): CommandContext {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (paletteOpenRef.current) {
+        return // modal palette owns the keyboard; Esc closes, then keys resume
+      }
       if (!isModKey(event) || event.altKey || event.shiftKey || event.repeat) {
         return // held keys must not spam navigations (e.g. a stack of new notes)
       }

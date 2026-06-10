@@ -8,9 +8,15 @@ import type { AppCommand, CommandContext } from './types'
 
 const commands = new Map<string, AppCommand>()
 
-/** Register commands; duplicate ids are a programmer error and throw. */
+/** Register commands; duplicate or blank ids/titles are programmer errors. */
 export function registerCommands(definitions: AppCommand[]): void {
   for (const command of definitions) {
+    if (command.id.trim() === '') {
+      throw new Error('command id cannot be empty')
+    }
+    if (command.title.trim() === '') {
+      throw new Error(`command title cannot be empty: ${command.id}`)
+    }
     if (commands.has(command.id)) {
       throw new Error(`command id already registered: ${command.id}`)
     }

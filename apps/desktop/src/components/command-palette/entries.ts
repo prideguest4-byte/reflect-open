@@ -38,12 +38,20 @@ function matchesCommand(command: AppCommand, query: string): boolean {
 
 export function buildPaletteSections(options: {
   query: string
+  /** The query the suggestion/hit arrays actually answer (the deferred value). */
+  dataQuery: string
   suggestions: WikiSuggestion[]
   hits: RankedSearchHit[]
   commands: AppCommand[]
 }): PaletteSections {
-  const { suggestions, hits, commands } = options
+  const { commands } = options
   const query = options.query.trim()
+  // The index queries are keyed on a *deferred* value that can lag the live
+  // input. A just-cleared input must show the recall feed, never the previous
+  // search's data — a momentarily empty list beats a momentarily wrong one.
+  const dataStale = options.dataQuery.trim() !== query
+  const suggestions = query === '' && dataStale ? [] : options.suggestions
+  const hits = query === '' && dataStale ? [] : options.hits
 
   if (query.startsWith('>')) {
     const commandQuery = query.slice(1).trim()
@@ -75,9 +83,7 @@ export function buildPaletteSections(options: {
       })
     }
   }
-  // The empty palette is the recall feed: suggestions only. The FTS query is
-  // keyed on a *deferred* value that can lag a just-cleared input — without
-  // this gate the previous search's body hits would leak into the feed.
+  // The empty palette is the recall feed: body hits never join it.
   const bodyHits = query === '' ? [] : hits
   for (const hit of bodyHits) {
     if (!seen.has(hit.path)) {
