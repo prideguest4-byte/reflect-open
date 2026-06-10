@@ -130,6 +130,16 @@ function RoutedScreen(): ReactElement {
   return <AllNotesScreen tag={route.kind === 'allNotes' ? route.tag : null} />
 }
 
+/** Navigates to the already-active route — the sidebar-click-while-here case. */
+function ReArrive(): ReactElement {
+  const { navigate } = useRouter()
+  return (
+    <button type="button" data-testid="re-arrive" onClick={() => navigate({ kind: 'allNotes', tag: null })}>
+      re-arrive
+    </button>
+  )
+}
+
 function renderScreen() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -137,6 +147,7 @@ function renderScreen() {
       <RouterProvider initialRoute={{ kind: 'allNotes', tag: null }}>
         <RoutedScreen />
         <RouteProbe />
+        <ReArrive />
       </RouterProvider>
     </QueryClientProvider>,
   )
@@ -178,6 +189,22 @@ describe('AllNotesScreen', () => {
     expect(probedRoute(view)).toEqual({ kind: 'allNotes', tag: 'book' })
     await view.findByText('No notes tagged #book.')
     expect(view.queryByText('Health Stacked')).toBeNull()
+    view.unmount()
+  })
+
+  it('re-anchors to the top when re-arriving on the same route', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    const scroller = view.getByTestId('all-notes-scroll')
+    fireEvent.scroll(scroller, { target: { scrollTop: 400 } })
+    expect(scroller.scrollTop).toBe(400)
+
+    // Same-route navigation pushes no entry, but the router clears the saved
+    // offset and bumps arrivalSeq — the list must re-anchor, not stay put.
+    fireEvent.click(view.getByTestId('re-arrive'))
+
+    await waitFor(() => expect(scroller.scrollTop).toBe(0))
     view.unmount()
   })
 

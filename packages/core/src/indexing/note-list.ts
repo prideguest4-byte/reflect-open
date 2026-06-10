@@ -74,7 +74,9 @@ export async function listNotes(options: NoteListOptions = {}): Promise<NoteList
     .innerJoin('notes', 'notes.path', 'tags.notePath')
     .where('notes.dailyDate', 'is', null)
     .select(['tags.notePath', 'tags.tag'])
-    .orderBy('tags.tag')
+    // Order on the folded key so a row's tags read in the same alphabetical
+    // order as the facet list, regardless of display casing.
+    .orderBy('tags.tagKey')
   if (tag !== null) {
     tagQuery = tagQuery.where(noteCarriesTag(tag))
   }

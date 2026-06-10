@@ -26,10 +26,11 @@ export function AllNotesFilters({ tag, facets, onSelect }: AllNotesFiltersProps)
   const pinned: string[] = []
   const pinnedKeys = new Set<string>()
   for (const entry of settings.allNotesFilterTags) {
-    const key = foldTag(entry.trim())
+    const trimmed = entry.trim()
+    const key = foldTag(trimmed)
     if (key !== '' && !pinnedKeys.has(key)) {
       pinnedKeys.add(key)
-      pinned.push(entry.trim())
+      pinned.push(trimmed)
     }
   }
 

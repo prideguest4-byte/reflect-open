@@ -26,7 +26,7 @@ interface AllNotesScreenProps {
  */
 export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   const { graph } = useGraph()
-  const { entryId, navigate, saveScrollState, savedScroll } = useRouter()
+  const { arrivalSeq, entryId, navigate, saveScrollState, savedScroll } = useRouter()
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const enabled = hasBridge() && graph !== null
 
@@ -42,15 +42,18 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   })
 
   // Per-entry scroll memory (ScrollRestored's contract): restore on
-  // back/forward, reset to the top for a fresh entry. Gated on the rows being
-  // loaded — restoring against an empty (zero-height) list would clamp the
-  // offset to 0 and lose the position.
+  // back/forward, reset to the top for a fresh entry. `arrivalSeq` covers
+  // re-arrival on the same entry (sidebar/palette while already here) — the
+  // router clears the saved offset for that case, so the list re-anchors to
+  // the top like the daily stream does. Gated on the rows being loaded —
+  // restoring against an empty (zero-height) list would clamp the offset to 0
+  // and lose the position.
   const ready = notes !== undefined
   useEffect(() => {
     if (ready && scrollRef.current) {
       scrollRef.current.scrollTop = savedScroll() ?? 0
     }
-  }, [entryId, ready, savedScroll])
+  }, [arrivalSeq, entryId, ready, savedScroll])
 
   return (
     <div aria-label="All notes" className="flex h-full min-h-0 flex-col">
@@ -69,6 +72,7 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
       </header>
       <div
         ref={scrollRef}
+        data-testid="all-notes-scroll"
         onScroll={(event) => saveScrollState(event.currentTarget.scrollTop)}
         className="min-h-0 flex-1 overflow-auto px-6 pb-8"
       >
