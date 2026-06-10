@@ -47,6 +47,14 @@ describe('BacklinksPanel', () => {
     view.unmount()
   })
 
+  it('surfaces a failed query as an alert instead of rendering nothing', async () => {
+    getBacklinksWithContext.mockRejectedValue(new Error('index unavailable'))
+    const view = renderPanel('notes/roadmap.md')
+    const alert = await view.findByRole('alert')
+    expect(alert.textContent).toContain('Couldn’t load backlinks.')
+    view.unmount()
+  })
+
   it('uses the singular header for one inbound link', async () => {
     getBacklinksWithContext.mockResolvedValue([
       {

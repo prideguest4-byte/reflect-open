@@ -27,7 +27,9 @@ const EXPANDED_STORAGE_KEY = 'reflect.backlinks-expanded'
  * across all notes. Ambient and always-available — the associative recall
  * the product is built on — and cheap: one indexed query per visible note,
  * kept fresh by the index invalidation hook (no polling). Renders nothing
- * when the note has no inbound links.
+ * when the note has no inbound links, but a failed query surfaces as an
+ * alert — this is the only backlinks surface, and a failing query means the
+ * index is broken, not that the note is unlinked.
  */
 export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | null {
   const { navigate } = useRouter()
@@ -35,7 +37,7 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
   // The graph root is part of the key: index rows belong to one graph, and a
   // graph switch must never serve the previous graph's cached rows (the cache
   // outlives the workspace remount; invalidation alone lags the reconcile).
-  const { data } = useQuery({
+  const { data, isError } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'backlinks', path],
     queryFn: () => getBacklinksWithContext(path),
     enabled: hasBridge() && graph !== null,
@@ -43,6 +45,16 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
   // Shared across every mounted panel: the daily stream shows one per day,
   // and the header toggle must move them together, not just this instance.
   const [expanded, setExpanded] = useSessionFlag(EXPANDED_STORAGE_KEY, true)
+
+  if (isError) {
+    return (
+      <section aria-label="Incoming backlinks" className="mt-8">
+        <p role="alert" className="text-xs text-text-muted">
+          Couldn’t load backlinks.
+        </p>
+      </section>
+    )
+  }
 
   if (!data || data.length === 0) {
     return null
