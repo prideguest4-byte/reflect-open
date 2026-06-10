@@ -139,9 +139,60 @@ export async function retrieve(query: string, options?: RetrieveOptions): Promis
   if (mode === 'semantic') {
     return withPrivacy(await semanticHits(query, limit), excludePrivateContent)
   }
+  // Hybrid degrades, never breaks: a failing semantic leg (embed error, vec
+  // query error — even while the runtime claims ready) must not take lexical
+  // search down with it. A failing lexical leg is a real error and throws.
   const [lexical, semantic] = await Promise.all([
     lexicalHits(query, limit),
-    semanticHits(query, limit),
+    semanticHits(query, limit).catch((cause): RetrievalHit[] => {
+      console.error('semantic leg failed; serving lexical only:', cause)
+      return []
+    }),
   ])
   return withPrivacy(fuseRanked([lexical, semantic], limit), excludePrivateContent)
+}
+
+/**
+ * Semantic neighbors of an existing note, seeded by its own **stored** lead
+ * chunk vector — no re-embedding, no pane-provided seed text: the embedding
+ * sync keeps chunks current on every save, and the index invalidation scope
+ * refetches consumers, so freshness is automatic. Returns [] when the note
+ * has no vectors yet (model never enabled, or not yet embedded).
+ */
+export async function relatedNotes(path: string, limit = 6): Promise<RetrievalHit[]> {
+  const seed = await sql<{ vec: string }>`
+    SELECT vec_to_json(v.embedding) AS vec
+    FROM embedding_chunks c
+    JOIN embedding_vectors v ON v.rowid = c.id
+    WHERE c.note_path = ${path}
+    ORDER BY c.pos_from
+    LIMIT 1
+  `.execute(db)
+  const vec = seed.rows[0]?.vec
+  if (vec === undefined) {
+    return []
+  }
+  const result = await sql<ChunkHitRow>`
+    SELECT c.note_path AS path, n.title, c.heading, c.text,
+           n.is_private AS isPrivate, v.distance
+    FROM embedding_vectors v
+    JOIN embedding_chunks c ON c.id = v.rowid
+    JOIN notes n ON n.path = c.note_path
+    WHERE v.embedding MATCH ${vec} AND k = ${KNN_CANDIDATES}
+    ORDER BY v.distance
+  `.execute(db)
+  const byNote = new Map<string, RetrievalHit>()
+  for (const row of result.rows) {
+    if (row.path !== path && !byNote.has(row.path)) {
+      byNote.set(row.path, {
+        path: row.path,
+        title: row.title,
+        score: 1 / (1 + row.distance),
+        snippet: row.text.trim(),
+        heading: row.heading,
+        isPrivate: row.isPrivate !== 0,
+      })
+    }
+  }
+  return [...byNote.values()].slice(0, limit)
 }

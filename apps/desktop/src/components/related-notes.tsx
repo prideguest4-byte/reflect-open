@@ -1,8 +1,7 @@
 import type { ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { hasBridge, retrieve } from '@reflect/core'
+import { hasBridge, relatedNotes } from '@reflect/core'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
-import { useEmbedStatus } from '@/lib/use-embed-status'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -10,34 +9,27 @@ import { useRouter } from '@/routing/router'
 interface RelatedNotesProps {
   /** The open note (excluded from its own results). */
   path: string
-  /** Seed content (the note body; the first ~1k chars are plenty). */
-  seed: string
 }
-
-const SEED_CHARS = 1200
 
 /**
  * Semantic neighbors of the open note (Plan 09 — the "suggested backlinks"
- * deferred from Plan 07): the payoff surface for local embeddings. Renders
- * nothing until the model is ready, when the note is empty, or when nothing
- * relates — strictly additive, like the rest of semantic search.
+ * deferred from Plan 07): the payoff surface for local embeddings. Seeded by
+ * the note's own **stored** chunk vectors, so freshness rides the embedding
+ * sync + index invalidation (saves re-embed → scope invalidates → refetch) —
+ * no pane-provided seed text to go stale. Renders nothing when the note has
+ * no vectors yet (model never enabled, not yet embedded) or nothing relates.
  */
-export function RelatedNotes({ path, seed }: RelatedNotesProps): ReactElement | null {
+export function RelatedNotes({ path }: RelatedNotesProps): ReactElement | null {
   const { navigate } = useRouter()
   const { graph } = useGraph()
-  const status = useEmbedStatus()
-  const ready = status.status === 'ready'
-  const trimmedSeed = seed.trim().slice(0, SEED_CHARS)
 
   const { data } = useQuery({
-    // The seed is part of the key: the same path re-seeded (reload, save,
-    // external sync) must not serve neighbors computed from the old body.
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'related', path, trimmedSeed],
-    queryFn: () => retrieve(trimmedSeed, { mode: 'semantic', limit: 7 }),
-    enabled: ready && hasBridge() && graph !== null && trimmedSeed !== '',
+    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'related', path],
+    queryFn: () => relatedNotes(path),
+    enabled: hasBridge() && graph !== null,
   })
 
-  const related = (data ?? []).filter((hit) => hit.path !== path).slice(0, 6)
+  const related = data ?? []
   if (related.length === 0) {
     return null
   }

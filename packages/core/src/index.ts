@@ -32,6 +32,7 @@ export {
 export { embedNote, backfillEmbeddings } from './embeddings/pipeline'
 export {
   retrieve,
+  relatedNotes,
   fuseRanked,
   type RetrievalHit,
   type RetrieveOptions,

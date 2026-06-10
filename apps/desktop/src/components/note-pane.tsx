@@ -215,7 +215,7 @@ export function NotePane({
       </NoteEditor>
 
       <BacklinksPanel path={path} />
-      <RelatedNotes path={path} seed={document.initialContent} />
+      <RelatedNotes path={path} />
     </div>
   )
 }

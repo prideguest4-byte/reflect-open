@@ -449,3 +449,34 @@ fn reindexing_a_note_keeps_its_chunks_but_true_deletion_drops_them() {
     assert_eq!(chunk_rows(&conn), vec![]);
     assert_eq!(vector_count(&conn), 0);
 }
+
+#[test]
+fn stored_vectors_round_trip_through_vec_to_json() {
+    // relatedNotes (TS) seeds KNN with `vec_to_json(embedding)` via db_query;
+    // pin the function name + shape against the real extension.
+    let conn = migrated();
+    apply_chunks(&conn, "notes/a.md", &[chunk("a1", Some(vec384(0.25)))]).unwrap();
+    let rows = run_query(
+        &conn,
+        "SELECT vec_to_json(v.embedding) AS vec
+         FROM embedding_chunks c JOIN embedding_vectors v ON v.rowid = c.id
+         WHERE c.note_path = ?1 ORDER BY c.pos_from LIMIT 1",
+        &[Value::String("notes/a.md".to_string())],
+    )
+    .unwrap();
+    let vec = rows[0].get("vec").unwrap().as_str().unwrap();
+    assert!(vec.starts_with('['));
+    // And the JSON form is MATCH-able right back (the second relatedNotes query).
+    let knn = run_query(
+        &conn,
+        "SELECT c.note_path FROM embedding_vectors v
+         JOIN embedding_chunks c ON c.id = v.rowid
+         WHERE v.embedding MATCH ?1 AND k = 1 ORDER BY v.distance",
+        &[Value::String(vec.to_string())],
+    )
+    .unwrap();
+    assert_eq!(
+        knn[0].get("note_path").unwrap().as_str().unwrap(),
+        "notes/a.md"
+    );
+}
