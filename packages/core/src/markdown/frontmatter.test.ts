@@ -43,7 +43,7 @@ describe('parseFrontmatter', () => {
   it('degrades broken YAML to defaults + a warning, never throwing', () => {
     const { data, warning } = parseFrontmatter('foo: [unclosed')
     expect(warning).toMatch(/invalid YAML/i)
-    expect(data).toEqual({ aliases: [], private: false })
+    expect(data).toEqual({ aliases: [], private: false, pinned: false })
   })
 
   it('treats non-mapping frontmatter as ignored + a warning', () => {
@@ -58,6 +58,14 @@ describe('parseFrontmatter', () => {
     expect(parseFrontmatter('private: no').data.private).toBe(false)
     expect(parseFrontmatter('private: banana').data.private).toBe(false)
     expect(parseFrontmatter('id: x').data.private).toBe(false)
+  })
+
+  it('coerces the pinned flag with the same explicit rules', () => {
+    expect(parseFrontmatter('pinned: true').data.pinned).toBe(true)
+    expect(parseFrontmatter('pinned: yes').data.pinned).toBe(true)
+    expect(parseFrontmatter('pinned: false').data.pinned).toBe(false)
+    expect(parseFrontmatter('pinned: banana').data.pinned).toBe(false)
+    expect(parseFrontmatter('id: x').data.pinned).toBe(false)
   })
 })
 
@@ -90,5 +98,22 @@ describe('upsertFrontmatter', () => {
     const result = upsertFrontmatter(source, { id: undefined })
     expect(result).not.toContain('id: x')
     expect(result).toContain('custom: keep')
+  })
+
+  it('removes the whole block when the last key is deleted', () => {
+    expect(upsertFrontmatter('---\npinned: true\n---\n# Body', { pinned: undefined })).toBe(
+      '# Body',
+    )
+  })
+
+  it('does not create a block for a deletion-only patch', () => {
+    expect(upsertFrontmatter('# Body', { pinned: undefined })).toBe('# Body')
+  })
+
+  it('round-trips pin → unpin back to the original source', () => {
+    const source = '# Body\n\ntext'
+    const pinned = upsertFrontmatter(source, { pinned: true })
+    expect(pinned).toBe('---\npinned: true\n---\n# Body\n\ntext')
+    expect(upsertFrontmatter(pinned, { pinned: undefined })).toBe(source)
   })
 })

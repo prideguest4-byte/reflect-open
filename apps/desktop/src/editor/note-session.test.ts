@@ -226,6 +226,21 @@ describe('frontmatter ownership (Plan 07b)', () => {
     expect(h.applied).toEqual([]) // the editor was never reloaded
   })
 
+  it('pinning writes the flag; unpinning removes the key, not `pinned: false`', async () => {
+    const h = harness({ disk: '# Hello\n' })
+    h.session.load()
+    await vi.runAllTimersAsync()
+    h.session.updateFrontmatter({ pinned: true })
+    await vi.runAllTimersAsync()
+    expect(h.writes.at(-1)?.contents).toBe('---\npinned: true\n---\n# Hello\n')
+
+    h.session.updateFrontmatter({ pinned: false })
+    await vi.runAllTimersAsync()
+    // The only metadata was the pin — the note returns to no frontmatter at all.
+    expect(h.writes.at(-1)?.contents).toBe('# Hello\n')
+    expect(h.applied).toEqual([]) // the editor was never reloaded
+  })
+
   it('an external frontmatter-only change adopts cleanly without a conflict', async () => {
     const h = harness({ disk: `${FM}# Hello\n` })
     h.session.load()

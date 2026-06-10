@@ -65,6 +65,7 @@ export interface Notes {
   dailyDate: string | null;
   fileHash: string;
   id: string | null;
+  isPinned: Generated<number>;
   isPrivate: Generated<number>;
   mtime: Generated<number>;
   path: string;

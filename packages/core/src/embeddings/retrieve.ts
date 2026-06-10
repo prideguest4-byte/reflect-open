@@ -80,6 +80,7 @@ async function lexicalHits(query: string, limit: number): Promise<RetrievalHit[]
     filters: {
       tags: [],
       dailyOnly: false,
+      pinnedOnly: false,
       linksTo: null,
       linkedFrom: null,
       updatedAfterMs: null,

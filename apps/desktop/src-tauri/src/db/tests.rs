@@ -27,6 +27,7 @@ fn note(path: &str, title: &str, links: Vec<IndexedLink>) -> IndexedNote {
         title_key: title.to_lowercase(),
         daily_date: None,
         is_private: false,
+        is_pinned: false,
         file_hash: "h".to_string(),
         mtime: 0,
         text: format!("{title} body"),
@@ -56,7 +57,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 2); // applied migrations (0001 + 0002)
+    assert_eq!(version, 3); // applied migrations (0001 + 0002 + 0003)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -83,6 +84,18 @@ fn backlinks_resolve_by_title_at_query_time() {
     .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["source_path"], Value::from("notes/a.md"));
+}
+
+#[test]
+fn pinned_flag_round_trips_into_the_notes_row() {
+    let conn = migrated();
+    let mut pinned = note("notes/p.md", "P", vec![]);
+    pinned.is_pinned = true;
+    apply_note(&conn, &pinned).unwrap();
+    apply_note(&conn, &note("notes/q.md", "Q", vec![])).unwrap();
+    let rows = run_query(&conn, "SELECT path FROM notes WHERE is_pinned = 1", &[]).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["path"], Value::from("notes/p.md"));
 }
 
 #[test]
@@ -171,7 +184,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();

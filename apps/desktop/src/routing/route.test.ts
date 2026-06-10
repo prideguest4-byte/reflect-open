@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { routeForPath } from './route'
+import { notePathForRoute, routeForPath } from './route'
 
 describe('routeForPath', () => {
   it('routes real daily paths to the daily view', () => {
@@ -16,5 +16,22 @@ describe('routeForPath', () => {
       kind: 'note',
       path: 'daily/2026-02-31.md',
     })
+  })
+})
+
+describe('notePathForRoute', () => {
+  const TODAY = '2026-06-10'
+
+  it('resolves the file note-scoped commands act on', () => {
+    expect(notePathForRoute({ kind: 'note', path: 'notes/a.md' }, TODAY)).toBe('notes/a.md')
+    expect(notePathForRoute({ kind: 'daily', date: '2026-06-09' }, TODAY)).toBe(
+      'daily/2026-06-09.md',
+    )
+    expect(notePathForRoute({ kind: 'today' }, TODAY)).toBe('daily/2026-06-10.md')
+  })
+
+  it('is null on screens that edit no note', () => {
+    expect(notePathForRoute({ kind: 'search', query: 'x' }, TODAY)).toBeNull()
+    expect(notePathForRoute({ kind: 'settings' }, TODAY)).toBeNull()
   })
 })

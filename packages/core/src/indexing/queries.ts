@@ -160,6 +160,29 @@ export async function suggestWikiTargets(query: string, limit = 8): Promise<Wiki
   return ranked
 }
 
+/** One pinned note, as the sidebar's Pinned section lists it. */
+export interface PinnedNote {
+  path: string
+  title: string
+  dailyDate: string | null
+}
+
+/**
+ * Every note carrying `pinned: true` frontmatter, title-ordered (case-folded,
+ * path as the tiebreak). Alphabetical because the flag is a plain boolean —
+ * there is no user-ordained order to honor — and a stable order is the point
+ * of pinning: the list must not reshuffle as notes are edited.
+ */
+export async function getPinnedNotes(): Promise<PinnedNote[]> {
+  return db
+    .selectFrom('notes')
+    .where('isPinned', '=', 1)
+    .select(['path', 'title', 'dailyDate'])
+    .orderBy('titleKey')
+    .orderBy('path')
+    .execute()
+}
+
 /** Core fields of one note row: identity path, title, daily date, privacy flag. */
 export interface NoteRow {
   path: string

@@ -1,11 +1,14 @@
 import { embedStatus, notePath, randomNotePath, rebuildIndex } from '@reflect/core'
 import { ulid } from 'ulidx'
+import { todayIso } from '@/lib/dates'
+import { toggleNotePinned } from '@/lib/note-pin'
 import { startOperation } from '@/lib/operations'
 import {
   backfillEmbeddingsVisibly,
   ensureEmbeddingsVisibly,
   setSemanticEnabled,
 } from '@/lib/semantic'
+import { notePathForRoute } from '@/routing/route'
 import { registerCommands } from './registry'
 import type { AppCommand } from './types'
 
@@ -50,6 +53,23 @@ const APP_COMMANDS: AppCommand[] = [
     keywords: ['find', 'open'],
     keybinding: 'Mod-k',
     run: (context) => context.openPalette(),
+  },
+  {
+    id: 'note.togglePin',
+    title: 'Pin or unpin note',
+    keywords: ['pinned', 'favorite', 'bookmark', 'sidebar'],
+    // The original app's pin shortcut. Flips the `pinned` frontmatter flag of
+    // the note the current route edits; on search/settings there is no such
+    // note and the command is a no-op.
+    keybinding: 'Mod-o',
+    run: async (context) => {
+      const generation = context.generation()
+      const path = notePathForRoute(context.route(), todayIso())
+      if (generation === null || path === null) {
+        return
+      }
+      await toggleNotePinned(path, generation)
+    },
   },
   {
     id: 'note.random',

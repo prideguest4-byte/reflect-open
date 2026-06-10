@@ -6,6 +6,7 @@
  * Tokens (everything else is search text):
  * - `#tag`              — note carries the tag (repeatable, ANDed)
  * - `is:daily`          — daily notes only
+ * - `is:pinned`         — pinned notes only
  * - `links:Target`      — notes that link **to** Target (quote multi-word:
  *                         `links:"Project X"`)
  * - `linked-from:Target`— notes Target links to
@@ -21,6 +22,7 @@ export interface SearchFilters {
   /** Lower-cased tag names (tags match case-insensitively). */
   tags: string[]
   dailyOnly: boolean
+  pinnedOnly: boolean
   /** Title/alias/date of the note results must link to. */
   linksTo: string | null
   /** Title/alias/date of the note results must be linked from. */
@@ -42,6 +44,7 @@ export interface ParsedSearchQuery {
 const EMPTY_FILTERS: SearchFilters = {
   tags: [],
   dailyOnly: false,
+  pinnedOnly: false,
   linksTo: null,
   linkedFrom: null,
   updatedAfterMs: null,
@@ -118,6 +121,11 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
     }
     if (lower === 'is:daily') {
       filters.dailyOnly = true
+      filtered = true
+      continue
+    }
+    if (lower === 'is:pinned') {
+      filters.pinnedOnly = true
       filtered = true
       continue
     }

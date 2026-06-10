@@ -23,6 +23,7 @@ pub struct IndexedNote {
     pub(super) title_key: String,
     pub(super) daily_date: Option<String>,
     pub(super) is_private: bool,
+    pub(super) is_pinned: bool,
     pub(super) file_hash: String,
     pub(super) mtime: i64,
     pub(super) text: String,
@@ -62,8 +63,8 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
     remove_note(conn, &note.path)?;
 
     conn.prepare_cached(
-        "INSERT INTO notes(path, id, title, title_key, daily_date, is_private, file_hash, mtime, updated_at)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+        "INSERT INTO notes(path, id, title, title_key, daily_date, is_private, is_pinned, file_hash, mtime, updated_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
     )?
     .execute(params![
         note.path,
@@ -72,6 +73,7 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
         note.title_key,
         note.daily_date,
         i64::from(note.is_private),
+        i64::from(note.is_pinned),
         note.file_hash,
         note.mtime,
     ])?;

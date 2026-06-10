@@ -14,15 +14,16 @@ export interface Span {
 }
 
 /**
- * Coerce the privacy flag. `private` is a hard block (such notes must never reach
- * any external service), so coercion is explicit and predictable rather than
- * truthiness-based: a note is private only when it carries an explicit truthy
- * boolean/number/string. Anything unrecognized (typo, object, absent) is **not**
- * private — it never silently marks an unrelated note private, and the explicit
- * `private: true` path the security model relies on is always honoured. We also
- * accept the YAML 1.1-style words (`yes`/`on`) a 1.2 loader reads as strings.
+ * Coerce a boolean frontmatter flag (`private`, `pinned`). Coercion is explicit
+ * and predictable rather than truthiness-based: the flag is set only when it
+ * carries an explicit truthy boolean/number/string. Anything unrecognized
+ * (typo, object, absent) is **off** — this matters most for `private`, a hard
+ * block on sending content to external services: a bad value never silently
+ * marks an unrelated note private, and the explicit `private: true` path the
+ * security model relies on is always honoured. We also accept the YAML
+ * 1.1-style words (`yes`/`on`) a 1.2 loader reads as strings.
  */
-function coercePrivate(value: unknown): boolean {
+function coerceFlag(value: unknown): boolean {
   if (typeof value === 'boolean') return value
   if (typeof value === 'number') return value === 1
   if (typeof value === 'string') {
@@ -43,7 +44,9 @@ export const frontmatterSchema = z
     id: z.string().optional().catch(undefined),
     aliases: z.array(z.string()).catch([]).default([]),
     /** Hard privacy flag: such notes must never be sent to any external service. */
-    private: z.preprocess(coercePrivate, z.boolean()).default(false),
+    private: z.preprocess(coerceFlag, z.boolean()).default(false),
+    /** Pinned to the sidebar's Pinned section. Unpinned notes omit the key. */
+    pinned: z.preprocess(coerceFlag, z.boolean()).default(false),
   })
   .passthrough()
 export type Frontmatter = z.infer<typeof frontmatterSchema>

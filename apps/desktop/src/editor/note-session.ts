@@ -135,6 +135,24 @@ export interface NoteSessionOptions {
 export interface FrontmatterPatch {
   /** Alternative wiki-link titles for this note (the Plan 07b auto-alias). */
   aliases?: string[]
+  /**
+   * Sidebar pin. `false` deletes the key rather than writing `pinned: false` —
+   * unpinned is the absence of the flag, and a note whose only metadata was
+   * the pin returns to having no frontmatter at all.
+   */
+  pinned?: boolean
+}
+
+/** Translate the typed patch into the YAML write (`undefined` deletes a key). */
+function yamlPatch(patch: FrontmatterPatch): Record<string, unknown> {
+  const yaml: Record<string, unknown> = {}
+  if (patch.aliases !== undefined) {
+    yaml.aliases = patch.aliases
+  }
+  if (patch.pinned !== undefined) {
+    yaml.pinned = patch.pinned ? true : undefined
+  }
+  return yaml
 }
 
 /** One open note's document lifecycle. Create via {@link createNoteSession}. */
@@ -510,7 +528,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     if (disposed || isProtected || status !== 'ready') {
       return false
     }
-    header = splitDoc(upsertFrontmatter(header + buffer, { ...patch })).header
+    header = splitDoc(upsertFrontmatter(header + buffer, yamlPatch(patch))).header
     dirty = header + buffer !== disk
     emit()
     if (dirty) {

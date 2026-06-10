@@ -39,6 +39,7 @@ export {
   getLinkSources,
   getNote,
   getNotesByTag,
+  getPinnedNotes,
   searchNotes,
   suggestWikiTargets,
   getIndexedHashes,
@@ -46,6 +47,7 @@ export {
   type Backlink,
   type BacklinkContext,
   type NoteRow,
+  type PinnedNote,
   type SearchHit,
 } from './queries'
 export { rankWikiSuggestions, type WikiSuggestion } from './suggest'
