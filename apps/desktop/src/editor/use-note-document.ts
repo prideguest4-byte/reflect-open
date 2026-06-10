@@ -184,18 +184,25 @@ export function useNoteDocument(
       return
     }
     const flush = (): void => {
-      const settled = sessionRef.current?.flush()
+      // Capture the pair at event time: reading the refs again after the
+      // flush promise resolves could observe a *different* note's session/
+      // coordinator if navigation switched panes mid-flush — settling that
+      // one early would fire its renames without quiet period or blur.
+      const session = sessionRef.current
+      const coordinator = coordinatorRef.current
       // Blur is a settle point for title renames — but only after the flushed
       // save lands, so the tracker has seen the final title.
-      void settled?.then(() => coordinatorRef.current?.settle())
+      void session?.flush().then(() => coordinator?.settle())
     }
     const unregister = registerFlush(async () => {
-      await sessionRef.current?.flush()
+      const session = sessionRef.current
+      const coordinator = coordinatorRef.current
+      await session?.flush()
       // Quit teardown is a settle point too: a pending title change must
       // rewrite its links before the webview dies — settle (synchronously
       // appends the rewrite to the chain), then wait for the writes to land.
-      coordinatorRef.current?.settle()
-      await coordinatorRef.current?.settled()
+      coordinator?.settle()
+      await coordinator?.settled()
     })
     window.addEventListener('blur', flush)
     return () => {

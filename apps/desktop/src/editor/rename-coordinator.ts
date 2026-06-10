@@ -72,19 +72,29 @@ export function createRenameCoordinator(options: RenameCoordinatorOptions): Rena
         return
       }
       try {
-        const result = await rewriteLinksForTitleChange({
-          path,
-          from: rename.from,
-          to: rename.to,
-          io: {
-            sources: getLinkSources,
-            read: readNote,
-            write: (forPath, contents) => writeNote(forPath, contents, gen),
-            resolve: resolveWikiTarget,
-          },
-          onProgress: (done, total) => onProgress({ done, total }),
-        })
-        if (result.collision) {
+        let collision = false
+        try {
+          const result = await rewriteLinksForTitleChange({
+            path,
+            from: rename.from,
+            to: rename.to,
+            io: {
+              sources: getLinkSources,
+              read: readNote,
+              write: (forPath, contents) => writeNote(forPath, contents, gen),
+              resolve: resolveWikiTarget,
+            },
+            onProgress: (done, total) => onProgress({ done, total }),
+          })
+          collision = result.collision
+        } catch (cause) {
+          // A failed rewrite must NOT skip the alias below: the tracker's
+          // baseline has already advanced (re-arming would re-fire with a
+          // stale `from` after further edits), so the alias is the safety
+          // net that keeps every un-rewritten link resolving to this note.
+          console.error('rename link rewrite failed:', cause)
+        }
+        if (collision) {
           // The old title belongs to a different note now: links were left
           // resolving there, and claiming it as *our* alias would plant a
           // competing key — one that never wins while the other note exists,
@@ -114,7 +124,7 @@ export function createRenameCoordinator(options: RenameCoordinatorOptions): Rena
           }
         }
       } catch (cause) {
-        console.error('rename link rewrite failed:', cause)
+        console.error('rename alias placement failed:', cause)
       } finally {
         onProgress(null)
       }
