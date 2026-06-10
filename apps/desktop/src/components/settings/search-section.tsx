@@ -63,13 +63,22 @@ export function SearchSection(): ReactElement {
     control = (
       <div>
         <InlineAlert tone="error">Couldn’t load the model: {status.message}</InlineAlert>
-        <button
-          type="button"
-          onClick={() => void ensureEmbeddingsVisibly()}
-          className="mt-2 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors duration-100 hover:bg-surface-hover"
-        >
-          Try again
-        </button>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void ensureEmbeddingsVisibly()}
+            className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors duration-100 hover:bg-surface-hover"
+          >
+            Try again
+          </button>
+          <button
+            type="button"
+            onClick={() => updateSettings({ semanticSearchEnabled: false })}
+            className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors duration-100 hover:bg-surface-hover"
+          >
+            Disable
+          </button>
+        </div>
       </div>
     )
   } else {

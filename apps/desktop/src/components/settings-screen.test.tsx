@@ -167,7 +167,7 @@ describe('SettingsScreen', () => {
     )
   })
 
-  it('surfaces a failed load with a retry affordance', async () => {
+  it('surfaces a failed load with retry and disable affordances', async () => {
     stored = { semanticSearchEnabled: true }
     embedStatus = { status: 'failed', message: 'no disk space' }
     renderScreen()
@@ -175,6 +175,16 @@ describe('SettingsScreen', () => {
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.getByText(/no disk space/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy()
+
+    // Backing out after a failure must work too — the opt-in isn't a trap.
+    fireEvent.click(screen.getByRole('button', { name: /disable/i }))
+
+    await waitFor(() =>
+      expect(saved).toEqual([
+        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: false, theme: 'system' },
+      ]),
+    )
+    expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()
   })
 
   it('lists registered shortcuts from both keymap scopes', () => {
