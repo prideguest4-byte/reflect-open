@@ -9,6 +9,7 @@ import {
   writeNote,
 } from '@reflect/core'
 import type { NoteContentOrigin, NoteSession } from './note-session'
+import { liveSession } from './session-registry'
 import { createTitleRenameTracker } from './title-rename'
 import type { TitleRename } from './title-rename'
 
@@ -114,20 +115,30 @@ export function createRenameCoordinator(options: RenameCoordinatorOptions): Rena
         // rename): replacing from it would drop concurrently-gained entries.
         const aliasesOf = (source: string): string[] =>
           parseNote({ path, source }).frontmatter.aliases
-        if (!paneClosed && session !== null) {
+        // Route through a session whenever one is open: the bound one while
+        // this pane lives, or a *reopened* pane's live session afterwards —
+        // a direct disk write under a reopened dirty buffer would park a
+        // conflict caused by our own background work, and "keep mine" would
+        // silently drop the alias.
+        const owner = !paneClosed && session !== null ? session : liveSession(path)
+        let placed = false
+        if (owner !== null) {
           // Read and patch in the same tick (no await between): atomic against
           // the session. Through its frontmatter channel — the editor view
           // never churns — and flushed rather than riding the debounce: a
           // settle is exactly the moment to persist, and quit-time teardown
           // awaits this chain.
-          const aliases = nextAliases(aliasesOf(session.content()), rename)
-          if (aliases !== null) {
-            session.updateFrontmatter({ aliases })
-            await session.flush()
+          const aliases = nextAliases(aliasesOf(owner.content()), rename)
+          placed = aliases === null || owner.updateFrontmatter({ aliases })
+          if (placed && aliases !== null) {
+            await owner.flush()
           }
-        } else {
-          // Pane gone: write directly to disk. No editor left to disturb;
-          // a reopened pane reconciles it like any external change.
+        }
+        if (!placed) {
+          // No live session (or it can't take patches — e.g. still loading):
+          // write directly to disk; a loading/clean session reconciles it
+          // like any external change, and a header-only patch is body-safe
+          // even for protected notes.
           const content = await readNote(path)
           const aliases = nextAliases(aliasesOf(content), rename)
           if (aliases !== null) {

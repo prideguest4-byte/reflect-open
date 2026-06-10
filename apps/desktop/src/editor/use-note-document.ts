@@ -7,6 +7,7 @@ import {
   type RenameCoordinator,
   type RenameProgress,
 } from './rename-coordinator'
+import { registerSession } from './session-registry'
 import {
   createNoteSession,
   INITIAL_NOTE_SNAPSHOT,
@@ -132,6 +133,7 @@ export function useNoteDocument(
     })
     coordinator?.bind(session)
     sessionRef.current = session
+    const unregisterSession = registerSession(session)
     session.load()
     return () => {
       if (sessionRef.current === session) {
@@ -142,6 +144,7 @@ export function useNoteDocument(
       }
       paneLive = false
       setRenameProgress(null) // the next note must not inherit this one's status
+      unregisterSession()
       // Disposal flushes pending edits to the session's own path — the
       // path-switch "final flush" lives here, not in cross-note bookkeeping.
       // The flush's landed save reaches the tracker via onContent('saved');

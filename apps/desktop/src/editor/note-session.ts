@@ -136,9 +136,11 @@ export interface NoteSession {
   /**
    * Patch frontmatter keys (e.g. `aliases`, Plan 07b) without touching the
    * editor: the header is updated in place and saved through the normal
-   * pipeline. No-op while protected or not ready.
+   * pipeline. Returns false (and does nothing) while protected, not ready,
+   * or disposed — callers with a fallback path (the rename coordinator's
+   * direct disk write) branch on it.
    */
-  updateFrontmatter: (patch: Record<string, unknown>) => void
+  updateFrontmatter: (patch: Record<string, unknown>) => boolean
   /** Flush pending edits and detach: no further snapshots are emitted. */
   dispose: () => void
 }
@@ -445,9 +447,9 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     adoptCleanContent(content)
   }
 
-  function updateFrontmatter(patch: Record<string, unknown>): void {
+  function updateFrontmatter(patch: Record<string, unknown>): boolean {
     if (disposed || isProtected || status !== 'ready') {
-      return
+      return false
     }
     header = splitDoc(upsertFrontmatter(header + buffer, patch)).header
     dirty = header + buffer !== disk
@@ -455,6 +457,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     if (dirty) {
       scheduleSave()
     }
+    return true
   }
 
   function dispose(): void {

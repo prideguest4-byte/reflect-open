@@ -442,6 +442,54 @@ describe('useNoteDocument', () => {
     }
   })
 
+  it('a teardown rename routes its alias through a reopened dirty session', async () => {
+    vi.useFakeTimers()
+    try {
+      const files: Record<string, string> = {
+        'notes/a.md': '# Old Title\n',
+        'notes/src.md': 'see [[Old Title]]\n',
+      }
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === 'note_read') {
+          return files[(args as { path: string }).path]
+        }
+        if (command === 'note_write') {
+          const { path: writePath, contents } = args as { path: string; contents: string }
+          files[writePath] = contents
+          return null
+        }
+        if (command === 'db_query') {
+          const sql = String((args as { sql: string }).sql)
+          return sql.includes('"links"') ? [{ source_path: 'notes/src.md' }] : []
+        }
+        return null
+      })
+
+      const paneA = renderHook(() => useNoteDocument('notes/a.md', 1, { trackRenames: true }))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      act(() => paneA.result.current.onEditorChange('# New Title\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      paneA.unmount() // settles the rename; its chain runs on
+
+      // The same note is reopened immediately and edited before the chain's
+      // alias placement runs.
+      const paneA2 = renderHook(() => useNoteDocument('notes/a.md', 1, { trackRenames: true }))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      act(() => paneA2.result.current.onEditorChange('# New Title\n\nfresh edit\n'))
+      await act(() => vi.runAllTimersAsync())
+
+      // The alias went through the live session — no conflict from our own
+      // background write, and the user's edit and the alias both persist.
+      expect(paneA2.result.current.conflict).toBeNull()
+      expect(files['notes/a.md']).toContain('aliases:')
+      expect(files['notes/a.md']).toContain('Old Title')
+      expect(files['notes/a.md']).toContain('fresh edit')
+      paneA2.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('quit-time flushAllNotes settles a pending rename before resolving', async () => {
     vi.useFakeTimers()
     try {
