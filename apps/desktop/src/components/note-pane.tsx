@@ -23,6 +23,12 @@ interface NotePaneProps {
   autoFocus?: boolean
   /** Called once the autofocus actually happened (the editor mounted). */
   onAutoFocused?: () => void
+  /**
+   * Extra classes for the editable area (e.g. the daily stream's per-day
+   * `min-h-*`). Applied to the contenteditable root, so the reserved space
+   * is click-to-focus.
+   */
+  editorClassName?: string
 }
 
 /** The seeded title for a brand-new (missing) ordinary note. */
@@ -45,6 +51,7 @@ export function NotePane({
   lazy = false,
   autoFocus = false,
   onAutoFocused,
+  editorClassName,
 }: NotePaneProps): ReactElement {
   const { graph } = useGraph()
   const { settings } = useSettings()
@@ -163,6 +170,7 @@ export function NotePane({
         markMode={settings.editorMarkdownSyntax}
         images={images}
         onWikiLinkClick={onWikiLinkClick}
+        className={editorClassName}
         handleRef={handleRef}
       >
         <WikiAutocomplete onCreate={createFromAutocomplete} />
