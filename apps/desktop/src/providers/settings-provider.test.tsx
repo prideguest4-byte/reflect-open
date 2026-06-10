@@ -118,7 +118,14 @@ describe('SettingsProvider', () => {
     expect(result.current.settings.editorMarkdownSyntax).toBe('show')
     // The persisted document keeps unknown keys (newer-version settings survive).
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system', futureKey: true }]),
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'show',
+          theme: 'system',
+          allNotesFilterTags: ['book', 'link', 'person'],
+          futureKey: true,
+        },
+      ]),
     )
   })
 
@@ -142,7 +149,14 @@ describe('SettingsProvider', () => {
     // The load result must not clobber the update, and the deferred flush
     // persists the update merged over the *loaded* document.
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system', futureKey: true }]),
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'show',
+          theme: 'system',
+          allNotesFilterTags: ['book', 'link', 'person'],
+          futureKey: true,
+        },
+      ]),
     )
     expect(result.current.settings.editorMarkdownSyntax).toBe('show')
   })
@@ -160,7 +174,13 @@ describe('SettingsProvider', () => {
       releaseLoad()
     })
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'focus', theme: 'system' }]),
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'focus',
+          theme: 'system',
+          allNotesFilterTags: ['book', 'link', 'person'],
+        },
+      ]),
     )
     expect(result.current.settings.editorMarkdownSyntax).toBe('focus')
   })
@@ -205,7 +225,13 @@ describe('SettingsProvider', () => {
       result.current.updateSettings({ editorMarkdownSyntax: 'show' })
     })
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system' }]),
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'show',
+          theme: 'system',
+          allNotesFilterTags: ['book', 'link', 'person'],
+        },
+      ]),
     )
   })
 
@@ -227,7 +253,13 @@ describe('SettingsProvider', () => {
     await act(async () => {
       await flushSettings()
     })
-    expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system' }])
+    expect(saved).toEqual([
+      {
+        editorMarkdownSyntax: 'show',
+        theme: 'system',
+        allNotesFilterTags: ['book', 'link', 'person'],
+      },
+    ])
   })
 
   it('surfaces a failed load and keeps changes session-only', async () => {

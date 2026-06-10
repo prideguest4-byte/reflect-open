@@ -76,10 +76,12 @@ export {
   settingsSchema,
   editorMarkdownSyntaxSchema,
   themePreferenceSchema,
+  allNotesFilterTagsSchema,
   DEFAULT_SETTINGS,
   type Settings,
   type EditorMarkdownSyntax,
   type ThemePreference,
+  type AllNotesFilterTags,
 } from './settings/schema'
 export { loadSettings, saveSettings } from './settings/commands'
 
@@ -148,6 +150,8 @@ export {
   getLinkSources,
   getNote,
   getNotesByTag,
+  listNotes,
+  listNoteTags,
   searchNotes,
   suggestWikiTargets,
   getIndexedHashes,
@@ -164,6 +168,9 @@ export {
   type Backlink,
   type BacklinkContext,
   type NoteRow,
+  type NoteListEntry,
+  type NoteListOptions,
+  type NoteTagFacet,
   type SearchHit,
   type FileChange,
   type WikiSuggestion,

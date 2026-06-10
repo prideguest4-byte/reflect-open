@@ -14,6 +14,7 @@ export type Route =
   | { kind: 'today' }
   | { kind: 'daily'; date: string }
   | { kind: 'note'; path: string }
+  | { kind: 'allNotes'; tag: string | null }
   | { kind: 'search'; query: string }
   | { kind: 'settings' }
 
@@ -30,6 +31,8 @@ export function routesEqual(a: Route, b: Route): boolean {
       return a.date === (b as Extract<Route, { kind: 'daily' }>).date
     case 'note':
       return a.path === (b as Extract<Route, { kind: 'note' }>).path
+    case 'allNotes':
+      return a.tag === (b as Extract<Route, { kind: 'allNotes' }>).tag
     case 'search':
       return a.query === (b as Extract<Route, { kind: 'search' }>).query
   }

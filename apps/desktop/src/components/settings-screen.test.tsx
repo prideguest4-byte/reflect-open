@@ -75,7 +75,13 @@ describe('SettingsScreen', () => {
     fireEvent.click(radio(/^show/i))
 
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system' }]),
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'show',
+          theme: 'system',
+          allNotesFilterTags: ['book', 'link', 'person'],
+        },
+      ]),
     )
     expect(radio(/^show/i).checked).toBe(true)
     expect(radio(/^focus/i).checked).toBe(false)
@@ -90,7 +96,67 @@ describe('SettingsScreen', () => {
 
     expect(radio(/^light/i).checked).toBe(true)
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'focus', theme: 'light' }]),
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'focus',
+          theme: 'light',
+          allNotesFilterTags: ['book', 'link', 'person'],
+        },
+      ]),
+    )
+  })
+
+  it('adds an All Notes filter tag, normalized, and persists it', async () => {
+    renderScreen()
+    const input = screen.getByLabelText('Add filter tag')
+
+    fireEvent.change(input, { target: { value: ' #Meeting ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(screen.getByText('#meeting')).toBeTruthy()
+    await waitFor(() =>
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'focus',
+          theme: 'system',
+          allNotesFilterTags: ['book', 'link', 'person', 'meeting'],
+        },
+      ]),
+    )
+  })
+
+  it('ignores adding a duplicate filter tag', async () => {
+    stored = { allNotesFilterTags: ['book'] }
+    renderScreen()
+    // Defaults render before the disk document lands — wait for hydration
+    // (the stored list has no `person`) so the click edits the loaded list.
+    await waitFor(() => expect(screen.queryByText('#person')).toBeNull())
+    expect(screen.getByText('#book')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Add filter tag'), { target: { value: 'BOOK' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => expect(saved).toEqual([]))
+  })
+
+  it('removes a filter tag and persists the rest', async () => {
+    stored = { allNotesFilterTags: ['book', 'person'] }
+    renderScreen()
+    // Wait for hydration (the stored list has no `link`), not just defaults.
+    await waitFor(() => expect(screen.queryByText('#link')).toBeNull())
+    expect(screen.getByText('#book')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove book' }))
+
+    expect(screen.queryByText('#book')).toBeNull()
+    await waitFor(() =>
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'focus',
+          theme: 'system',
+          allNotesFilterTags: ['person'],
+        },
+      ]),
     )
   })
 

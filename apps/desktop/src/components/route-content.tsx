@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { AllNotesScreen } from '@/components/all-notes/all-notes-screen'
 import { DailyStream } from '@/components/daily-stream'
 import { NotePane } from '@/components/note-pane'
 import { SearchRoute } from '@/components/search-route'
@@ -31,6 +32,14 @@ export function RouteContent(): ReactElement {
         <ScrollRestored className="h-full overflow-auto px-6 py-8">
           <div className="mx-auto w-full max-w-2xl">
             <NotePane path={route.path} lazy autoFocus />
+          </div>
+        </ScrollRestored>
+      )
+    case 'allNotes':
+      return (
+        <ScrollRestored className="h-full overflow-auto px-6 py-8">
+          <div className="mx-auto w-full max-w-5xl">
+            <AllNotesScreen tag={route.tag} />
           </div>
         </ScrollRestored>
       )

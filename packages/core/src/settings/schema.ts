@@ -31,10 +31,22 @@ export const themePreferenceSchema = z.enum(['system', 'light', 'dark']).catch('
 
 export type ThemePreference = z.infer<typeof themePreferenceSchema>
 
+/**
+ * Tags pinned as one-click filters on the All Notes screen, in display order.
+ * The defaults mirror the original app's built-in filter tabs (book/link/
+ * person); the screen offers every other tag through its Custom menu, so an
+ * empty list still filters fine. Matching is case-insensitive at the query —
+ * entries here keep whatever casing the user typed.
+ */
+export const allNotesFilterTagsSchema = z.array(z.string()).catch(['book', 'link', 'person'])
+
+export type AllNotesFilterTags = z.infer<typeof allNotesFilterTagsSchema>
+
 export const settingsSchema = z
   .object({
     editorMarkdownSyntax: editorMarkdownSyntaxSchema,
     theme: themePreferenceSchema,
+    allNotesFilterTags: allNotesFilterTagsSchema,
   })
   .passthrough()
 

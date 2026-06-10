@@ -6,6 +6,7 @@
  */
 
 const DEFAULT_MAX_LENGTH = 160
+const PREVIEW_MAX_LENGTH = 120
 
 /** The single line of `content` containing `pos`, windowed to `maxLength`. */
 export function lineSnippet(content: string, pos: number, maxLength = DEFAULT_MAX_LENGTH): string {
@@ -29,4 +30,33 @@ export function lineSnippet(content: string, pos: number, maxLength = DEFAULT_MA
   const prefix = from > 0 ? '…' : ''
   const suffix = to < line.length ? '…' : ''
   return `${prefix}${line.slice(from, to).trim()}${suffix}`
+}
+
+/**
+ * A list-row preview of a note: the first body line of its plain text,
+ * skipping the title when it leads the text (the indexer's plain-text
+ * rendering keeps heading *text*, so a note's first line usually repeats its
+ * title — pure noise next to a Subject column). A later line that happens to
+ * equal the title is kept: only the leading occurrence is the title.
+ */
+export function previewSnippet(
+  text: string,
+  title: string,
+  maxLength = PREVIEW_MAX_LENGTH,
+): string {
+  let pastTitle = false
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    if (line === '') {
+      continue
+    }
+    if (!pastTitle) {
+      pastTitle = true
+      if (line === title.trim()) {
+        continue
+      }
+    }
+    return line.length <= maxLength ? line : `${line.slice(0, maxLength).trimEnd()}…`
+  }
+  return ''
 }

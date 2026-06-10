@@ -48,6 +48,13 @@ export {
   type NoteRow,
   type SearchHit,
 } from './queries'
+export {
+  listNotes,
+  listNoteTags,
+  type NoteListEntry,
+  type NoteListOptions,
+  type NoteTagFacet,
+} from './note-list'
 export { rankWikiSuggestions, type WikiSuggestion } from './suggest'
 export {
   parseHighlights,
@@ -56,7 +63,7 @@ export {
   HIGHLIGHT_END,
   type HighlightSegment,
 } from './search'
-export { lineSnippet } from './snippet'
+export { lineSnippet, previewSnippet } from './snippet'
 export { parseSearchQuery, type ParsedSearchQuery, type SearchFilters } from './filter-query'
 export { searchWithFilters, type FilteredSearchHit } from './filtered-search'
 export {
