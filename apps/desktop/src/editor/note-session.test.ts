@@ -285,6 +285,28 @@ describe('frontmatter ownership (Plan 07b)', () => {
     expect(written).toContain('# Mine')
   })
 
+  it('a later external change refreshes a parked conflict snapshot', async () => {
+    // What the pin toggle relies on: it patches the contested disk content and
+    // nudges externalChanged() — "load theirs" must adopt the patched bytes,
+    // not the stale park.
+    const h = harness()
+    h.session.load()
+    await vi.runAllTimersAsync()
+    h.session.editorChanged('# Mine\n')
+    h.setDisk('# Theirs\n')
+    h.session.externalChanged()
+    await vi.runAllTimersAsync()
+    expect(h.snapshots.at(-1)?.conflict).toBe('# Theirs\n')
+
+    h.setDisk('---\npinned: true\n---\n# Theirs\n')
+    h.session.externalChanged()
+    await vi.runAllTimersAsync()
+    expect(h.snapshots.at(-1)?.conflict).toBe('---\npinned: true\n---\n# Theirs\n')
+
+    h.session.loadTheirs()
+    expect(h.session.content()).toBe('---\npinned: true\n---\n# Theirs\n')
+  })
+
   it('onContent reports full joined content with the right origins', async () => {
     const h = harness({ disk: `${FM}# Hello\n` })
     h.session.load()

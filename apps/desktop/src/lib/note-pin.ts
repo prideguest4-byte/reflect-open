@@ -17,9 +17,10 @@ import { openSession } from '@/editor/open-documents'
  * until the user resolves — the pin would ride the in-memory header (landing
  * with "keep mine") while the index, and so the sidebar, saw nothing, and
  * "load theirs" would drop it entirely. So under a conflict the contested
- * disk content is patched too: the pin is indexed now and survives either
- * resolution ("keep mine" writes the patched header, "load theirs" adopts the
- * patched disk content the session re-parks like any external change).
+ * disk content is patched too — the pin is indexed now and survives either
+ * resolution — and the session is nudged to reconcile immediately so the
+ * parked snapshot itself picks up the pinned content: an instant "load
+ * theirs" must adopt it rather than racing the watcher's echo of our write.
  *
  * Returns the note's new pinned state.
  */
@@ -33,6 +34,7 @@ export async function toggleNotePinned(path: string, generation: number): Promis
       await owner.flush()
       if (owner.conflicted()) {
         await applyPinnedToDisk(path, pinned, generation)
+        owner.externalChanged()
       }
       return pinned
     }

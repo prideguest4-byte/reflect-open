@@ -6,7 +6,7 @@ use rusqlite::Connection;
 use serde_json::Value;
 
 use super::embed_write::{apply_chunks, remove_chunks, EmbeddedChunk};
-use super::migrations::{migrate, open_in_memory, open_index_at, validate_migrations};
+use super::migrations::{migrate, migrate_to, open_in_memory, open_index_at, validate_migrations};
 use super::query::run_query;
 use super::write::{apply_note, clear_index, IndexedLink, IndexedNote};
 
@@ -84,6 +84,36 @@ fn backlinks_resolve_by_title_at_query_time() {
     .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["source_path"], Value::from("notes/a.md"));
+}
+
+#[test]
+fn pinned_migration_drops_stale_note_rows_for_reindex() {
+    // Rows indexed before 0003 would keep is_pinned=0 even where the file
+    // already says `pinned: true` (the open-time reconcile hash-skips
+    // unchanged files) — the migration wipes the projection so the next open
+    // re-indexes everything with the new column populated.
+    let mut conn = open_in_memory().expect("open");
+    migrate_to(&mut conn, 2).expect("migrate to v2");
+    conn.execute_batch(
+        "INSERT INTO notes(path, title, title_key, file_hash) VALUES('notes/a.md', 'A', 'a', 'h');
+         INSERT INTO tags(note_path, tag) VALUES('notes/a.md', 'x');
+         INSERT INTO search_fts(path, title, body) VALUES('notes/a.md', 'A', 'A body');
+         INSERT INTO index_meta(key, value) VALUES('k', 'v');",
+    )
+    .expect("stage v2 rows");
+
+    migrate(&mut conn).expect("migrate to latest");
+    for table in ["notes", "tags", "search_fts"] {
+        let count: i64 = conn
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "{table} should be wiped for the re-index");
+    }
+    // Bookkeeping outlives the wipe (same contract as index_clear).
+    let meta: i64 = conn
+        .query_row("SELECT count(*) FROM index_meta", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(meta, 1);
 }
 
 #[test]

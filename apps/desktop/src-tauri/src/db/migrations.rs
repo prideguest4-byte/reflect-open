@@ -75,6 +75,15 @@ pub(super) fn migrate(conn: &mut Connection) -> AppResult<()> {
         .map_err(|err| AppError::io(format!("migration failed: {err}")))
 }
 
+/// Test-only: stop at schema `version`, so schema-evolution tests can stage
+/// data in an older shape and assert what a later migration does with it.
+#[cfg(test)]
+pub(super) fn migrate_to(conn: &mut Connection, version: usize) -> AppResult<()> {
+    MIGRATIONS
+        .to_version(conn, version)
+        .map_err(|err| AppError::io(format!("migration failed: {err}")))
+}
+
 /// Open (creating if needed) and migrate `<root>/.reflect/index.sqlite`.
 pub(super) fn open_index_at(root: &Path) -> AppResult<Connection> {
     register_sqlite_vec()?;

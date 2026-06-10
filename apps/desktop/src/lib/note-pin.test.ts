@@ -24,13 +24,15 @@ beforeEach(() => {
 function fakeSession(content: string, { canPatch = true, conflicted = false } = {}) {
   const updateFrontmatter = vi.fn(() => canPatch)
   const flush = vi.fn(async () => {})
+  const externalChanged = vi.fn()
   const session = {
     content: () => content,
     updateFrontmatter,
     flush,
+    externalChanged,
     conflicted: () => conflicted,
   } as unknown as NoteSession
-  return { session, updateFrontmatter, flush }
+  return { session, updateFrontmatter, flush, externalChanged }
 }
 
 describe('toggleNotePinned', () => {
@@ -74,12 +76,20 @@ describe('toggleNotePinned', () => {
   it('under a parked conflict, also patches disk so the pin is indexed now', async () => {
     // The session's saves are paused (flush is a no-op) — the in-memory patch
     // alone would leave the sidebar stale and "load theirs" would drop the pin.
-    const { session, updateFrontmatter } = fakeSession('# Mine\n', { conflicted: true })
+    const { session, updateFrontmatter, externalChanged } = fakeSession('# Mine\n', {
+      conflicted: true,
+    })
     openSession.mockReturnValue(session)
     readNote.mockResolvedValue('# Theirs\n')
     await expect(toggleNotePinned('notes/a.md', 3)).resolves.toBe(true)
     expect(updateFrontmatter).toHaveBeenCalledWith({ pinned: true })
     expect(writeNote).toHaveBeenCalledWith('notes/a.md', '---\npinned: true\n---\n# Theirs\n', 3)
+    // The parked snapshot must refresh from the patched disk content right
+    // away — an instant "load theirs" can't race the watcher's echo.
+    expect(externalChanged).toHaveBeenCalled()
+    expect(externalChanged.mock.invocationCallOrder[0]).toBeGreaterThan(
+      writeNote.mock.invocationCallOrder[0],
+    )
   })
 
   it('applies the session-derived target to a conflicted disk, never re-toggling it', async () => {
