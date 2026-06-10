@@ -83,6 +83,14 @@ pub fn embed_status(state: State<EmbedState>) -> AppResult<EmbedStatus> {
 /// even when cached, and the first run downloads.
 #[tauri::command]
 pub async fn embed_ensure(app: AppHandle, state: State<'_, EmbedState>) -> AppResult<EmbedStatus> {
+    // Resolve the cache dir BEFORE flipping to Loading: it's the only step
+    // here that may fail without a guaranteed state transition afterwards.
+    let cache_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::io(format!("no app data dir: {err}")))?
+        .join("models");
+
     {
         let mut runtime = lock_state(&state)?;
         match &*runtime {
@@ -94,20 +102,21 @@ pub async fn embed_ensure(app: AppHandle, state: State<'_, EmbedState>) -> AppRe
     }
     emit_status(&app, &EmbedStatus::Loading);
 
-    let cache_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|err| AppError::io(format!("no app data dir: {err}")))?
-        .join("models");
-
-    let loaded = tauri::async_runtime::spawn_blocking(move || {
-        TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_cache_dir(cache_dir),
-        )
-        .map_err(|err| err.to_string())
-    })
-    .await
-    .map_err(|err| AppError::io(format!("embedding load task panicked: {err}")))?;
+    // From here every path — success, load failure, even a panicked blocking
+    // task — must land the state in Ready or Failed: an early `?` would wedge
+    // the runtime in Loading forever (later ensures return early on Loading).
+    let loaded: Result<TextEmbedding, String> =
+        match tauri::async_runtime::spawn_blocking(move || {
+            TextEmbedding::try_new(
+                InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_cache_dir(cache_dir),
+            )
+            .map_err(|err| err.to_string())
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(err) => Err(format!("embedding load task panicked: {err}")),
+        };
 
     let status = {
         let mut runtime = lock_state(&state)?;

@@ -1,4 +1,10 @@
-import { backfillEmbeddings, embedEnsure, type EmbedStatus } from '@reflect/core'
+import {
+  backfillEmbeddings,
+  embedEnsure,
+  embedStatus,
+  subscribeEmbedStatus,
+  type EmbedStatus,
+} from '@reflect/core'
 import { startOperation } from '@/lib/operations'
 
 /**
@@ -27,11 +33,43 @@ export function setSemanticEnabled(enabled: boolean): void {
   }
 }
 
+/**
+ * Resolve once the runtime reaches a terminal state. `embed_ensure` returns
+ * `loading` to a caller that raced an in-flight load — the event stream (plus
+ * a re-poll, in case the terminal event fired between the two) carries the
+ * real outcome.
+ */
+async function awaitTerminalStatus(initial: EmbedStatus): Promise<EmbedStatus> {
+  if (initial.status === 'ready' || initial.status === 'failed') {
+    return initial
+  }
+  return new Promise((resolve) => {
+    let unlisten: (() => void) | null = null
+    let settled = false
+    const settle = (status: EmbedStatus): void => {
+      if (!settled && (status.status === 'ready' || status.status === 'failed')) {
+        settled = true
+        unlisten?.()
+        resolve(status)
+      }
+    }
+    void subscribeEmbedStatus(settle).then((fn) => {
+      if (settled) {
+        fn()
+        return
+      }
+      unlisten = fn
+      // The terminal event may have fired before the subscription landed.
+      void embedStatus().then(settle)
+    })
+  })
+}
+
 /** Load (downloading if needed) the model, visibly. Resolves with the outcome. */
 export async function ensureEmbeddingsVisibly(): Promise<EmbedStatus> {
   const operation = startOperation('Loading semantic search model')
   try {
-    const status = await embedEnsure()
+    const status = await awaitTerminalStatus(await embedEnsure())
     if (status.status === 'failed') {
       operation.fail(status.message)
     } else {

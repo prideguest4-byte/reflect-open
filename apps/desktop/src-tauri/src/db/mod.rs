@@ -124,6 +124,9 @@ pub fn index_apply_batch(
 }
 
 /// Remove a note (e.g. deleted on disk) from the index (no-op if stale).
+/// This is the *genuine deletion* entry point, so embedding rows go too —
+/// `apply_note`'s internal remove must NOT do this (it runs on every upsert
+/// and would destroy the chunk hash-skip).
 #[tauri::command]
 pub fn index_remove(path: String, generation: u64, index: State<IndexState>) -> AppResult<()> {
     let state = lock_state(&index)?;
@@ -131,7 +134,8 @@ pub fn index_remove(path: String, generation: u64, index: State<IndexState>) -> 
         return Ok(());
     }
     let conn = state.conn.as_ref().ok_or_else(AppError::no_graph)?;
-    write::remove_note(conn, &path)
+    write::remove_note(conn, &path)?;
+    embed_write::remove_chunks(conn, &path)
 }
 
 /// Wipe all derived tables (the TS layer then re-applies every note; no-op if stale).

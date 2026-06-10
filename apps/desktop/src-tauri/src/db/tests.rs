@@ -428,3 +428,24 @@ fn knn_query_returns_nearest_chunk_first() {
     let first = rows[0].get("note_path").unwrap().as_str().unwrap();
     assert_eq!(first, "notes/near.md");
 }
+
+#[test]
+fn reindexing_a_note_keeps_its_chunks_but_true_deletion_drops_them() {
+    let mut conn = migrated();
+    apply_note(&conn, &note("notes/a.md", "Alpha", vec![])).unwrap();
+    apply_chunks(&conn, "notes/a.md", &[chunk("a1", Some(vec384(0.1)))]).unwrap();
+
+    // Upsert path: apply_note re-creates the note row — chunks must survive
+    // (the hash-skip depends on it).
+    apply_note(&conn, &note("notes/a.md", "Alpha edited", vec![])).unwrap();
+    assert_eq!(chunk_rows(&conn).len(), 1);
+    assert_eq!(vector_count(&conn), 1);
+
+    // Genuine deletion (the index_remove command shape): everything goes.
+    let tx = conn.transaction().unwrap();
+    super::write::remove_note(&tx, "notes/a.md").unwrap();
+    super::embed_write::remove_chunks(&tx, "notes/a.md").unwrap();
+    tx.commit().unwrap();
+    assert_eq!(chunk_rows(&conn), vec![]);
+    assert_eq!(vector_count(&conn), 0);
+}
