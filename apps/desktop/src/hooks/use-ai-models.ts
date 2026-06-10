@@ -9,6 +9,7 @@ import {
   withDefaultAiModel,
   type AiModelConfig,
   type AiProviderId,
+  type AppError,
 } from '@reflect/core'
 import { useSettings } from '@/providers/settings-provider'
 
@@ -31,8 +32,10 @@ interface UseAiModelsValue {
   models: AiModelConfig[]
   /**
    * Store the key in the keychain, then add the settings entry. Rejects (and
-   * adds nothing) if the keychain write fails, so an entry can never point at
-   * a key that was never stored.
+   * adds nothing) if the keychain write fails — so an entry can never point
+   * at a key that was never stored — or if the settings store could not be
+   * read this session, so a key can never be stored for an entry that won't
+   * survive a restart.
    */
   addModel: (draft: NewAiModel) => Promise<void>
   /** Delete the key from the keychain, then drop the settings entry. */
@@ -42,7 +45,7 @@ interface UseAiModelsValue {
 }
 
 export function useAiModels(): UseAiModelsValue {
-  const { settings, updateSettingsWith } = useSettings()
+  const { settings, updateSettingsWith, whenSettingsLoaded } = useSettings()
   const models = settings.aiModels
 
   // Every write goes through `updateSettingsWith` so the list is rebuilt from
@@ -53,6 +56,19 @@ export function useAiModels(): UseAiModelsValue {
 
   const addModel = useCallback(
     async (draft: NewAiModel): Promise<void> => {
+      // Refuse before the key touches the keychain: with an unreadable
+      // settings store the entry would be session-only, and after a restart
+      // the stored key would be orphaned with no UI left to delete it.
+      // Awaiting the outcome (rather than reading a flag) also covers an add
+      // racing the in-flight load that then fails.
+      if ((await whenSettingsLoaded()) === 'failed') {
+        const error: AppError = {
+          kind: 'io',
+          message:
+            'Settings could not be loaded, so new AI models cannot be saved. The API key was not stored.',
+        }
+        throw error
+      }
       const id = crypto.randomUUID()
       await setSecret(aiKeySecretName(id), draft.apiKey)
       updateSettingsWith((current) => ({
@@ -65,7 +81,7 @@ export function useAiModels(): UseAiModelsValue {
         }),
       }))
     },
-    [updateSettingsWith],
+    [whenSettingsLoaded, updateSettingsWith],
   )
 
   const removeModel = useCallback(

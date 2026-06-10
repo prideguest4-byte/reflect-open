@@ -47,9 +47,34 @@ interface SettingsContextValue {
    * a list the disk is about to supply must not be computed from defaults.
    */
   updateSettingsWith: (updater: (current: Settings) => Partial<Settings>) => void
+  /**
+   * Resolves once the initial disk load has settled, and with which outcome.
+   * After `'failed'`, changes apply session-only and nothing persists —
+   * callers that pair a settings entry with state elsewhere (e.g. a keychain
+   * secret) must await this before writing the other half, or a restart
+   * loses the entry and strands its counterpart. A boolean can't close that
+   * window: a write racing the in-flight load needs the eventual outcome.
+   */
+  whenSettingsLoaded: () => Promise<SettingsLoadOutcome>
 }
 
+/** How the initial settings load ended (`'failed'` ⇒ session-only mode). */
+export type SettingsLoadOutcome = 'loaded' | 'failed'
+
 const SettingsContext = createContext<SettingsContextValue | null>(null)
+
+interface LoadSettle {
+  promise: Promise<SettingsLoadOutcome>
+  resolve: (outcome: SettingsLoadOutcome) => void
+}
+
+function createLoadSettle(): LoadSettle {
+  let resolve: (outcome: SettingsLoadOutcome) => void = () => {}
+  const promise = new Promise<SettingsLoadOutcome>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
 
 /** Shallow own-key equality — settings documents are flat JSON objects. */
 function sameDocument(a: Settings, b: Settings): boolean {
@@ -126,6 +151,25 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
     }
   }, [loaded, loadError, applyUpdater])
 
+  // Settling the load outcome as a promise lets callers *await* it; resolving
+  // an already-resolved promise is a no-op, so the effect can stay simple.
+  const loadSettle = useRef<LoadSettle | null>(null)
+  if (loadSettle.current === null) {
+    loadSettle.current = createLoadSettle()
+  }
+  useEffect(() => {
+    if (loaded !== undefined) {
+      loadSettle.current?.resolve('loaded')
+    } else if (loadError !== null) {
+      loadSettle.current?.resolve('failed')
+    }
+  }, [loaded, loadError])
+  const whenSettingsLoaded = useCallback(
+    (): Promise<SettingsLoadOutcome> =>
+      loadSettle.current?.promise ?? Promise.resolve('failed'),
+    [],
+  )
+
   // A corrupt store fails the load *by design* (Rust errors rather than
   // reading empty, so a later save can't wipe the real document). Changes
   // then apply for the session only — surface that state, don't hide it.
@@ -186,8 +230,8 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
   }, [persistIfChanged])
 
   const value = useMemo<SettingsContextValue>(
-    () => ({ settings, updateSettings, updateSettingsWith }),
-    [settings, updateSettings, updateSettingsWith],
+    () => ({ settings, updateSettings, updateSettingsWith, whenSettingsLoaded }),
+    [settings, updateSettings, updateSettingsWith, whenSettingsLoaded],
   )
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>

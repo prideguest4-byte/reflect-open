@@ -10,15 +10,20 @@ let stored: Record<string, unknown>
 let saved: unknown[]
 let secrets: Map<string, string>
 let failSecretSet: boolean
+let failLoad: boolean
 
 function installFakeBridge(): void {
   saved = []
   secrets = new Map()
   failSecretSet = false
+  failLoad = false
   setBridge({
     invoke: async (command, args) => {
       switch (command) {
         case 'settings_load':
+          if (failLoad) {
+            throw { kind: 'io', message: 'corrupt store' }
+          }
           return stored
         case 'settings_save':
           saved.push(args.settings)
@@ -172,6 +177,25 @@ describe('AiModelsSection', () => {
       ]),
     )
     expect(secrets.has('ai-api-key:a')).toBe(false)
+  })
+
+  it('refuses to add when the settings store failed to load (no orphaned key)', async () => {
+    failLoad = true
+    renderSection()
+    await waitFor(() => expect(screen.getByText(/No AI models configured/)).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: /add model/i }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Add AI model' }))
+    fireEvent.change(dialog.getByLabelText('API key'), { target: { value: 'sk-test' } })
+    fireEvent.click(dialog.getByRole('button', { name: 'Add model' }))
+
+    // A session-only entry would vanish on restart, stranding the key in the
+    // keychain with no UI to delete it — so the key must never be stored.
+    await waitFor(() =>
+      expect(dialog.getByRole('alert').textContent).toMatch(/could not be loaded/i),
+    )
+    expect(secrets.size).toBe(0)
+    expect(saved).toEqual([])
   })
 
   it('overlapping removes both land instead of clobbering each other', async () => {
