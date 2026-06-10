@@ -5,7 +5,6 @@ import { formatBindingLabel } from '@/lib/keybindings'
 import { addDaysIso, formatDayLabel } from '@/lib/dates'
 import { useToday } from '@/lib/use-today'
 import { useRouter } from '@/routing/router'
-import { DayBacklinks } from './day-backlinks'
 import { DayCalendar } from './day-calendar'
 import { DayRelatedNotes } from './day-related-notes'
 import { SidebarSection } from './sidebar-section'
@@ -23,8 +22,9 @@ const TODAY_HINT = TODAY_KEYBINDING !== null ? formatBindingLabel(TODAY_KEYBINDI
 /**
  * The daily note's contextual sidebar (modeled on the old app's note context
  * sidebar): adjacent-day navigation, a month calendar marking days with
- * notes, the day's inbound links, and semantic neighbors when embeddings are
- * available. Rendered in the AppShell's right region on daily routes only.
+ * notes, and semantic neighbors when embeddings are available. Inbound links
+ * live under the note itself (the incoming-backlinks section), not here.
+ * Rendered in the AppShell's right region on daily routes only.
  */
 export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactElement {
   const { navigate } = useRouter()
@@ -78,7 +78,6 @@ export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactEl
       <SidebarSection storageKey="calendar" title="Calendar">
         <DayCalendar selectedDate={date} today={today} />
       </SidebarSection>
-      <DayBacklinks date={date} />
       <DayRelatedNotes date={date} />
     </div>
   )
