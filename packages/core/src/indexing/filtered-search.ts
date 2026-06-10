@@ -1,4 +1,4 @@
-import { sql, type Expression, type SqlBool } from 'kysely'
+import { sql } from 'kysely'
 import { db } from './db'
 import type { ParsedSearchQuery } from './filter-query'
 import { resolveWikiTarget } from './queries'
@@ -55,24 +55,38 @@ export async function searchWithFilters(
     .limit(limit)
 
   for (const tag of filters.tags) {
-    query = query.where(
-      () =>
-        sql<SqlBool>`exists (select 1 from tags where tags.note_path = notes.path and lower(tags.tag) = ${tag})` as unknown as Expression<SqlBool>,
+    query = query.where(({ exists, selectFrom }) =>
+      exists(
+        selectFrom('tags')
+          .select(sql<number>`1`.as('one'))
+          .whereRef('tags.notePath', '=', 'notes.path')
+          .where(sql<string>`lower(tags.tag)`, '=', tag),
+      ),
     )
   }
   if (filters.dailyOnly) {
     query = query.where('notes.dailyDate', 'is not', null)
   }
   if (linksToPath !== null) {
-    query = query.where(
-      () =>
-        sql<SqlBool>`exists (select 1 from backlinks b where b.source_path = notes.path and b.target_path = ${linksToPath})` as unknown as Expression<SqlBool>,
+    const target = linksToPath
+    query = query.where(({ exists, selectFrom }) =>
+      exists(
+        selectFrom('backlinks')
+          .select(sql<number>`1`.as('one'))
+          .whereRef('backlinks.sourcePath', '=', 'notes.path')
+          .where('backlinks.targetPath', '=', target),
+      ),
     )
   }
   if (linkedFromPath !== null) {
-    query = query.where(
-      () =>
-        sql<SqlBool>`exists (select 1 from backlinks b where b.target_path = notes.path and b.source_path = ${linkedFromPath})` as unknown as Expression<SqlBool>,
+    const source = linkedFromPath
+    query = query.where(({ exists, selectFrom }) =>
+      exists(
+        selectFrom('backlinks')
+          .select(sql<number>`1`.as('one'))
+          .whereRef('backlinks.targetPath', '=', 'notes.path')
+          .where('backlinks.sourcePath', '=', source),
+      ),
     )
   }
   if (filters.updatedAfterMs !== null) {
@@ -97,7 +111,7 @@ export async function searchWithFilters(
         'snippet',
       ),
     )
-    .where(() => sql<SqlBool>`search_fts match ${match}` as unknown as Expression<SqlBool>)
+    .where(sql<boolean>`search_fts MATCH ${match}`)
     .orderBy(sql`bm25(search_fts, 0, 10.0, 1.0)`)
     .execute()
   return rows
