@@ -53,6 +53,10 @@ export async function rewriteLinksForTitleChange(
   // second note owns it as title or alias), the existing links still point
   // somewhere deliberate — rewriting would steal them. A stale index may
   // briefly resolve `from` to the renamed note itself; that's not a collision.
+  // Accepted edge: the index lags the watcher debounce, so a note created
+  // with the old title inside that sub-second window can be missed here —
+  // resolution stays deterministic and the alias still lands, so nothing
+  // breaks; the late-created note simply wins future resolutions.
   const resolution = await io.resolve(from)
   if (resolution.kind === 'resolved' && resolution.ref !== path) {
     return { rewritten: [], failed: [], collision: true }

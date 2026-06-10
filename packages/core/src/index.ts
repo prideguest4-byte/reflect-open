@@ -129,5 +129,6 @@ export {
   type FileChange,
   type WikiSuggestion,
   type RenameIo,
+  type TitleRenameRewriteOptions,
   type TitleRenameRewriteResult,
 } from './indexing'

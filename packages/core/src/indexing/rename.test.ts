@@ -118,6 +118,32 @@ describe('rewriteLinksForTitleChange', () => {
   })
 })
 
+describe('rewriteLinksForTitleChange write failures', () => {
+  it('continues past a write failure and reports it', async () => {
+    const { io, writes } = fakeIo({
+      'notes/fail.md': '[[Old]]\n',
+      'notes/ok.md': '[[Old]]\n',
+    })
+    const write = io.write
+    io.write = async (path, content) => {
+      if (path === 'notes/fail.md') {
+        throw new Error('write failed')
+      }
+      await write(path, content)
+    }
+    const result = await rewriteLinksForTitleChange({
+      path: 'notes/target.md',
+      from: 'Old',
+      to: 'New',
+      io,
+    })
+    expect(result.failed).toEqual(['notes/fail.md'])
+    expect(result.rewritten).toEqual(['notes/ok.md'])
+    expect(writes['notes/ok.md']).toBe('[[New]]\n')
+    expect(writes['notes/fail.md']).toBeUndefined()
+  })
+})
+
 describe('nextAliases', () => {
   it('adds the old title and prunes the previous auto-alias', () => {
     expect(
