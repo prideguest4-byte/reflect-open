@@ -21,6 +21,7 @@ static MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
         M::up(include_str!("../../migrations/0001_initial.sql")),
         M::up(include_str!("../../migrations/0002_embeddings.sql")),
         M::up(include_str!("../../migrations/0003_cosine_vectors.sql")),
+        M::up(include_str!("../../migrations/0004_pinned.sql")),
     ])
 });
 
@@ -75,10 +76,10 @@ pub(super) fn migrate(conn: &mut Connection) -> AppResult<()> {
         .map_err(|err| AppError::io(format!("migration failed: {err}")))
 }
 
-/// Stop at a specific schema version, so tests can stage data on an older
-/// schema and prove a later migration carries it forward.
+/// Test-only: stop at schema `version`, so schema-evolution tests can stage
+/// data in an older shape and assert what a later migration does with it.
 #[cfg(test)]
-pub(super) fn migrate_to_version(conn: &mut Connection, version: usize) -> AppResult<()> {
+pub(super) fn migrate_to(conn: &mut Connection, version: usize) -> AppResult<()> {
     MIGRATIONS
         .to_version(conn, version)
         .map_err(|err| AppError::io(format!("migration to {version} failed: {err}")))

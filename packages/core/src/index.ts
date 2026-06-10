@@ -86,6 +86,8 @@ export { loadSettings, saveSettings } from './settings/commands'
 // Markdown document model (Plan 03)
 export {
   frontmatterSchema,
+  isPinned,
+  pinnedOrder,
   PARSED_NOTE_VERSION,
   parseNote,
   appendUnderHeading,
@@ -148,6 +150,7 @@ export {
   getLinkSources,
   getNote,
   getNotesByTag,
+  getPinnedNotes,
   searchNotes,
   suggestWikiTargets,
   getIndexedHashes,
@@ -164,6 +167,7 @@ export {
   type Backlink,
   type BacklinkContext,
   type NoteRow,
+  type PinnedNote,
   type SearchHit,
   type FileChange,
   type WikiSuggestion,

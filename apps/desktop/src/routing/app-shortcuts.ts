@@ -38,7 +38,7 @@ function isModKey(event: KeyboardEvent): boolean {
  * returned context is also what the palette itself runs commands through.
  */
 export function useAppShortcuts(): CommandContext {
-  const { navigate, back, forward } = useRouter()
+  const { route, navigate, back, forward } = useRouter()
   const { resolvedTheme, setTheme } = useTheme()
   const { graph } = useGraph()
   const { openPalette, open: paletteOpen } = usePalette()
@@ -53,10 +53,13 @@ export function useAppShortcuts(): CommandContext {
   // that created the context (palette open across an index rebuild, etc.).
   const generationRef = useRef<number | null>(graph?.generation ?? null)
   generationRef.current = graph?.generation ?? null
+  const routeRef = useRef(route)
+  routeRef.current = route
 
   const context = useMemo<CommandContext>(
     () => ({
       navigate,
+      route: () => routeRef.current,
       back,
       forward,
       toggleTheme: () => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'),

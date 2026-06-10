@@ -9,6 +9,8 @@ import type { Route } from '@/routing/route'
 
 export interface CommandContext {
   navigate: (route: Route) => void
+  /** The current route, read at run time — what note-scoped commands act on. */
+  route: () => Route
   back: () => void
   forward: () => void
   toggleTheme: () => void

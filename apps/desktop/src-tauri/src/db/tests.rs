@@ -6,9 +6,7 @@ use rusqlite::Connection;
 use serde_json::Value;
 
 use super::embed_write::{apply_chunks, remove_chunks, EmbeddedChunk};
-use super::migrations::{
-    migrate, migrate_to_version, open_in_memory, open_index_at, validate_migrations,
-};
+use super::migrations::{migrate, migrate_to, open_in_memory, open_index_at, validate_migrations};
 use super::query::run_query;
 use super::write::{apply_note, clear_index, IndexedLink, IndexedNote};
 
@@ -29,6 +27,8 @@ fn note(path: &str, title: &str, links: Vec<IndexedLink>) -> IndexedNote {
         title_key: title.to_lowercase(),
         daily_date: None,
         is_private: false,
+        is_pinned: false,
+        pinned_order: None,
         file_hash: "h".to_string(),
         mtime: 0,
         text: format!("{title} body"),
@@ -58,7 +58,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 3); // applied migrations (0001 + 0002 + 0003)
+    assert_eq!(version, 4); // applied migrations (0001 + 0002 + 0003 + 0004)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -85,6 +85,57 @@ fn backlinks_resolve_by_title_at_query_time() {
     .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["source_path"], Value::from("notes/a.md"));
+}
+
+#[test]
+fn pinned_migration_drops_stale_note_rows_for_reindex() {
+    // Rows indexed before 0003 would keep is_pinned=0 even where the file
+    // already says `pinned: true` (the open-time reconcile hash-skips
+    // unchanged files) — the migration wipes the projection so the next open
+    // re-indexes everything with the new column populated.
+    let mut conn = open_in_memory().expect("open");
+    migrate_to(&mut conn, 2).expect("migrate to v2");
+    conn.execute_batch(
+        "INSERT INTO notes(path, title, title_key, file_hash) VALUES('notes/a.md', 'A', 'a', 'h');
+         INSERT INTO tags(note_path, tag) VALUES('notes/a.md', 'x');
+         INSERT INTO search_fts(path, title, body) VALUES('notes/a.md', 'A', 'A body');
+         INSERT INTO index_meta(key, value) VALUES('k', 'v');",
+    )
+    .expect("stage v2 rows");
+
+    migrate(&mut conn).expect("migrate to latest");
+    for table in ["notes", "tags", "search_fts"] {
+        let count: i64 = conn
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0, "{table} should be wiped for the re-index");
+    }
+    // Bookkeeping outlives the wipe (same contract as index_clear).
+    let meta: i64 = conn
+        .query_row("SELECT count(*) FROM index_meta", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(meta, 1);
+}
+
+#[test]
+fn pinned_flag_and_order_round_trip_into_the_notes_row() {
+    let conn = migrated();
+    let mut pinned = note("notes/p.md", "P", vec![]);
+    pinned.is_pinned = true;
+    pinned.pinned_order = Some(1.5);
+    apply_note(&conn, &pinned).unwrap();
+    apply_note(&conn, &note("notes/q.md", "Q", vec![])).unwrap();
+    let rows = run_query(
+        &conn,
+        "SELECT path, pinned_order FROM notes WHERE is_pinned = 1",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["path"], Value::from("notes/p.md"));
+    assert_eq!(rows[0]["pinned_order"], Value::from(1.5));
 }
 
 #[test]
@@ -173,7 +224,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
@@ -506,8 +557,14 @@ fn cosine_migration_preserves_stored_vectors() {
     // vector must survive the table rebuild byte-for-byte (no re-embedding),
     // matching itself at cosine distance 0.
     let mut conn = open_in_memory().expect("open");
-    migrate_to_version(&mut conn, 2).expect("migrate to 0002");
-    index_note(&conn, "notes/a.md");
+    migrate_to(&mut conn, 2).expect("migrate to 0002");
+    // Stage a note with raw SQL — apply_note writes is_pinned/pinned_order
+    // which don't exist until 0004, so we insert the v2-era columns directly.
+    conn.execute_batch(
+        "INSERT INTO notes(path, title, title_key, file_hash, mtime, updated_at) \
+         VALUES('notes/a.md', 'A', 'a', 'h', 0, 0);",
+    )
+    .expect("stage v2 note");
     apply_chunks(&conn, "notes/a.md", &[chunk("a1", Some(vec384(0.25)))]).unwrap();
     assert_eq!(vector_count(&conn), 1);
 
