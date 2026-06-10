@@ -116,6 +116,55 @@ describe('useNoteDocument', () => {
     expect(writes.length).toBe(writesAfterUnmount)
   })
 
+  it('a settled title change rewrites inbound links and records the alias (Plan 07b)', async () => {
+    vi.useFakeTimers()
+    try {
+      const files: Record<string, string> = {
+        'notes/a.md': '# Old Title\n',
+        'notes/src.md': 'see [[Old Title]]\n',
+      }
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === 'note_read') {
+          return files[(args as { path: string }).path]
+        }
+        if (command === 'note_write') {
+          const { path: writePath, contents } = args as { path: string; contents: string }
+          files[writePath] = contents
+          return null
+        }
+        if (command === 'db_query') {
+          const sql = String((args as { sql: string }).sql)
+          if (sql.includes('"links"')) {
+            return [{ source_path: 'notes/src.md' }] // the one inbound source
+          }
+          return [] // resolver lookups: unresolved → no collision
+        }
+        return null
+      })
+
+      const hook = renderHook(() => useNoteDocument('notes/a.md', 1, { trackRenames: true }))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(hook.result.current.status).toBe('ready')
+
+      act(() => hook.result.current.onEditorChange('# New Title\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000)) // the rename save lands
+
+      // Blur is a settle point: the rewrite fires without waiting out the
+      // quiet period, then the alias lands through the normal save pipeline.
+      act(() => {
+        window.dispatchEvent(new Event('blur'))
+      })
+      await act(() => vi.runAllTimersAsync())
+
+      expect(files['notes/src.md']).toBe('see [[New Title]]\n')
+      expect(files['notes/a.md']).toContain('aliases:')
+      expect(files['notes/a.md']).toContain('Old Title')
+      expect(files['notes/a.md'].endsWith('# New Title\n')).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('ignores the watcher echo of its own save', async () => {
     const { result } = await readyHook()
     const editor = fakeEditor()
