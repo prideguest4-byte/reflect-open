@@ -64,7 +64,7 @@ banner. Keeps 08a purely about search + palette.
   predicates over the notes projection (EXISTS subqueries against `tags` and
   the `backlinks` view; link targets resolve through the shared resolver, and
   an unresolvable target matches nothing rather than silently ignoring the
-  filter). Free text constrains + ranks through FTS as in 08a; without text,
+  filter). Free text constrains and ranks via FTS as in 08a; without text,
   results order by recency — a filtered recall feed. A malformed token
   (impossible date, empty value) stays search text, so typing never hides
   results behind a half-formed filter. Chips UI can follow the grammar later.

@@ -18,7 +18,9 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 } }),
 }))
-// Register after the core mock is installed so commands see the mocked graph.
+// Register after the core mock is installed so app-commands' imports from
+// @reflect/core (randomNotePath, rebuildIndex) resolve to the mocks —
+// commands only touch the graph at run time, via the context parameter.
 const { registerAppCommands } = await import('@/lib/commands/app-commands')
 registerAppCommands()
 
