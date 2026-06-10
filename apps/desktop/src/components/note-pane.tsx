@@ -30,10 +30,12 @@ interface NotePaneProps {
    */
   editorClassName?: string
   /**
-   * The route's context sidebar shows this note's backlinks and similar
-   * notes, so render the inline copies only below `lg` — the breakpoint
-   * where the AppShell hides that sidebar. Off in the daily stream, whose
-   * sidebar describes only the target day, not every visible one.
+   * The route's context sidebar shows this note's similar notes, so render
+   * the inline copy only below `lg` — the breakpoint where the AppShell
+   * hides that sidebar. Backlinks are unaffected: the incoming-backlinks
+   * panel lives under the note at every window size. Off in the daily
+   * stream, whose sidebar describes only the target day, not every visible
+   * one.
    */
   contextInSidebar?: boolean
 }
@@ -136,8 +138,8 @@ export function NotePane({
     return (
       <div>
         <ProtectedNoteView content={document.initialContent} />
+        <BacklinksPanel path={path} />
         <div className={contextInSidebar ? 'lg:hidden' : undefined}>
-          <BacklinksPanel path={path} />
           <RelatedNotes path={path} />
         </div>
       </div>
@@ -187,8 +189,8 @@ export function NotePane({
         <WikiAutocomplete onCreate={createFromAutocomplete} />
       </NoteEditor>
 
+      <BacklinksPanel path={path} />
       <div className={contextInSidebar ? 'lg:hidden' : undefined}>
-        <BacklinksPanel path={path} />
         <RelatedNotes path={path} />
       </div>
     </div>

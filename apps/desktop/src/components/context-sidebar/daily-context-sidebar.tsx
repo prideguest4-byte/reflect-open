@@ -1,7 +1,6 @@
 import type { ReactElement } from 'react'
 import { dailyPath } from '@reflect/core'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { BacklinksSection } from './backlinks-section'
 import { DayCalendar } from './day-calendar'
 import { SidebarSection } from './sidebar-section'
 import { SimilarNotesSection } from './similar-notes-section'
@@ -89,7 +88,6 @@ export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactEl
       <SidebarSection storageKey="calendar" title="Calendar">
         <DayCalendar selectedDate={date} today={today} />
       </SidebarSection>
-      <BacklinksSection path={dailyPath(date)} emptyLabel="No notes link to this day yet." />
       <SimilarNotesSection path={dailyPath(date)} />
     </div>
   )
