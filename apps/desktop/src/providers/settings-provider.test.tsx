@@ -3,12 +3,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { setBridge } from '@reflect/core'
-import { SettingsProvider, useSettings } from './settings-provider'
+import { SETTINGS_QUERY_KEY, SettingsProvider, useSettings } from './settings-provider'
 
 /**
- * Exercises the instant-apply contract: defaults while the load is in flight,
- * updates winning over a racing initial load, full-document persistence
- * (unknown keys included), and a failed save leaving the applied value alone.
+ * Exercises the hydration + overrides contract: defaults while the load is in
+ * flight, updates winning over a racing initial load, persistence deferred
+ * until hydration (an early save must not drop passthrough keys on disk), and
+ * a failed save leaving the applied value alone.
  */
 
 let stored: Record<string, unknown>
@@ -60,6 +61,11 @@ const wrapper = ({ children }: { children: ReactNode }) => (
   </QueryClientProvider>
 )
 
+/** Resolves once the initial settings_load has populated the query cache. */
+async function loadSettled(): Promise<void> {
+  await waitFor(() => expect(queryClient.getQueryData(SETTINGS_QUERY_KEY)).toBeDefined())
+}
+
 beforeEach(() => {
   stored = {}
   queryClient = new QueryClient({
@@ -81,37 +87,35 @@ describe('SettingsProvider', () => {
     // Defaults are usable before the IPC load settles — no loading gate.
     expect(result.current.settings.editorMarkMode).toBe('focus')
     await waitFor(() => expect(result.current.settings.editorMarkMode).toBe('show'))
+    // Hydration alone must not write the store back.
+    expect(saved).toEqual([])
   })
 
   it('normalizes an invalid persisted value to its default', async () => {
     stored = { editorMarkMode: 'sideways' }
     const { result } = renderHook(() => useSettings(), { wrapper })
-    await waitFor(() =>
-      expect(queryClient.getQueryData(['settings'])).toBeDefined(),
-    )
+    await loadSettled()
     expect(result.current.settings.editorMarkMode).toBe('focus')
   })
 
-  it('applies an update and persists the full document, unknown keys included', async () => {
+  it('applies an update instantly and persists the full document', async () => {
     stored = { editorMarkMode: 'focus', futureKey: true }
     const { result } = renderHook(() => useSettings(), { wrapper })
-    await waitFor(() => expect(result.current.settings).toMatchObject({ futureKey: true }))
+    await loadSettled()
 
     act(() => {
       result.current.updateSettings({ editorMarkMode: 'show' })
     })
-    // Applied without waiting for any IO — the cache is written synchronously
-    // (consumers re-render on the next notification tick).
-    expect(queryClient.getQueryData(['settings'])).toMatchObject({ editorMarkMode: 'show' })
-    await waitFor(() => expect(result.current.settings.editorMarkMode).toBe('show'))
+    // Applied synchronously — plain React state, no IO in the way.
+    expect(result.current.settings.editorMarkMode).toBe('show')
     // The persisted document keeps unknown keys (newer-version settings survive).
     await waitFor(() =>
       expect(saved).toEqual([{ editorMarkMode: 'show', futureKey: true }]),
     )
   })
 
-  it('an update racing the initial load wins over the load result', async () => {
-    stored = { editorMarkMode: 'focus' }
+  it('an update racing the initial load wins and keeps passthrough keys', async () => {
+    stored = { editorMarkMode: 'focus', futureKey: true }
     gateLoad = true
     const { result } = renderHook(() => useSettings(), { wrapper })
 
@@ -119,19 +123,24 @@ describe('SettingsProvider', () => {
     act(() => {
       result.current.updateSettings({ editorMarkMode: 'show' })
     })
-    // …then let the (now stale) load finish. It must not clobber the update.
+    expect(result.current.settings.editorMarkMode).toBe('show')
+    // …and nothing may hit the disk before the disk has been read: a save
+    // built from defaults would drop `futureKey` permanently.
+    expect(saved).toEqual([])
+
     act(() => {
       releaseLoad()
     })
-    await waitFor(() => expect(saved).toEqual([{ editorMarkMode: 'show' }]))
-    await waitFor(() => expect(result.current.settings.editorMarkMode).toBe('show'))
+    // The load result must not clobber the update, and the deferred flush
+    // persists the update merged over the *loaded* document.
+    await waitFor(() =>
+      expect(saved).toEqual([{ editorMarkMode: 'show', futureKey: true }]),
+    )
+    expect(result.current.settings.editorMarkMode).toBe('show')
   })
 
-  it('compounding updates racing the initial load settle on the last one', async () => {
-    // Two updates while settings_load is in flight: their cancellation
-    // callbacks settle in *reverse* order (the second cancel finds nothing in
-    // flight), so an unguarded stale re-apply would resurrect the first value.
-    stored = { editorMarkMode: 'focus' }
+  it('compounding updates racing the initial load flush as one document', async () => {
+    stored = { editorMarkMode: 'show' }
     gateLoad = true
     const { result } = renderHook(() => useSettings(), { wrapper })
 
@@ -142,15 +151,7 @@ describe('SettingsProvider', () => {
     act(() => {
       releaseLoad()
     })
-    await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkMode: 'show' }, { editorMarkMode: 'focus' }]),
-    )
-    await waitFor(() => expect(result.current.settings.editorMarkMode).toBe('focus'))
-    // Let every queued cancellation callback drain, then re-check: a stale
-    // re-apply would flip the value back to 'show' here.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    await waitFor(() => expect(saved).toEqual([{ editorMarkMode: 'focus' }]))
     expect(result.current.settings.editorMarkMode).toBe('focus')
   })
 
@@ -158,9 +159,7 @@ describe('SettingsProvider', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       const { result } = renderHook(() => useSettings(), { wrapper })
-      await waitFor(() =>
-        expect(queryClient.getQueryData(['settings'])).toBeDefined(),
-      )
+      await loadSettled()
 
       failSaves = true
       act(() => {

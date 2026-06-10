@@ -2,12 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactElement,
   type ReactNode,
 } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   DEFAULT_SETTINGS,
   hasBridge,
@@ -17,11 +19,13 @@ import {
 } from '@reflect/core'
 
 /**
- * App-wide user settings (config-dir JSON, not graph state): loaded once
- * through TanStack Query and updated with **instant apply** — `updateSettings`
- * writes the cache synchronously (every consumer re-renders immediately) and
- * persists in the background. Defaults are served while the load is in flight
- * so consumers never wait on disk.
+ * App-wide user settings (config-dir JSON, not graph state), applied instantly.
+ *
+ * The design is hydration + overrides: the query reads the disk document once
+ * and is never written afterwards; session updates accumulate in local state
+ * and win over whatever the load returns **by construction**. There is no
+ * optimistic cache write to defend, so an update racing the initial load needs
+ * no cancellation or re-apply — the merge order is the whole story.
  */
 
 export const SETTINGS_QUERY_KEY = ['settings'] as const
@@ -34,58 +38,61 @@ interface SettingsContextValue {
 
 const SettingsContext = createContext<SettingsContextValue | null>(null)
 
+/** Shallow own-key equality — settings documents are flat JSON objects. */
+function sameDocument(a: Settings, b: Settings): boolean {
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  return aKeys.length === bKeys.length && aKeys.every((key) => Object.is(a[key], b[key]))
+}
+
 interface SettingsProviderProps {
   children: ReactNode
 }
 
 export function SettingsProvider({ children }: SettingsProviderProps): ReactElement {
-  const queryClient = useQueryClient()
-  const { data } = useQuery({
+  const { data: loaded } = useQuery({
     queryKey: SETTINGS_QUERY_KEY,
     queryFn: loadSettings,
     enabled: hasBridge(),
     staleTime: Infinity,
   })
-  const settings = data ?? DEFAULT_SETTINGS
+  const [overrides, setOverrides] = useState<Partial<Settings>>({})
 
-  // Persists are chained so rapid toggles can't interleave writes out of
-  // order — the last applied patch is always the last document on disk.
-  const persistQueue = useRef<Promise<void>>(Promise.resolve())
-  // Tracks the latest applied document. Written synchronously on update (two
-  // updates in one tick must compound, not overwrite) and re-synced on render.
-  const settingsRef = useRef(settings)
-  settingsRef.current = settings
-  // Monotonic update counter, so a stale re-apply (below) can recognize itself.
-  const updateSeq = useRef(0)
-
-  const updateSettings = useCallback(
-    (patch: Partial<Settings>) => {
-      const seq = ++updateSeq.current
-      const next: Settings = { ...settingsRef.current, ...patch }
-      settingsRef.current = next
-      queryClient.setQueryData(SETTINGS_QUERY_KEY, next)
-      // An update racing the initial load must win. Cancelling reverts the
-      // in-flight fetch *asynchronously* — which would clobber the value just
-      // applied — so it is re-applied once the cancellation has settled. Only
-      // the latest update may re-apply: cancellation promises aren't
-      // guaranteed to settle in call order (a later cancel can find nothing
-      // in flight and resolve sooner), so an unguarded older callback could
-      // overwrite a newer value.
-      void queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY }).then(() => {
-        if (updateSeq.current === seq) {
-          queryClient.setQueryData(SETTINGS_QUERY_KEY, next)
-        }
-      })
-      persistQueue.current = persistQueue.current
-        .then(() => saveSettings(next))
-        .catch((error: unknown) => {
-          // The in-memory value stays applied; the next successful save (or
-          // relaunch) reconciles. Settings are low-stakes enough not to block.
-          console.error('saving settings failed:', error)
-        })
-    },
-    [queryClient],
+  // Defaults are usable before the IPC load settles — no loading gate.
+  const settings = useMemo<Settings>(
+    () => ({ ...DEFAULT_SETTINGS, ...loaded, ...overrides }),
+    [loaded, overrides],
   )
+
+  const updateSettings = useCallback((patch: Partial<Settings>) => {
+    setOverrides((current) => ({ ...current, ...patch }))
+  }, [])
+
+  // Persistence trails hydration. Nothing is written before the disk document
+  // has been read — a save built from defaults would drop passthrough keys a
+  // newer app version wrote — and the full merged document is saved so those
+  // keys survive. An update made mid-load is simply flushed when the load
+  // lands. Writes are chained so they reach disk in apply order.
+  const persistQueue = useRef<Promise<void>>(Promise.resolve())
+  const lastPersisted = useRef<Settings | null>(null)
+  useEffect(() => {
+    if (loaded === undefined) {
+      return
+    }
+    const onDisk = lastPersisted.current ?? loaded
+    if (sameDocument(settings, onDisk)) {
+      lastPersisted.current = onDisk
+      return
+    }
+    lastPersisted.current = settings
+    persistQueue.current = persistQueue.current
+      .then(() => saveSettings(settings))
+      .catch((error: unknown) => {
+        // The in-memory value stays applied; the next successful save (or
+        // relaunch) reconciles. Settings are low-stakes enough not to block.
+        console.error('saving settings failed:', error)
+      })
+  }, [loaded, settings])
 
   const value = useMemo<SettingsContextValue>(
     () => ({ settings, updateSettings }),
