@@ -69,6 +69,13 @@ banner. Keeps 08a purely about search + palette.
   (impossible date, empty value) stays search text, so typing never hides
   results behind a half-formed filter. Chips UI can follow the grammar later.
 
+**`updated:` semantics note (accepted 2026-06-09):** the filter compares file
+`mtime`, which Reflect's own background writes also touch — a rename rewrite
+updates every source file it edits, so `updated:D` can include notes the
+*system* wrote that day, not just the user. Accepted for the first wave; the
+durable fix is content-authored timestamps (frontmatter or index-tracked),
+which can join when an editing-history feature needs them anyway.
+
 **Tokenizer note:** `search_fts` was created with the default `unicode61`
 tokenizer. If recall on code identifiers/CJK proves poor, switching (e.g. to
 `trigram`) needs an FTS-rebuilding migration — cheap, since the index is a
