@@ -5,7 +5,6 @@ import {
   subscribeEmbedStatus,
   type EmbedStatus,
 } from '@reflect/core'
-import { startOperation } from '@/lib/operations'
 
 /**
  * Semantic-search loading (Plan 09). The model is ~90MB and downloads from
@@ -80,20 +79,12 @@ export async function retryFailedEmbeddings(): Promise<void> {
   }
 }
 
-/** Load (downloading if needed) the model, visibly. Resolves with the outcome. */
+/** Load (downloading if needed) the model. Resolves with the outcome. */
 export async function ensureEmbeddingsVisibly(): Promise<EmbedStatus> {
-  const operation = startOperation('Loading semantic search model')
   try {
-    const status = await awaitTerminalStatus(await embedEnsure())
-    if (status.status === 'failed') {
-      operation.fail(status.message)
-    } else {
-      operation.done()
-    }
-    return status
+    return await awaitTerminalStatus(await embedEnsure())
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause)
-    operation.fail(message)
     return { status: 'failed', message }
   }
 }
@@ -104,19 +95,9 @@ export async function backfillEmbeddingsVisibly(options: {
   modelId: string
   isStale?: () => boolean
 }): Promise<'completed' | 'aborted' | 'failed'> {
-  const operation = startOperation('Indexing notes for semantic search')
   try {
-    const outcome = await backfillEmbeddings({
-      ...options,
-      onProgress: (done, total) => operation.progress(done, total),
-    })
-    // Either way the entry leaves the status surface (there is no "finished"
-    // state to misreport) — but an abort is the caller's signal that this
-    // pass didn't cover the graph; the next ready cycle re-runs it cheaply.
-    operation.done()
-    return outcome
-  } catch (cause) {
-    operation.fail(cause instanceof Error ? cause.message : String(cause))
+    return await backfillEmbeddings(options)
+  } catch {
     return 'failed'
   }
 }
