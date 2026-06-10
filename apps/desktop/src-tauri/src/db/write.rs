@@ -26,8 +26,9 @@ pub struct IndexedNote {
     pub(super) file_hash: String,
     pub(super) mtime: i64,
     pub(super) text: String,
+    pub(super) preview: String,
     pub(super) links: Vec<IndexedLink>,
-    pub(super) tags: Vec<String>,
+    pub(super) tags: Vec<IndexedTag>,
     pub(super) aliases: Vec<IndexedAlias>,
     pub(super) assets: Vec<String>,
 }
@@ -41,6 +42,13 @@ pub(super) struct IndexedLink {
     pub(super) alias: Option<String>,
     pub(super) pos_from: i64,
     pub(super) pos_to: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct IndexedTag {
+    pub(super) tag: String,
+    pub(super) tag_key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,8 +70,8 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
     remove_note(conn, &note.path)?;
 
     conn.prepare_cached(
-        "INSERT INTO notes(path, id, title, title_key, daily_date, is_private, file_hash, mtime, updated_at)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+        "INSERT INTO notes(path, id, title, title_key, daily_date, is_private, file_hash, mtime, updated_at, preview)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)",
     )?
     .execute(params![
         note.path,
@@ -74,6 +82,7 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
         i64::from(note.is_private),
         note.file_hash,
         note.mtime,
+        note.preview,
     ])?;
     conn.prepare_cached("INSERT INTO note_text(note_path, text) VALUES(?1, ?2)")?
         .execute(params![note.path, note.text])?;
@@ -95,9 +104,10 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
         }
     }
     {
-        let mut stmt = conn.prepare_cached("INSERT INTO tags(note_path, tag) VALUES(?1, ?2)")?;
+        let mut stmt =
+            conn.prepare_cached("INSERT INTO tags(note_path, tag, tag_key) VALUES(?1, ?2, ?3)")?;
         for tag in &note.tags {
-            stmt.execute(params![note.path, tag])?;
+            stmt.execute(params![note.path, tag.tag, tag.tag_key])?;
         }
     }
     {

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { dateFromDailyPath, isDaily } from '../graph/paths'
-import { foldKey, normalizeWikiTarget, type ParsedNote } from '../markdown'
+import { foldKey, foldTag, normalizeWikiTarget, type ParsedNote } from '../markdown'
+import { previewSnippet } from './snippet'
 
 /**
  * The index write payload (Plan 04): a {@link ParsedNote} (Plan 03) flattened into
@@ -14,6 +15,17 @@ import { foldKey, normalizeWikiTarget, type ParsedNote } from '../markdown'
  * other, and {@link indexedNoteSchema} is the contract a drift test can assert.
  */
 
+/**
+ * Version of the projection {@link buildIndexedNote} produces. Bump it whenever
+ * the rows derived from an *unchanged* file change — a new column, a changed
+ * derivation — so `syncIndex` rebuilds graphs whose rows predate it. The
+ * hash-based reconcile alone would never re-index an unchanged file, leaving
+ * new columns at their migration defaults forever.
+ *
+ * History: 1 — Plan 04 baseline · 2 — `notes.preview` + `tags.tag_key`.
+ */
+export const PROJECTION_VERSION = 2
+
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
   targetRaw: z.string(),
@@ -24,6 +36,14 @@ export const indexedLinkSchema = z.object({
   posTo: z.number(),
 })
 export type IndexedLink = z.infer<typeof indexedLinkSchema>
+
+export const indexedTagSchema = z.object({
+  /** Display casing (first-seen in the document). */
+  tag: z.string(),
+  /** Case-folded match key ({@link foldTag}) — what queries compare against. */
+  tagKey: z.string(),
+})
+export type IndexedTag = z.infer<typeof indexedTagSchema>
 
 export const indexedAliasSchema = z.object({
   alias: z.string(),
@@ -41,8 +61,10 @@ export const indexedNoteSchema = z.object({
   fileHash: z.string(),
   mtime: z.number(),
   text: z.string(),
+  /** The All Notes row snippet, derived once here rather than per query. */
+  preview: z.string(),
   links: z.array(indexedLinkSchema),
-  tags: z.array(z.string()),
+  tags: z.array(indexedTagSchema),
   aliases: z.array(indexedAliasSchema),
   assets: z.array(z.string()),
 })
@@ -80,8 +102,9 @@ export function buildIndexedNote(
     fileHash: meta.fileHash,
     mtime: meta.mtime,
     text: parsed.text,
+    preview: previewSnippet(parsed.text, parsed.title),
     links: [...wikiLinks, ...mdLinks],
-    tags: parsed.tags,
+    tags: parsed.tags.map((tag) => ({ tag, tagKey: foldTag(tag) })),
     aliases: parsed.frontmatter.aliases.map((alias) => ({
       alias,
       aliasKey: foldKey(alias),

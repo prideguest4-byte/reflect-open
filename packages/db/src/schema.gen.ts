@@ -68,6 +68,7 @@ export interface Notes {
   isPrivate: Generated<number>;
   mtime: Generated<number>;
   path: string;
+  preview: Generated<string>;
   title: string;
   titleKey: string;
   updatedAt: Generated<number>;
@@ -87,6 +88,7 @@ export interface SearchFts {
 export interface Tags {
   notePath: string;
   tag: string;
+  tagKey: Generated<string>;
 }
 
 export interface DB {

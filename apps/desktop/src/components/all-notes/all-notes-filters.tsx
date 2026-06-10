@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import type { NoteTagFacet } from '@reflect/core'
+import { foldTag, type NoteTagFacet } from '@reflect/core'
 import { useSettings } from '@/providers/settings-provider'
 import { CustomFilterMenu } from './custom-filter-menu'
 import { FilterTab } from './filter-tab'
@@ -26,16 +26,16 @@ export function AllNotesFilters({ tag, facets, onSelect }: AllNotesFiltersProps)
   const pinned: string[] = []
   const pinnedKeys = new Set<string>()
   for (const entry of settings.allNotesFilterTags) {
-    const key = entry.trim().toLowerCase()
+    const key = foldTag(entry.trim())
     if (key !== '' && !pinnedKeys.has(key)) {
       pinnedKeys.add(key)
       pinned.push(entry.trim())
     }
   }
 
-  const activeKey = tag === null ? null : tag.toLowerCase()
-  const customTag = tag !== null && !pinnedKeys.has(tag.toLowerCase()) ? tag : null
-  const customFacets = facets.filter((facet) => !pinnedKeys.has(facet.tag.toLowerCase()))
+  const activeKey = tag === null ? null : foldTag(tag)
+  const customTag = tag !== null && !pinnedKeys.has(foldTag(tag)) ? tag : null
+  const customFacets = facets.filter((facet) => !pinnedKeys.has(foldTag(facet.tag)))
 
   return (
     <div
@@ -46,9 +46,9 @@ export function AllNotesFilters({ tag, facets, onSelect }: AllNotesFiltersProps)
       <FilterTab label="All" active={tag === null} onClick={() => onSelect(null)} />
       {pinned.map((pinnedTag) => (
         <FilterTab
-          key={pinnedTag.toLowerCase()}
+          key={foldTag(pinnedTag)}
           label={`#${pinnedTag}`}
-          active={activeKey === pinnedTag.toLowerCase()}
+          active={activeKey === foldTag(pinnedTag)}
           onClick={() => onSelect(pinnedTag)}
         />
       ))}

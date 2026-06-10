@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import type { NoteTagFacet } from '@reflect/core'
+import { foldTag, type NoteTagFacet } from '@reflect/core'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -59,7 +59,7 @@ export function CustomFilterMenu({
           >
             {facets.map((facet) => (
               <button
-                key={facet.tag.toLowerCase()}
+                key={foldTag(facet.tag)}
                 type="button"
                 role="menuitem"
                 onClick={() => choose(facet.tag)}

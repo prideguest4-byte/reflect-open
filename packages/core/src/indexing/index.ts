@@ -8,6 +8,7 @@ export {
   applyIndexedNotes,
   removeFromIndex,
   clearIndex,
+  setIndexMeta,
   watchStart,
   watchStop,
 } from './commands'
@@ -26,16 +27,27 @@ export {
   buildIndexedNote,
   indexedNoteSchema,
   indexedLinkSchema,
+  indexedTagSchema,
   indexedAliasSchema,
+  PROJECTION_VERSION,
   type IndexedNote,
   type IndexedLink,
+  type IndexedTag,
   type IndexedAlias,
 } from './indexed-note'
-export { indexNote, rebuildIndex, reconcileIndex, type IndexPassOptions } from './indexer'
+export {
+  indexNote,
+  rebuildIndex,
+  reconcileIndex,
+  syncIndex,
+  PROJECTION_VERSION_KEY,
+  type IndexPassOptions,
+} from './indexer'
 export {
   dailyDatesInRange,
   getBacklinks,
   getBacklinksWithContext,
+  getIndexMeta,
   getLinkSources,
   getNote,
   getNotesByTag,

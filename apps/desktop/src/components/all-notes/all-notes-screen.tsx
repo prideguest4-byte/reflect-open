@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { hasBridge, listNotes, listNoteTags } from '@reflect/core'
+import { foldTag, hasBridge, listNotes, listNoteTags } from '@reflect/core'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
@@ -31,7 +31,7 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   const enabled = hasBridge() && graph !== null
 
   const { data: notes } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'all-notes', tag === null ? null : tag.toLowerCase()],
+    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'all-notes', tag === null ? null : foldTag(tag)],
     queryFn: () => listNotes({ tag }),
     enabled,
   })

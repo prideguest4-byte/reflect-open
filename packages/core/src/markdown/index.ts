@@ -30,7 +30,7 @@ export {
   type InlineImage,
 } from './scan'
 export { appendUnderHeading, renameWikiLink } from './edit'
-export { foldKey } from './keys'
+export { foldKey, foldTag } from './keys'
 export {
   normalizeWikiTarget,
   resolved,

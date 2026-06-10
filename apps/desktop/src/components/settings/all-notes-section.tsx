@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { isTagName } from '@reflect/core'
+import { foldTag, isTagName } from '@reflect/core'
 import { X } from 'lucide-react'
 import { useSettings } from '@/providers/settings-provider'
 import { SettingsField } from './field'
@@ -7,11 +7,11 @@ import { SettingsSection } from './section'
 
 /**
  * Normalize a typed tag to its stored form: `#`-prefix stripped, trimmed,
- * lowercased (tag matching is case-insensitive everywhere, so storing the
- * folded form keeps the settings document canonical).
+ * folded (tag matching is case-insensitive everywhere, so storing the folded
+ * form keeps the settings document canonical).
  */
 function normalizeTagInput(value: string): string {
-  return value.trim().replace(/^#+/, '').trim().toLowerCase()
+  return foldTag(value.trim().replace(/^#+/, '').trim())
 }
 
 /**
@@ -40,7 +40,7 @@ export function AllNotesSection(): ReactElement {
       return
     }
     setDraft('')
-    if (tags.some((existing) => existing.toLowerCase() === tag)) {
+    if (tags.some((existing) => foldTag(existing) === tag)) {
       return
     }
     updateSettings({ allNotesFilterTags: [...tags, tag] })

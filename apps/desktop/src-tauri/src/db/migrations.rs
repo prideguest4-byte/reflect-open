@@ -20,6 +20,9 @@ static MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
     Migrations::new(vec![
         M::up(include_str!("../../migrations/0001_initial.sql")),
         M::up(include_str!("../../migrations/0002_embeddings.sql")),
+        M::up(include_str!(
+            "../../migrations/0003_note_list_projection.sql"
+        )),
     ])
 });
 

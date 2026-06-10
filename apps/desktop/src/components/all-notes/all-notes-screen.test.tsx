@@ -70,14 +70,13 @@ const noteRows = [
     path: 'notes/health.md',
     title: 'Health Stacked',
     mtime: HEALTH_MTIME,
-    // The indexer's plain text is whitespace-collapsed: one long line.
-    text_head: 'Health Stacked Shop your health goals.',
+    preview: 'Shop your health goals.',
   },
   {
     path: 'notes/tokyo.md',
     title: 'Tokyo Gâteau',
     mtime: TOKYO_MTIME,
-    text_head: 'Tokyo Gâteau Dandelion chocolate.',
+    preview: 'Dandelion chocolate.',
   },
 ]
 const tagRows = [
@@ -101,10 +100,10 @@ beforeEach(() => {
     }
     const sql = String(args.sql)
     const params = args.params as unknown[]
-    if (sql.includes('group by lower(tags.tag)')) {
+    if (sql.includes('group by')) {
       return facetRows
     }
-    if (sql.includes('substr(note_text.text')) {
+    if (sql.includes('"preview"')) {
       // A tag-filtered list (EXISTS subquery carries the folded tag) — only
       // `travel` has matches in this fixture.
       if (sql.includes('exists')) {
@@ -187,14 +186,14 @@ describe('AllNotesScreen', () => {
       path: `notes/n${index}.md`,
       title: `Note ${index}`,
       mtime: 1_000_000 - index,
-      text_head: null,
+      preview: '',
     }))
     mockInvoke.mockImplementation(async (command, args) => {
       if (command !== 'db_query') {
         return null
       }
       const sql = String(args.sql)
-      if (sql.includes('substr(note_text.text')) {
+      if (sql.includes('"preview"')) {
         return many
       }
       return []

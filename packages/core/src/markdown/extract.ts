@@ -1,6 +1,7 @@
 import { dateFromDailyPath, isDaily } from '../graph/paths'
 import { parseFrontmatter, splitFrontmatter } from './frontmatter'
 import { parseBody } from './grammar'
+import { foldTag } from './keys'
 import { parseInlineLink } from './link-syntax'
 import type {
   AssetRef,
@@ -155,7 +156,7 @@ function collectTags(body: string, excluded: Span[], into: Map<string, string>):
       continue
     }
     const tag = match[2]
-    const key = tag.toLowerCase()
+    const key = foldTag(tag)
     if (!into.has(key)) {
       into.set(key, tag) // dedupe case-insensitively, keep first-seen casing
     }

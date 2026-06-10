@@ -16,21 +16,20 @@ afterEach(() => {
 })
 
 describe('listNotes', () => {
-  it('lists non-daily notes newest first with snippets and grouped tags', async () => {
+  it('lists non-daily notes newest first with stored previews and grouped tags', async () => {
     mockInvoke
       .mockResolvedValueOnce([
         {
           path: 'notes/health.md',
           title: 'Health Stacked',
           mtime: 2000,
-          // The indexer's plain text is whitespace-collapsed: one long line.
-          text_head: 'Health Stacked Shop your health goals.',
+          preview: 'Shop your health goals.',
         },
         {
           path: 'notes/tokyo.md',
           title: 'Tokyo Gâteau',
           mtime: 1000,
-          text_head: null,
+          preview: '',
         },
       ])
       .mockResolvedValueOnce([
@@ -60,6 +59,10 @@ describe('listNotes', () => {
     const [command, args] = mockInvoke.mock.calls[0]
     expect(command).toBe('db_query')
     const sql = String(args.sql)
+    // The snippet is the stored projection column — no note_text join, no
+    // per-query derivation.
+    expect(sql).toContain('"preview"')
+    expect(sql).not.toContain('note_text')
     expect(sql).toContain('"daily_date" is null')
     expect(sql).toContain('order by "notes"."mtime" desc')
     expect(sql).not.toContain('exists')
@@ -77,10 +80,10 @@ describe('listNotes', () => {
     expect(tagArgs.params).toEqual([])
   })
 
-  it('narrows both queries to one tag case-insensitively via an EXISTS subquery', async () => {
+  it('narrows both queries to one tag via the stored folded tag_key', async () => {
     mockInvoke
       .mockResolvedValueOnce([
-        { path: 'notes/health.md', title: 'Health Stacked', mtime: 2000, text_head: null },
+        { path: 'notes/health.md', title: 'Health Stacked', mtime: 2000, preview: '' },
       ])
       .mockResolvedValueOnce([])
 
@@ -91,8 +94,9 @@ describe('listNotes', () => {
       const [, args] = call
       const sql = String(args.sql)
       expect(sql).toContain('exists')
-      expect(sql).toContain('lower(tags.tag)')
-      expect(args.params).toContain('book')
+      expect(sql).toContain('"tag_key"')
+      expect(sql).not.toContain('lower(')
+      expect(args.params).toEqual(['book'])
     }
   })
 
@@ -104,7 +108,7 @@ describe('listNotes', () => {
 })
 
 describe('listNoteTags', () => {
-  it('groups tags case-insensitively over non-daily notes', async () => {
+  it('groups tags on the stored key over non-daily notes', async () => {
     mockInvoke.mockResolvedValue([
       { tag: 'Book', count: 3 },
       { tag: 'link', count: 12 },
@@ -120,6 +124,6 @@ describe('listNoteTags', () => {
     expect(command).toBe('db_query')
     const sql = String(args.sql)
     expect(sql).toContain('"daily_date" is null')
-    expect(sql).toContain('group by lower(tags.tag)')
+    expect(sql).toContain('group by "tags"."tag_key"')
   })
 })
