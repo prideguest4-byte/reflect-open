@@ -168,16 +168,18 @@ export interface PinnedNote {
 }
 
 /**
- * Every note carrying `pinned: true` frontmatter, title-ordered (case-folded,
- * path as the tiebreak). Alphabetical because the flag is a plain boolean —
- * there is no user-ordained order to honor — and a stable order is the point
- * of pinning: the list must not reshuffle as notes are edited.
+ * Every pinned note, in shelf order: explicit `pinned: <n>` orders first
+ * (ascending — what the future reorder UI writes), bare `pinned: true` after,
+ * alphabetically by case-folded title (path as the tiebreak). Stable order is
+ * the point of pinning: the list must not reshuffle as notes are edited.
  */
 export async function getPinnedNotes(): Promise<PinnedNote[]> {
   return db
     .selectFrom('notes')
     .where('isPinned', '=', 1)
     .select(['path', 'title', 'dailyDate'])
+    .orderBy(sql`pinned_order IS NULL`)
+    .orderBy('pinnedOrder')
     .orderBy('titleKey')
     .orderBy('path')
     .execute()

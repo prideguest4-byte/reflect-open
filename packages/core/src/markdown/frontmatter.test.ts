@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseFrontmatter, splitFrontmatter, upsertFrontmatter } from './frontmatter'
+import { isPinned, pinnedOrder } from './model'
 
 describe('splitFrontmatter', () => {
   it('returns the whole file as body when there is no frontmatter', () => {
@@ -60,12 +61,24 @@ describe('parseFrontmatter', () => {
     expect(parseFrontmatter('id: x').data.private).toBe(false)
   })
 
-  it('coerces the pinned flag with the same explicit rules', () => {
+  it('coerces the pinned value: booleans, truthy words, numbers as explicit order', () => {
     expect(parseFrontmatter('pinned: true').data.pinned).toBe(true)
     expect(parseFrontmatter('pinned: yes').data.pinned).toBe(true)
     expect(parseFrontmatter('pinned: false').data.pinned).toBe(false)
     expect(parseFrontmatter('pinned: banana').data.pinned).toBe(false)
     expect(parseFrontmatter('id: x').data.pinned).toBe(false)
+    expect(parseFrontmatter('pinned: 2').data.pinned).toBe(2)
+    expect(parseFrontmatter('pinned: 1.5').data.pinned).toBe(1.5)
+    expect(parseFrontmatter('pinned: .nan').data.pinned).toBe(false)
+  })
+
+  it('isPinned/pinnedOrder read the pin value — `pinned: 0` is order 0, pinned', () => {
+    expect(isPinned(parseFrontmatter('pinned: 0').data)).toBe(true)
+    expect(pinnedOrder(parseFrontmatter('pinned: 0').data)).toBe(0)
+    expect(isPinned(parseFrontmatter('pinned: true').data)).toBe(true)
+    expect(pinnedOrder(parseFrontmatter('pinned: true').data)).toBeNull()
+    expect(isPinned(parseFrontmatter('id: x').data)).toBe(false)
+    expect(pinnedOrder(parseFrontmatter('id: x').data)).toBeNull()
   })
 })
 

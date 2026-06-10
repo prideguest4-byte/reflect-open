@@ -41,7 +41,7 @@ describe('dailyDatesInRange', () => {
 })
 
 describe('getPinnedNotes', () => {
-  it('selects pinned rows ordered by folded title', async () => {
+  it('selects pinned rows: explicit orders first, then folded title', async () => {
     mockInvoke.mockResolvedValue([
       { path: 'notes/a.md', title: 'Alpha', daily_date: null },
       { path: 'notes/b.md', title: 'Beta', daily_date: null },
@@ -57,7 +57,9 @@ describe('getPinnedNotes', () => {
     expect(command).toBe('db_query')
     const sql = String(args.sql)
     expect(sql).toContain('is_pinned')
-    expect(sql).toContain('order by')
+    // Ordered pins lead (NULL orders sort last), alphabetical within.
+    expect(sql).toContain('order by pinned_order IS NULL')
+    expect(sql).toContain('"pinned_order"')
     expect(sql).toContain('title_key')
     expect(args.params).toEqual([1])
   })

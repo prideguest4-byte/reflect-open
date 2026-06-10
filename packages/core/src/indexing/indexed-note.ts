@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { dateFromDailyPath, isDaily } from '../graph/paths'
-import { foldKey, normalizeWikiTarget, type ParsedNote } from '../markdown'
+import { foldKey, isPinned, normalizeWikiTarget, pinnedOrder, type ParsedNote } from '../markdown'
 
 /**
  * The index write payload (Plan 04): a {@link ParsedNote} (Plan 03) flattened into
@@ -39,6 +39,8 @@ export const indexedNoteSchema = z.object({
   dailyDate: z.string().nullable(),
   isPrivate: z.boolean(),
   isPinned: z.boolean(),
+  /** Explicit pin order (`pinned: <n>`); null for bare `pinned: true`. */
+  pinnedOrder: z.number().nullable(),
   fileHash: z.string(),
   mtime: z.number(),
   text: z.string(),
@@ -78,7 +80,8 @@ export function buildIndexedNote(
     titleKey: foldKey(parsed.title),
     dailyDate: isDaily(parsed.path) ? dateFromDailyPath(parsed.path) : null,
     isPrivate: parsed.frontmatter.private,
-    isPinned: parsed.frontmatter.pinned,
+    isPinned: isPinned(parsed.frontmatter),
+    pinnedOrder: pinnedOrder(parsed.frontmatter),
     fileHash: meta.fileHash,
     mtime: meta.mtime,
     text: parsed.text,

@@ -86,6 +86,8 @@ export { loadSettings, saveSettings } from './settings/commands'
 // Markdown document model (Plan 03)
 export {
   frontmatterSchema,
+  isPinned,
+  pinnedOrder,
   PARSED_NOTE_VERSION,
   parseNote,
   appendUnderHeading,

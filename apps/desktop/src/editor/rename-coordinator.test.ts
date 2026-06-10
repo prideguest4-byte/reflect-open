@@ -92,7 +92,7 @@ function fakeSession(content: string): NoteSession & {
     flush: vi.fn(async () => {}),
     keepMine: () => {},
     loadTheirs: () => {},
-    conflicted: () => false,
+    commitFrontmatter: async () => true,
     content: () => content,
     updateFrontmatter: vi.fn(() => true),
     dispose: () => {},

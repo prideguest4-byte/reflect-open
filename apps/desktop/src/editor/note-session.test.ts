@@ -265,13 +265,10 @@ describe('frontmatter ownership (Plan 07b)', () => {
     h.session.load()
     await vi.runAllTimersAsync()
     h.session.editorChanged('# Mine\n') // dirty
-    expect(h.session.conflicted()).toBe(false)
     h.setDisk('# Theirs\n')
     h.session.externalChanged()
     await vi.runAllTimersAsync()
     expect(h.snapshots.at(-1)?.conflict).toBe('# Theirs\n')
-    // What callers needing their write on disk *now* key off (the pin toggle).
-    expect(h.session.conflicted()).toBe(true)
 
     expect(h.session.updateFrontmatter({ aliases: ['Old Title'] })).toBe(true)
     await vi.runAllTimersAsync()
@@ -279,16 +276,12 @@ describe('frontmatter ownership (Plan 07b)', () => {
 
     h.session.keepMine()
     await vi.runAllTimersAsync()
-    expect(h.session.conflicted()).toBe(false)
     const written = h.writes.at(-1)?.contents ?? ''
     expect(written).toContain('Old Title') // the alias survived the conflict
     expect(written).toContain('# Mine')
   })
 
   it('a later external change refreshes a parked conflict snapshot', async () => {
-    // What the pin toggle relies on: it patches the contested disk content and
-    // nudges externalChanged() — "load theirs" must adopt the patched bytes,
-    // not the stale park.
     const h = harness()
     h.session.load()
     await vi.runAllTimersAsync()
@@ -305,6 +298,50 @@ describe('frontmatter ownership (Plan 07b)', () => {
 
     h.session.loadTheirs()
     expect(h.session.content()).toBe('---\npinned: true\n---\n# Theirs\n')
+  })
+
+  it('commitFrontmatter lands the patch immediately on a clean session', async () => {
+    const h = harness({ disk: '# Hello\n' })
+    h.session.load()
+    await vi.runAllTimersAsync()
+    await expect(h.session.commitFrontmatter({ pinned: true })).resolves.toBe(true)
+    // Flushed, not riding the save debounce.
+    expect(h.writes.at(-1)?.contents).toBe('---\npinned: true\n---\n# Hello\n')
+    expect(h.snapshots.at(-1)?.dirty).toBe(false)
+  })
+
+  it('commitFrontmatter under a parked conflict writes through and refreshes the park', async () => {
+    const h = harness()
+    h.session.load()
+    await vi.runAllTimersAsync()
+    h.session.editorChanged('# Mine\n')
+    h.setDisk('# Theirs\n')
+    h.session.externalChanged()
+    await vi.runAllTimersAsync()
+    expect(h.snapshots.at(-1)?.conflict).toBe('# Theirs\n')
+
+    await expect(h.session.commitFrontmatter({ pinned: true })).resolves.toBe(true)
+    // The contested content was patched and written — the index sees it now…
+    expect(h.writes.at(-1)?.contents).toBe('---\npinned: true\n---\n# Theirs\n')
+    // …the park holds the patched bytes, so "load theirs" adopts the pin…
+    expect(h.snapshots.at(-1)?.conflict).toBe('---\npinned: true\n---\n# Theirs\n')
+    h.session.loadTheirs()
+    expect(h.session.content()).toBe('---\npinned: true\n---\n# Theirs\n')
+  })
+
+  it('commitFrontmatter under a conflict keeps the patch through "keep mine" too', async () => {
+    const h = harness()
+    h.session.load()
+    await vi.runAllTimersAsync()
+    h.session.editorChanged('# Mine\n')
+    h.setDisk('# Theirs\n')
+    h.session.externalChanged()
+    await vi.runAllTimersAsync()
+
+    await h.session.commitFrontmatter({ pinned: true })
+    h.session.keepMine()
+    await vi.runAllTimersAsync()
+    expect(h.writes.at(-1)?.contents).toBe('---\npinned: true\n---\n# Mine\n')
   })
 
   it('onContent reports full joined content with the right origins', async () => {

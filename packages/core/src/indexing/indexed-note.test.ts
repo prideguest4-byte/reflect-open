@@ -19,6 +19,7 @@ describe('buildIndexedNote', () => {
     expect(indexed.titleKey).toBe('project x')
     expect(indexed.isPrivate).toBe(true)
     expect(indexed.isPinned).toBe(true)
+    expect(indexed.pinnedOrder).toBeNull() // bare `pinned: true` carries no order
     expect(indexed.fileHash).toBe('abc')
     expect(indexed.mtime).toBe(123)
     expect(indexed.aliases).toEqual([
@@ -50,6 +51,15 @@ describe('buildIndexedNote', () => {
     expect(indexed.id).toBeNull()
     expect(indexed.isPrivate).toBe(false)
     expect(indexed.isPinned).toBe(false)
+  })
+
+  it('projects an explicit pin order', () => {
+    const indexed = buildIndexedNote(
+      parseNote({ path: 'notes/n.md', source: '---\npinned: 2\n---\n# N' }),
+      { fileHash: 'h', mtime: 0 },
+    )
+    expect(indexed.isPinned).toBe(true)
+    expect(indexed.pinnedOrder).toBe(2)
   })
 
   it('produces a payload that satisfies the cross-language contract schema', () => {

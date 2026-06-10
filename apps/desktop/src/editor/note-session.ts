@@ -136,11 +136,12 @@ export interface FrontmatterPatch {
   /** Alternative wiki-link titles for this note (the Plan 07b auto-alias). */
   aliases?: string[]
   /**
-   * Sidebar pin. `false` deletes the key rather than writing `pinned: false` —
-   * unpinned is the absence of the flag, and a note whose only metadata was
-   * the pin returns to having no frontmatter at all.
+   * Sidebar pin. `true` pins; a number pins with an explicit order (what the
+   * future reorder UI writes); `false` deletes the key rather than writing
+   * `pinned: false` — unpinned is the absence of the flag, and a note whose
+   * only metadata was the pin returns to having no frontmatter at all.
    */
-  pinned?: boolean
+  pinned?: boolean | number
 }
 
 /** Translate the typed patch into the YAML write (`undefined` deletes a key). */
@@ -150,7 +151,7 @@ function yamlPatch(patch: FrontmatterPatch): Record<string, unknown> {
     yaml.aliases = patch.aliases
   }
   if (patch.pinned !== undefined) {
-    yaml.pinned = patch.pinned ? true : undefined
+    yaml.pinned = patch.pinned === false ? undefined : patch.pinned
   }
   return yaml
 }
@@ -175,13 +176,6 @@ export interface NoteSession {
   keepMine: () => void
   /** Resolve a conflict by loading the external content (discards the buffer). */
   loadTheirs: () => void
-  /**
-   * True while an external change is parked awaiting the user's choice. Saves
-   * (and so {@link NoteSession.flush}) are paused for the duration — callers
-   * that need their write on disk *now* (e.g. the pin toggle feeding the
-   * index) must check this and take their own path.
-   */
-  conflicted: () => boolean
   /** The full current document (frontmatter + buffer), as a save would write it. */
   content: () => string
   /**
@@ -194,6 +188,17 @@ export interface NoteSession {
    * then reconciles like any external change).
    */
   updateFrontmatter: (patch: FrontmatterPatch) => boolean
+  /**
+   * {@link NoteSession.updateFrontmatter}, but the patch **lands on disk now**
+   * regardless of session state. Normally that's a flush; under a parked
+   * conflict — where saves are paused and a flush is a deliberate no-op — the
+   * contested content is patched and written through too, so the index sees
+   * the change immediately and *both* resolutions keep it ("keep mine" writes
+   * the patched header, "load theirs" adopts the patched park). Same gating
+   * and false-return as `updateFrontmatter`. For patches that should ride the
+   * resolution instead (the rename alias), use `updateFrontmatter`.
+   */
+  commitFrontmatter: (patch: FrontmatterPatch) => Promise<boolean>
   /** Flush pending edits and detach: no further snapshots are emitted. */
   dispose: () => void
 }
@@ -544,6 +549,31 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     return true
   }
 
+  async function commitFrontmatter(patch: FrontmatterPatch): Promise<boolean> {
+    if (!updateFrontmatter(patch)) {
+      return false
+    }
+    if (conflict === null) {
+      await flush()
+      return true
+    }
+    // Saves are paused: the patch above rides the in-memory header (landing
+    // with "keep mine"), so make the other half land too — patch the parked
+    // content and write it through. The park refreshes in place, so "load
+    // theirs" adopts the patched bytes, and recording the write in `disk`
+    // makes the watcher's echo a recognized no-op.
+    if (io.write !== null) {
+      const patched = upsertFrontmatter(conflict, yamlPatch(patch))
+      if (patched !== conflict) {
+        await io.write(path, patched)
+        conflict = patched
+        disk = patched
+        emit()
+      }
+    }
+    return true
+  }
+
   function dispose(): void {
     // Flush first: the queued save step reads the (now frozen) buffer, so
     // pending edits persist to this session's path even after the UI moves on.
@@ -559,9 +589,9 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     flush,
     keepMine,
     loadTheirs,
-    conflicted: () => conflict !== null,
     content: () => header + buffer,
     updateFrontmatter,
+    commitFrontmatter,
     dispose,
   }
 }

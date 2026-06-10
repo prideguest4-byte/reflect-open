@@ -13,7 +13,7 @@ function fakeSession(path: string, log: string[]): NoteSession {
     },
     keepMine: () => {},
     loadTheirs: () => {},
-    conflicted: () => false,
+    commitFrontmatter: async () => true,
     content: () => '',
     updateFrontmatter: () => true,
     dispose: () => {},

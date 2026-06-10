@@ -69,6 +69,7 @@ export interface Notes {
   isPrivate: Generated<number>;
   mtime: Generated<number>;
   path: string;
+  pinnedOrder: number | null;
   title: string;
   titleKey: string;
   updatedAt: Generated<number>;

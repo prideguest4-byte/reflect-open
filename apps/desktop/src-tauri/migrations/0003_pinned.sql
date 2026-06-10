@@ -3,6 +3,10 @@
 -- re-reading files. Markdown stays the source of truth; this is rebuildable.
 
 ALTER TABLE notes ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
+-- Explicit pin order from `pinned: <n>` frontmatter (the future reorder UI's
+-- encoding; REAL so fractional ranks make an insertion a one-file write).
+-- NULL for bare `pinned: true` — those sort after ordered pins, by title.
+ALTER TABLE notes ADD COLUMN pinned_order REAL;
 
 -- The flag is extracted at index time, and the open-time reconcile hash-skips
 -- unchanged files — rows indexed before this migration would keep is_pinned=0

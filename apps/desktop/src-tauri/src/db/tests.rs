@@ -28,6 +28,7 @@ fn note(path: &str, title: &str, links: Vec<IndexedLink>) -> IndexedNote {
         daily_date: None,
         is_private: false,
         is_pinned: false,
+        pinned_order: None,
         file_hash: "h".to_string(),
         mtime: 0,
         text: format!("{title} body"),
@@ -119,15 +120,22 @@ fn pinned_migration_drops_stale_note_rows_for_reindex() {
 }
 
 #[test]
-fn pinned_flag_round_trips_into_the_notes_row() {
+fn pinned_flag_and_order_round_trip_into_the_notes_row() {
     let conn = migrated();
     let mut pinned = note("notes/p.md", "P", vec![]);
     pinned.is_pinned = true;
+    pinned.pinned_order = Some(1.5);
     apply_note(&conn, &pinned).unwrap();
     apply_note(&conn, &note("notes/q.md", "Q", vec![])).unwrap();
-    let rows = run_query(&conn, "SELECT path FROM notes WHERE is_pinned = 1", &[]).unwrap();
+    let rows = run_query(
+        &conn,
+        "SELECT path, pinned_order FROM notes WHERE is_pinned = 1",
+        &[],
+    )
+    .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["path"], Value::from("notes/p.md"));
+    assert_eq!(rows[0]["pinned_order"], Value::from(1.5));
 }
 
 #[test]
