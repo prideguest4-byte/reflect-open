@@ -9,6 +9,7 @@ import { WikiAutocomplete } from '@/editor/wiki-autocomplete'
 import { createNoteWithTitle } from '@/lib/create-note'
 import { isIsoDate } from '@/lib/dates'
 import { useGraph } from '@/providers/graph-provider'
+import { useSettings } from '@/providers/settings-provider'
 import { useRouter } from '@/routing/router'
 import { routeForPath } from '@/routing/route'
 
@@ -39,6 +40,7 @@ export function NotePane({
 }: NotePaneProps): ReactElement {
   const { graph } = useGraph()
   const { navigate } = useRouter()
+  const { settings } = useSettings()
   const graphRoot = graph?.root ?? null
   const generation = graph?.generation ?? null
   const document = useNoteDocument(path, generation, {
@@ -207,6 +209,7 @@ export function NotePane({
         key={path}
         initialContent={document.initialContent}
         onChange={document.onEditorChange}
+        markMode={settings.editorMarkdownSyntax}
         images={images}
         onWikiLinkClick={onWikiLinkClick}
         handleRef={handleRef}

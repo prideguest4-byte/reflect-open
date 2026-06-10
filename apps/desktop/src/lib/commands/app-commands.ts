@@ -69,6 +69,13 @@ const APP_COMMANDS: AppCommand[] = [
     run: (context) => context.toggleTheme(),
   },
   {
+    id: 'settings.open',
+    title: 'Open settings',
+    keywords: ['preferences', 'config', 'options'],
+    keybinding: 'Mod-,',
+    run: (context) => context.navigate({ kind: 'settings' }),
+  },
+  {
     id: 'semantic.enable',
     title: 'Enable semantic search',
     keywords: ['embeddings', 'ai', 'similar', 'model'],
