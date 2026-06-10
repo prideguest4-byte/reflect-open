@@ -3,7 +3,7 @@ import type { GraphInfo } from '@reflect/core'
 import { CalendarDays, PanelLeftClose, Settings, SquarePen } from 'lucide-react'
 import { runCommand } from '@/lib/commands/registry'
 import type { CommandContext } from '@/lib/commands/types'
-import { formatBinding, isApplePlatform } from '@/lib/keybindings'
+import { formatBindingLabel } from '@/lib/keybindings'
 import { useRouter } from '@/routing/router'
 import { GraphFooter } from './graph-footer'
 import { SidebarItem } from './sidebar-item'
@@ -14,12 +14,6 @@ interface SidebarProps {
   graph: GraphInfo
   /** Commands run with this — the same context the palette/shortcuts use. */
   context: CommandContext
-}
-
-/** Plain-text shortcut for a `title` tooltip, e.g. `⌘\` / `Ctrl+\`. */
-function bindingHint(binding: string): string {
-  const apple = isApplePlatform()
-  return formatBinding(binding, apple).join(apple ? '' : '+')
 }
 
 /**
@@ -36,7 +30,7 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
         <button
           type="button"
           aria-label="Hide sidebar"
-          title={`Hide sidebar (${bindingHint('Mod-\\')})`}
+          title={`Hide sidebar (${formatBindingLabel('Mod-\\')})`}
           onClick={() => context.toggleSidebar()}
           className="rounded-md p-1 text-[color:var(--text-muted)] transition-colors duration-100 hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-secondary)]"
         >

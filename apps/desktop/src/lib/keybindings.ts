@@ -45,6 +45,12 @@ export function isApplePlatform(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)
 }
 
+/** One plain-text label for tooltips and AT, e.g. `⌘D` on Apple, `Ctrl+D` elsewhere. */
+export function formatBindingLabel(binding: string): string {
+  const apple = isApplePlatform()
+  return formatBinding(binding, apple).join(apple ? '' : '+')
+}
+
 /**
  * Split a binding into display labels, one per key, modifiers first.
  * A trailing `-` is the literal `-` key (`Mod--`), not a separator.
