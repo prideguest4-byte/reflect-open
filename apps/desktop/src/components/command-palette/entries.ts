@@ -1,4 +1,4 @@
-import { dailyPath } from '@reflect/core'
+import { dailyPath, parseSearchQuery } from '@reflect/core'
 import type { AppCommand } from '@/lib/commands/types'
 import type { FilteredSearchHit, WikiSuggestion } from '@reflect/core'
 
@@ -43,18 +43,25 @@ export function buildPaletteSections(options: {
   suggestions: WikiSuggestion[]
   /** The one search path's results (filters may be empty — Plan 08b). */
   hits: FilteredSearchHit[]
-  /** True when the data query carried filter tokens: hits ARE the list. */
+  /** True when the data query carried filter tokens (describes `hits`). */
   filtered: boolean
   commands: AppCommand[]
 }): PaletteSections {
   const { commands, filtered } = options
   const query = options.query.trim()
+  // The **live** query decides the palette's mode; the deferred data only
+  // fills it. Deciding mode from the deferred value would hold the palette in
+  // constrained mode (no command rows, the previous filter's notes) after the
+  // user deletes the filter tokens, until deferral catches up.
+  const liveFiltered = query !== '' && parseSearchQuery(query).filtered
   // The index queries are keyed on a *deferred* value that can lag the live
-  // input. A just-cleared input must show the recall feed, never the previous
-  // search's data — a momentarily empty list beats a momentarily wrong one.
+  // input. Data answering a different query *kind* (cleared input, or filter
+  // tokens just added/removed) must not show — a momentarily empty list beats
+  // a momentarily wrong one.
   const dataStale = options.dataQuery.trim() !== query
+  const modeStale = filtered !== liveFiltered
   const suggestions = query === '' && dataStale ? [] : options.suggestions
-  const hits = query === '' && dataStale ? [] : options.hits
+  const hits = (query === '' && dataStale) || (dataStale && modeStale) ? [] : options.hits
 
   if (query.startsWith('>')) {
     const commandQuery = query.slice(1).trim()
@@ -65,7 +72,7 @@ export function buildPaletteSections(options: {
     }
   }
 
-  if (query !== '' && filtered) {
+  if (liveFiltered) {
     // Filter tokens are a search mode: the constraint result IS the list —
     // no title-suggestion merge, no command rows.
     return {

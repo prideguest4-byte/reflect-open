@@ -125,6 +125,35 @@ describe('buildPaletteSections', () => {
     expect(result.commands).toEqual([])
   })
 
+  it('deleting filter tokens leaves constrained mode immediately', () => {
+    // Live query is plain text; the deferred data still answers the previous
+    // filtered query. Mode follows the live input — merge view, live command
+    // matching — and the mode-mismatched rows are dropped, not shown.
+    const result = sections({
+      query: 'go today',
+      dataQuery: '#work go today',
+      hits: [hit('notes/w.md', 'Work log', null)],
+      filtered: true,
+      commands: COMMANDS,
+    })
+    expect(result.notes).toEqual([]) // stale constrained rows never render
+    expect(result.commands.map((command) => command.id)).toEqual(['nav.today'])
+  })
+
+  it('adding filter tokens enters constrained mode immediately', () => {
+    // Live query gained tokens; the deferred data is still the plain merge.
+    const result = sections({
+      query: '#work plan',
+      dataQuery: 'plan',
+      suggestions: [suggestion('notes/p.md', 'Plan')],
+      hits: [hit('notes/p.md', 'Plan')],
+      filtered: false,
+      commands: COMMANDS,
+    })
+    expect(result.notes).toEqual([]) // plain-merge rows don't pose as filtered
+    expect(result.commands).toEqual([])
+  })
+
   it('a cleared input ignores filtered rows still answering the previous query', () => {
     const result = sections({
       query: '',

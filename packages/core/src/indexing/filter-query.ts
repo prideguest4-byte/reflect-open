@@ -50,6 +50,14 @@ const EMPTY_FILTERS: SearchFilters = {
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
+/**
+ * Mirrors the indexed tag grammar (extract.ts TAG_RE: a leading letter, then
+ * letter/number/slash/underscore/dash). A `#` token that couldn't have been
+ * indexed (`#123`, `##work`) must stay search text — turning it into a filter
+ * would guarantee zero rows for a tag that cannot exist.
+ */
+const TAG_TOKEN_RE = /^#\p{L}[\p{L}\p{N}/_-]*$/u
+
 function isCalendarDate(value: string): boolean {
   const [year, month, day] = value.split('-').map(Number)
   if (month < 1 || month > 12) {
@@ -103,7 +111,7 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
   for (const token of tokenize(query)) {
     const lower = token.toLowerCase()
 
-    if (token.length > 1 && token.startsWith('#')) {
+    if (TAG_TOKEN_RE.test(token)) {
       filters.tags.push(token.slice(1).toLowerCase())
       filtered = true
       continue

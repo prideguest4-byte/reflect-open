@@ -36,6 +36,19 @@ describe('parseSearchQuery', () => {
     expect(parsed.text).toBe('issue # 42')
   })
 
+  it('# tokens outside the indexed tag grammar stay text', () => {
+    // The body grammar requires a leading letter (excludes ##, #123) — a
+    // filter for a tag that cannot exist would guarantee zero rows.
+    const numeric = parseSearchQuery('#123 issue')
+    expect(numeric.filtered).toBe(false)
+    expect(numeric.text).toBe('#123 issue')
+    const doubled = parseSearchQuery('##work notes')
+    expect(doubled.filtered).toBe(false)
+    expect(doubled.text).toBe('##work notes')
+    // …while grammar-valid forms still filter.
+    expect(parseSearchQuery('#q2/plans').filters.tags).toEqual(['q2/plans'])
+  })
+
   it('is:daily flags daily-only (case-insensitive)', () => {
     expect(parseSearchQuery('Is:Daily standup').filters.dailyOnly).toBe(true)
     expect(parseSearchQuery('Is:Daily standup').text).toBe('standup')
