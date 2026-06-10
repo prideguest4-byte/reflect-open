@@ -34,7 +34,7 @@ export function ScrollRestored({ className, children }: ScrollRestoredProps): Re
   return (
     <div
       ref={ref}
-      className={cn('relative', className)}
+      className={cn(className, 'relative')}
       onScroll={(event) => saveScrollState(event.currentTarget.scrollTop)}
     >
       {children}
