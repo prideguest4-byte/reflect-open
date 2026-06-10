@@ -166,14 +166,6 @@ export function NotePane({
         />
       ) : null}
 
-      {document.dirty ? (
-        <span
-          aria-label="Unsaved changes"
-          title="Unsaved changes"
-          className="absolute -top-1 right-0 size-2 rounded-full bg-accent"
-        />
-      ) : null}
-
       <NoteEditor
         key={path}
         initialContent={document.initialContent}
