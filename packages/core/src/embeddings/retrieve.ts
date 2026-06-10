@@ -7,7 +7,8 @@ import { embedTexts } from './commands'
 /**
  * The shared retrieval contract (Plan 09): one `retrieve()` for search and AI.
  * Lexical = FTS (title-boosted); semantic = embed the query, KNN over chunks,
- * dedupe to best chunk per note; hybrid = reciprocal rank fusion of the two
+ * drop neighbors past the noise cutoff, dedupe to best chunk per note;
+ * hybrid = reciprocal rank fusion of the two
  * (deterministic, no tuned weights). Private notes stay locally recallable —
  * `excludePrivateContent` strips their *content* for callers that ship hits to
  * external services (Plan 10), enforced again at the AI boundary.
@@ -33,22 +34,56 @@ export interface RetrieveOptions {
 const KNN_CANDIDATES = 24
 
 /**
- * Neighbors farther than this cosine distance are noise, not "similar notes":
- * KNN always fills the candidate list with the nearest chunks however
- * unrelated they are (worst in small graphs). 0.7 is the old app's tuned
- * cutoff for the same model family, carried over for parity. The
- * `embedding_vectors` table's metric is cosine (migration 0003), so vec0
- * distances threshold directly.
+ * Neighbors farther than this cosine distance are noise, not matches: KNN
+ * always fills the candidate list with the nearest chunks however unrelated
+ * they are (worst in small graphs), so without a cutoff a gibberish query
+ * still "finds" notes. 0.7 is the old app's tuned cutoff for the same model
+ * family, carried over for parity; with all-MiniLM-L6-v2 it also separates
+ * query→chunk matching cleanly (real matches land under ~0.65, gibberish and
+ * unrelated queries at ~0.72+). The `embedding_vectors` table's metric is
+ * cosine (migration 0003), so vec0 distances threshold directly.
  */
-const MAX_RELATED_COSINE_DISTANCE = 0.7
+const MAX_COSINE_DISTANCE = 0.7
 
-interface ChunkHitRow {
+export interface ChunkHitRow {
   path: string
   title: string
   heading: string | null
   text: string
   isPrivate: number
   distance: number
+}
+
+/**
+ * Collapse KNN chunk rows (ordered nearest-first) into one hit per note —
+ * the best chunk wins. Rows past {@link MAX_COSINE_DISTANCE} are dropped
+ * rather than padded in, and `excludePath` removes the seed note itself when
+ * the query came from a stored note vector. The score is cosine similarity
+ * (the vec0 table's metric is cosine) for callers that want magnitudes.
+ */
+export function bestChunkPerNote(
+  rows: readonly ChunkHitRow[],
+  limit: number,
+  excludePath?: string,
+): RetrievalHit[] {
+  const byNote = new Map<string, RetrievalHit>()
+  for (const row of rows) {
+    if (row.distance > MAX_COSINE_DISTANCE) {
+      continue
+    }
+    if (row.path === excludePath || byNote.has(row.path)) {
+      continue
+    }
+    byNote.set(row.path, {
+      path: row.path,
+      title: row.title,
+      score: 1 - row.distance,
+      snippet: row.text.trim(),
+      heading: row.heading,
+      isPrivate: row.isPrivate !== 0,
+    })
+  }
+  return [...byNote.values()].slice(0, limit)
 }
 
 async function semanticHits(query: string, limit: number): Promise<RetrievalHit[]> {
@@ -62,23 +97,7 @@ async function semanticHits(query: string, limit: number): Promise<RetrievalHit[
     WHERE v.embedding MATCH ${JSON.stringify(vector)} AND k = ${KNN_CANDIDATES}
     ORDER BY v.distance
   `.execute(db)
-
-  // Best chunk per note wins; the score is cosine similarity (the vec0
-  // table's metric is cosine) for callers that want magnitudes.
-  const byNote = new Map<string, RetrievalHit>()
-  for (const row of result.rows) {
-    if (!byNote.has(row.path)) {
-      byNote.set(row.path, {
-        path: row.path,
-        title: row.title,
-        score: 1 - row.distance,
-        snippet: row.text.trim(),
-        heading: row.heading,
-        isPrivate: row.isPrivate !== 0,
-      })
-    }
-  }
-  return [...byNote.values()].slice(0, limit)
+  return bestChunkPerNote(result.rows, limit)
 }
 
 async function lexicalHits(query: string, limit: number): Promise<RetrievalHit[]> {
@@ -185,8 +204,8 @@ export async function retrieve(query: string, options?: RetrieveOptions): Promis
  * sync keeps chunks current on every save, and the index invalidation scope
  * refetches consumers, so freshness is automatic. Returns [] when the note
  * has no vectors yet (model never enabled, or not yet embedded). Candidates
- * past {@link MAX_RELATED_COSINE_DISTANCE} are dropped rather than padded in,
- * so a sparse graph shows few (or no) neighbors instead of wrong ones.
+ * past {@link MAX_COSINE_DISTANCE} are dropped rather than padded in, so a
+ * sparse graph shows few (or no) neighbors instead of wrong ones.
  */
 export async function relatedNotes(path: string, limit = 6): Promise<RetrievalHit[]> {
   const seed = await sql<{ vec: string }>`
@@ -210,21 +229,5 @@ export async function relatedNotes(path: string, limit = 6): Promise<RetrievalHi
     WHERE v.embedding MATCH ${vec} AND k = ${KNN_CANDIDATES}
     ORDER BY v.distance
   `.execute(db)
-  const byNote = new Map<string, RetrievalHit>()
-  for (const row of result.rows) {
-    if (row.distance > MAX_RELATED_COSINE_DISTANCE) {
-      continue
-    }
-    if (row.path !== path && !byNote.has(row.path)) {
-      byNote.set(row.path, {
-        path: row.path,
-        title: row.title,
-        score: 1 - row.distance,
-        snippet: row.text.trim(),
-        heading: row.heading,
-        isPrivate: row.isPrivate !== 0,
-      })
-    }
-  }
-  return [...byNote.values()].slice(0, limit)
+  return bestChunkPerNote(result.rows, limit, path)
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fuseRanked, type RetrievalHit } from './retrieve'
+import { bestChunkPerNote, fuseRanked, type ChunkHitRow, type RetrievalHit } from './retrieve'
 
 function hit(path: string, overrides?: Partial<RetrievalHit>): RetrievalHit {
   return {
@@ -12,6 +12,54 @@ function hit(path: string, overrides?: Partial<RetrievalHit>): RetrievalHit {
     ...overrides,
   }
 }
+
+function row(path: string, distance: number, overrides?: Partial<ChunkHitRow>): ChunkHitRow {
+  return {
+    path,
+    title: path,
+    heading: null,
+    text: ` about ${path} `,
+    isPrivate: 0,
+    distance,
+    ...overrides,
+  }
+}
+
+describe('bestChunkPerNote', () => {
+  it('drops neighbors past the cosine noise cutoff (gibberish queries find nothing)', () => {
+    const rows = [row('notes/a.md', 0.84), row('notes/b.md', 0.92)]
+    expect(bestChunkPerNote(rows, 12)).toEqual([])
+  })
+
+  it('keeps near matches while dropping the noisy tail', () => {
+    const rows = [row('notes/match.md', 0.3), row('notes/noise.md', 0.75)]
+    const hits = bestChunkPerNote(rows, 12)
+    expect(hits.map((hit) => hit.path)).toEqual(['notes/match.md'])
+  })
+
+  it('collapses to the best chunk per note, scored as cosine similarity', () => {
+    const rows = [
+      row('notes/a.md', 0.2, { text: 'best chunk' }),
+      row('notes/a.md', 0.4, { text: 'worse chunk' }),
+    ]
+    const hits = bestChunkPerNote(rows, 12)
+    expect(hits).toHaveLength(1)
+    expect(hits[0].snippet).toBe('best chunk')
+    expect(hits[0].score).toBeCloseTo(0.8)
+  })
+
+  it('excludes the seed note and respects the limit', () => {
+    const rows = [row('notes/self.md', 0.0), row('notes/a.md', 0.1), row('notes/b.md', 0.2)]
+    const hits = bestChunkPerNote(rows, 1, 'notes/self.md')
+    expect(hits.map((hit) => hit.path)).toEqual(['notes/a.md'])
+  })
+
+  it('trims snippets and converts the private flag', () => {
+    const hits = bestChunkPerNote([row('notes/p.md', 0.1, { isPrivate: 1 })], 12)
+    expect(hits[0].snippet).toBe('about notes/p.md')
+    expect(hits[0].isPrivate).toBe(true)
+  })
+})
 
 describe('fuseRanked (reciprocal rank fusion)', () => {
   it('a note ranked in both lists beats single-list notes', () => {
