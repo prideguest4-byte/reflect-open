@@ -88,15 +88,20 @@ export async function backfillEmbeddingsVisibly(options: {
   generation: number
   modelId: string
   isStale?: () => boolean
-}): Promise<void> {
+}): Promise<'completed' | 'aborted' | 'failed'> {
   const operation = startOperation('Indexing notes for semantic search')
   try {
-    await backfillEmbeddings({
+    const outcome = await backfillEmbeddings({
       ...options,
       onProgress: (done, total) => operation.progress(done, total),
     })
+    // Either way the entry leaves the status surface (there is no "finished"
+    // state to misreport) — but an abort is the caller's signal that this
+    // pass didn't cover the graph; the next ready cycle re-runs it cheaply.
     operation.done()
+    return outcome
   } catch (cause) {
     operation.fail(cause instanceof Error ? cause.message : String(cause))
+    return 'failed'
   }
 }

@@ -92,13 +92,13 @@ export async function backfillEmbeddings(options: {
   onProgress?: (done: number, total: number) => void
   /** Abort between notes (e.g. graph switch). */
   isStale?: () => boolean
-}): Promise<void> {
+}): Promise<'completed' | 'aborted'> {
   const { generation, modelId, onProgress, isStale } = options
   const rows = await db.selectFrom('notes').select('path').orderBy('path').execute()
   let done = 0
   for (const row of rows) {
     if (isStale?.()) {
-      return
+      return 'aborted'
     }
     try {
       await embedNote({ path: row.path, generation, modelId })
@@ -108,4 +108,5 @@ export async function backfillEmbeddings(options: {
     done += 1
     onProgress?.(done, rows.length)
   }
+  return 'completed'
 }

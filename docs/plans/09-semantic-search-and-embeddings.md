@@ -107,8 +107,10 @@ embedding execution should leave the WebView for performance.
    ```
    Vector search → dedupe chunks back to notes → optionally blend with FTS (hybrid).
 
-5. **Search integration.** Add a semantic/hybrid toggle to the `⌘K` surface (Plan 08):
-   "meat dishes" finds recipe notes lacking those exact words. Same UI, additive ranking.
+5. **Search integration.** Blend semantic hits into the `⌘K` surface (Plan 08) — hybrid
+   by default with **no toggle** (decided, see Delivery): "meat dishes" finds recipe
+   notes lacking those exact words. Same UI, additive ranking; lexical-only when the
+   model is unavailable.
 
 6. **Privacy contract.** `private: true` notes may stay in the **local** lexical + vector
    indexes (local recall is fine), but retrieval used for cloud AI (Plan 10) must exclude

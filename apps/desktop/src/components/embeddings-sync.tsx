@@ -41,9 +41,20 @@ export function EmbeddingsSync(): null {
     let active = true
     let unlisten: (() => void) | null = null
 
-    queue.current = queue.current.then(() =>
-      backfillEmbeddingsVisibly({ generation, modelId, isStale: () => !active }),
-    )
+    queue.current = queue.current
+      .then(() => {
+        if (!active) {
+          return
+        }
+        return backfillEmbeddingsVisibly({ generation, modelId, isStale: () => !active }).then(
+          () => {},
+        )
+      })
+      .catch((cause) => {
+        // A rejection here must not poison the queue (later watcher items
+        // chain off this promise) nor masquerade as a per-change failure.
+        console.error('embedding backfill failed:', cause)
+      })
 
     void subscribeFileChanges((changes) => {
       if (!active) {
