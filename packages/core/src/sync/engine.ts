@@ -16,17 +16,21 @@ import {
  * Invariants:
  * - **Never wedged.** Merges commit their conflicts (markers in the note), so
  *   a conflict pauses nothing; the indexer surfaces `Needs review` per note.
- * - **No write loops.** Pull-applied file changes do re-enter `noteChanged`
- *   via the watcher, but the next `git_commit_all` sees a clean tree and
- *   no-ops; nothing re-pushes.
- * - **Single flight.** One cycle at a time; edits landing mid-cycle schedule
- *   a fresh one rather than interleaving.
+ * - **No write loops, no idle network.** Pull-applied file changes re-enter
+ *   `noteChanged` via the watcher, but the next cycle finds nothing committed
+ *   and nothing ahead and ends without touching the network.
+ * - **Single flight.** One cycle at a time; work requested mid-cycle runs as
+ *   one follow-up afterwards, keeping the strongest mode requested.
+ * - **Stop is immediate.** `stop()` aborts the engine's signal: no further
+ *   status emissions, and an in-flight cycle unwinds at its next step
+ *   boundary (the one git command already issued completes; nothing further
+ *   runs — teardown/disconnect must not keep pushing with a stale token).
  */
 
-/** The product states. `pending` = offline with changes queued locally. */
+/** The product states. `offline` = unreachable remote, changes queued locally. */
 export interface SyncStatus {
-  state: 'idle' | 'syncing' | 'pending' | 'error'
-  /** Human-readable detail for `pending`/`error`. */
+  state: 'idle' | 'syncing' | 'offline' | 'error'
+  /** Human-readable detail for `offline`/`error`. */
   message?: string
   /** What kind of error (drives the UI affordance: reconnect vs. show). */
   errorKind?: 'auth' | 'rejected' | 'other'
@@ -58,9 +62,8 @@ export interface SyncEngine {
   /** Full cycle now — commit, pull/merge, push. For launch/focus/manual. */
   syncNow(): Promise<void>
   /**
-   * Cancel timers, suppress further status emissions, and unwind any
-   * in-flight cycle at its next step boundary (the one git command already
-   * in flight completes; nothing further is issued).
+   * Abort the engine: cancel timers, suppress further status emissions, and
+   * unwind any in-flight cycle at its next step boundary.
    */
   stop(): void
 }
@@ -78,23 +81,21 @@ const MAX_PUSH_ATTEMPTS = 3
 /** A push the remote refused for a non-divergence reason (e.g. push protection). */
 class PushRejectedError extends Error {}
 
-/** Unwinds an in-flight cycle when the engine stops mid-step (silent). */
-class EngineStoppedError extends Error {}
-
 export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   const idleMs = options.idleMs ?? DEFAULT_IDLE_MS
   const maxWaitMs = options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS
 
+  const abort = new AbortController()
+  const signal = abort.signal
   let timer: ReturnType<typeof setTimeout> | null = null
   /** Hard deadline (first unflushed edit + maxWaitMs); null = nothing pending. */
   let deadline: number | null = null
   let running: Promise<void> | null = null
   /** Follow-up requested while a cycle was in flight (strongest mode wins). */
   let rerunMode: 'push' | 'full' | null = null
-  let stopped = false
 
   function emit(status: SyncStatus): void {
-    if (stopped) {
+    if (signal.aborted) {
       return // a stopped engine must not resurrect UI state (e.g. post-disconnect)
     }
     options.onStatus?.(status)
@@ -103,14 +104,11 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   /**
    * Await one cycle step, then bail if the engine stopped meanwhile. An
    * already-issued git command can't be recalled, but nothing further runs
-   * after `stop()` — disconnect/teardown must not keep committing or pushing
-   * with a token resolved before the stop.
+   * after `stop()`.
    */
   async function step<T>(promise: Promise<T>): Promise<T> {
     const result = await promise
-    if (stopped) {
-      throw new EngineStoppedError()
-    }
+    signal.throwIfAborted()
     return result
   }
 
@@ -125,7 +123,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   function noteChanged(): void {
-    if (stopped) {
+    if (signal.aborted) {
       return
     }
     const now = Date.now()
@@ -138,7 +136,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   async function run(mode: 'push' | 'full'): Promise<void> {
-    if (stopped) {
+    if (signal.aborted) {
       return
     }
     if (running !== null) {
@@ -150,8 +148,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     }
     running = (async () => {
       // This cycle commits everything dirty so far — a pending debounce pass
-      // (e.g. queued before a launch/focus/manual sync) would only duplicate
-      // it with a no-op commit and a redundant network push.
+      // (e.g. queued before a launch/focus/manual sync) would only duplicate it.
       if (timer !== null) {
         clearTimeout(timer)
         timer = null
@@ -162,12 +159,12 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         await cycle(mode)
         emit({ state: 'idle' })
       } catch (error) {
-        if (!(error instanceof EngineStoppedError)) {
+        if (!signal.aborted) {
           emit(statusForError(error))
         }
       } finally {
         running = null
-        if (rerunMode !== null && !stopped) {
+        if (rerunMode !== null && !signal.aborted) {
           const next = rerunMode
           rerunMode = null
           void run(next)
@@ -183,10 +180,22 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     if (commit.skippedLargeFiles.length > 0) {
       options.onLargeFilesSkipped?.(commit.skippedLargeFiles)
     }
-    if (mode === 'full') {
+    if (mode === 'push') {
+      // The debounce path often fires for changes that are already committed
+      // and pushed (a pull's own writes re-enter via the watcher). Nothing
+      // committed and nothing ahead means a push would be a pointless network
+      // negotiation — end the cycle without one.
+      if (!commit.committed && commit.ahead === 0) {
+        return
+      }
+    } else {
       // Launch/focus: pick up other devices' changes even with nothing to push.
-      await step(gitFetch(token, options.generation))
-      await merge()
+      const delta = await step(gitFetch(token, options.generation))
+      const merged = await merge()
+      const localOnly = commit.committed || delta.ahead > 0
+      if (!localOnly && (merged.kind === 'upToDate' || merged.kind === 'fastForward')) {
+        return // pulled cleanly and have nothing of our own — no push needed
+      }
     }
     for (let attempt = 0; attempt < MAX_PUSH_ATTEMPTS; attempt++) {
       const push = await step(gitPush(token, options.generation))
@@ -207,11 +216,12 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   /** Merge the fetched remote and hand any changed files to the reindexer. */
-  async function merge(): Promise<void> {
+  async function merge(): Promise<{ kind: string }> {
     const outcome = await step(gitMergeRemote(options.generation)) // upToDate is a no-op
     if (outcome.changedFiles.length > 0) {
       options.onRemoteChanges?.(outcome.changedFiles)
     }
+    return outcome
   }
 
   function syncNow(): Promise<void> {
@@ -219,7 +229,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   function stop(): void {
-    stopped = true
+    abort.abort()
     if (timer !== null) {
       clearTimeout(timer)
       timer = null
@@ -236,7 +246,7 @@ function statusForError(error: unknown): SyncStatus {
   if (isAppError(error)) {
     if (error.kind === 'network') {
       return {
-        state: 'pending',
+        state: 'offline',
         message: 'Offline — changes are saved locally and will back up when you reconnect',
       }
     }

@@ -104,6 +104,20 @@ fn count_commits(repo: &Repository, from: git2::Oid) -> AppResult<usize> {
     Ok(walk.filter_map(Result::ok).count())
 }
 
+/// Clone `url` into `target` (restore on a fresh machine). git2 refuses a
+/// non-empty existing directory, which is exactly the safety we want — a
+/// restore must never write into a folder that already has content.
+pub(super) fn clone(url: &str, target: &Path, token: Option<String>) -> AppResult<()> {
+    let mut callbacks = RemoteCallbacks::new();
+    with_credentials(&mut callbacks, token);
+    let mut fetch_options = FetchOptions::new();
+    fetch_options.remote_callbacks(callbacks);
+    git2::build::RepoBuilder::new()
+        .fetch_options(fetch_options)
+        .clone(url, target)?;
+    Ok(())
+}
+
 /// Push the current branch to `origin`. Rejections come back as data, not
 /// errors — the sync engine branches on them (non-fast-forward → pull/merge/
 /// retry; anything else → surface the remote's message).

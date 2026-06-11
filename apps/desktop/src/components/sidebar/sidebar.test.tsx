@@ -43,7 +43,8 @@ vi.mock('@/providers/sync-provider', () => ({
     backup: { phase: 'disconnected' },
     connectNewRepo: async () => {},
     connectExistingRepo: async () => 'connected',
-    disconnect: async () => {},
+    disconnectGraph: async () => {},
+    signOut: async () => {},
     backUpNow: async () => {},
   }),
 }))

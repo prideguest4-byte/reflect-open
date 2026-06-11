@@ -85,6 +85,8 @@ pub fn run() {
             watcher::watch_stop,
             git::git_status,
             git::git_setup,
+            git::git_disconnect,
+            git::git_clone,
             git::git_commit_all,
             git::git_fetch,
             git::git_merge_remote,

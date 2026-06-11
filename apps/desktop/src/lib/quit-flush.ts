@@ -1,6 +1,7 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { confirmQuit, hasBridge, subscribeQuitRequested } from '@reflect/core'
 import { flushOpenDocuments } from '@/editor/open-documents'
+import { flushBackup } from '@/lib/backup-flush'
 import { flushSettings } from '@/lib/settings-flush'
 
 /**
@@ -36,21 +37,27 @@ export function installQuitFlush(): () => void {
     }
   }
 
+  // Note buffers land first, then the backup commit captures them (a local
+  // git commit only — pushing on the way out could stall the quit).
   void getCurrentWindow()
     .onCloseRequested(async () => {
       await Promise.all([flushOpenDocuments(), flushSettings()])
+      await flushBackup()
     })
     .then(track)
 
   void subscribeQuitRequested(() => {
-    void Promise.allSettled([flushOpenDocuments(), flushSettings()]).then(() => {
-      void confirmQuit()
-    })
+    void Promise.allSettled([flushOpenDocuments(), flushSettings()])
+      .then(() => flushBackup())
+      .then(() => {
+        void confirmQuit()
+      })
   }).then(track)
 
   const onBeforeUnload = (): void => {
     void flushOpenDocuments()
     void flushSettings()
+    void flushBackup()
   }
   window.addEventListener('beforeunload', onBeforeUnload)
   track(() => window.removeEventListener('beforeunload', onBeforeUnload))

@@ -45,7 +45,7 @@ before the editor, and the editor lands before search/AI.
 | 09 | [Semantic search & local embeddings](09-semantic-search-and-embeddings.md) | Local embedding runtime (Rust), chunking, `sqlite-vec`, incremental re-embed, retrieval layer |
 | 10 | [AI copilot sidebar](10-ai-copilot-sidebar.md) | BYOK provider, keychain secrets, context/retrieval, chat/summarize/rewrite, reviewable patchsets, `private: true` hard-block |
 | 11 | [Link capture](11-link-capture.md) | Chrome extension → native-messaging bridge → desktop write path, screenshots, BYOK enrichment, daily-note `[[Links]]` |
-| 12 | [Backup & sync (GitHub-only)](12-backup-and-sync-adapter.md) | GitHub/Git backup + restore (the only supported remote), Git-native conflict surface, manual review, checkpoints; file-sync providers unsupported |
+| 12 | [Backup & sync (GitHub-only)](12-backup-and-sync.md) | GitHub/Git backup + restore (the only supported remote), Git-native conflict surface, manual review, checkpoints; file-sync providers unsupported |
 | 13 | [Import / export / portability](13-import-export-portability.md) | Markdown/Obsidian-graph import, JSON/Markdown/HTML export, attachments preserved |
 | 14 | [CLI (read/discovery)](14-cli-read-discovery.md) | `reflect today`, `reflect search`, `reflect show`, path lookup |
 | 15 | [Hardening, packaging & OSS release](15-hardening-packaging-release.md) | a11y, perf budgets, signing/notarization, MIT + docs, onboarding, release pipeline |

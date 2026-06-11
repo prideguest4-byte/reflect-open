@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
 import {
   deviceFlowPoll,
+  runDeviceFlow,
   getGithubToken,
   githubRemoteUrl,
   loadGithubAuth,
@@ -212,5 +213,100 @@ describe('loadGithubAuth', () => {
   it('returns null (not a crash) for unreadable stored credentials', async () => {
     fakeKeychain({ 'github-auth': 'not json' })
     expect(await loadGithubAuth()).toBeNull()
+  })
+})
+
+describe('runDeviceFlow', () => {
+  const START_RESPONSE = {
+    device_code: 'dev-1',
+    user_code: 'ABCD-1234',
+    verification_uri: 'https://github.com/login/device',
+    expires_in: 900,
+    interval: 5,
+  }
+
+  /** Scripted fetch: first call = flow start, later calls pop poll responses. */
+  function scriptedFetch(polls: unknown[]) {
+    let calls = 0
+    return vi.fn(async () => {
+      calls += 1
+      if (calls === 1) {
+        return jsonResponse(START_RESPONSE)
+      }
+      return jsonResponse(polls.shift() ?? { error: 'authorization_pending' })
+    })
+  }
+
+  it('surfaces the code, honors slow_down, and persists the credential', async () => {
+    const store = fakeKeychain()
+    const sleeps: number[] = []
+    const codes: string[] = []
+    const auth = await runDeviceFlow({
+      clientId: 'test-app',
+      fetchFn: scriptedFetch([
+        { error: 'authorization_pending' },
+        { error: 'slow_down', interval: 12 },
+        { access_token: 'ghp_done' },
+      ]),
+      onCode: (code) => codes.push(code.userCode),
+      sleep: async (ms) => {
+        sleeps.push(ms)
+      },
+      now: () => 0,
+    })
+
+    expect(codes).toEqual(['ABCD-1234'])
+    expect(auth).toEqual({ kind: 'pat', token: 'ghp_done' })
+    expect(sleeps).toEqual([5000, 5000, 12000])
+    expect(JSON.parse(store.get('github-auth') ?? '{}')).toEqual({
+      kind: 'pat',
+      token: 'ghp_done',
+    })
+  })
+
+  it('throws an auth error when the user denies', async () => {
+    fakeKeychain()
+    await expect(
+      runDeviceFlow({
+        clientId: 'test-app',
+      fetchFn: scriptedFetch([{ error: 'access_denied' }]),
+        onCode: () => {},
+        sleep: async () => {},
+        now: () => 0,
+      }),
+    ).rejects.toMatchObject({ kind: 'auth' })
+  })
+
+  it('throws an auth error when the code expires while still pending', async () => {
+    fakeKeychain()
+    let clock = 0
+    await expect(
+      runDeviceFlow({
+        clientId: 'test-app',
+      fetchFn: scriptedFetch([]),
+        onCode: () => {},
+        sleep: async () => {
+          clock += 600_000 // two sleeps blow past the 900s deadline
+        },
+        now: () => clock,
+      }),
+    ).rejects.toMatchObject({ kind: 'auth' })
+  })
+
+  it('resolves null when aborted (dialog closed) and stores nothing', async () => {
+    const store = fakeKeychain()
+    const abort = new AbortController()
+    const auth = await runDeviceFlow({
+      clientId: 'test-app',
+      fetchFn: scriptedFetch([{ access_token: 'ghp_never' }]),
+      onCode: () => {},
+      signal: abort.signal,
+      sleep: async () => {
+        abort.abort()
+      },
+      now: () => 0,
+    })
+    expect(auth).toBeNull()
+    expect(store.has('github-auth')).toBe(false)
   })
 })

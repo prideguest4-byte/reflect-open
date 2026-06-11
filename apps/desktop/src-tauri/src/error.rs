@@ -110,3 +110,49 @@ impl From<rusqlite::Error> for AppError {
 
 /// Result alias for command and helper functions.
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::AppError;
+    use git2::{ErrorClass, ErrorCode};
+
+    fn classify(code: ErrorCode, class: ErrorClass, message: &str) -> AppError {
+        AppError::from(git2::Error::new(code, class, message))
+    }
+
+    #[test]
+    fn git_auth_failures_classify_as_auth() {
+        let cases = [
+            classify(ErrorCode::Auth, ErrorClass::Http, "authentication required"),
+            classify(
+                ErrorCode::GenericError,
+                ErrorClass::Http,
+                "unexpected http status code: 401",
+            ),
+            classify(
+                ErrorCode::GenericError,
+                ErrorClass::Http,
+                "request failed with status code: 403",
+            ),
+        ];
+        for error in cases {
+            assert!(matches!(error, AppError::Auth { .. }), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn git_network_failures_classify_as_network() {
+        let error = classify(
+            ErrorCode::GenericError,
+            ErrorClass::Net,
+            "failed to resolve address for github.com",
+        );
+        assert!(matches!(error, AppError::Network { .. }), "{error:?}");
+    }
+
+    #[test]
+    fn other_git_failures_classify_as_io() {
+        let error = classify(ErrorCode::NotFound, ErrorClass::Odb, "object not found");
+        assert!(matches!(error, AppError::Io { .. }), "{error:?}");
+    }
+}

@@ -6,6 +6,8 @@
 export {
   gitStatus,
   gitSetup,
+  gitDisconnect,
+  gitClone,
   gitCommitAll,
   gitFetch,
   gitMergeRemote,
@@ -35,6 +37,7 @@ export {
   clearGithubAuth,
   deviceFlowStart,
   deviceFlowPoll,
+  runDeviceFlow,
   refreshGithubAuth,
   getGithubToken,
   parseGithubRemote,
@@ -44,6 +47,7 @@ export {
   type GithubAuth,
   type DeviceFlowStart,
   type DevicePollResult,
+  type RunDeviceFlowOptions,
   type GithubRepoRef,
   type GithubRepo,
 } from './github'

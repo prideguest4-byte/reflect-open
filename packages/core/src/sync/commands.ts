@@ -8,12 +8,11 @@ import { call } from '../ipc/invoke'
  * `./engine`'s job; these are the verbs it composes.
  */
 
-/** Snapshot of the graph's backup repository. */
+/** Snapshot of the graph's backup repository (cheap — no working-tree scan). */
 export const gitStatusSchema = z.object({
   initialized: z.boolean(),
   branch: z.string().nullable(),
   remoteUrl: z.string().nullable(),
-  dirtyPaths: z.array(z.string()),
   ahead: z.number(),
   behind: z.number(),
   inProgress: z.boolean(),
@@ -30,6 +29,8 @@ export type SkippedFile = z.infer<typeof skippedFileSchema>
 export const commitOutcomeSchema = z.object({
   committed: z.boolean(),
   sha: z.string().nullable(),
+  /** Unpushed local commits (vs the last fetch) — the engine's skip-push gate. */
+  ahead: z.number(),
   skippedLargeFiles: z.array(skippedFileSchema),
 })
 export type CommitOutcome = z.infer<typeof commitOutcomeSchema>
@@ -85,6 +86,22 @@ export async function gitSetup(
   generation: number,
 ): Promise<GitStatus> {
   return call('git_setup', { remoteUrl, branch, generation }, gitStatusSchema)
+}
+
+/**
+ * Stop backing this graph up: drop the `origin` remote. The repository and
+ * its history stay; the machine-level GitHub credential is untouched.
+ */
+export async function gitDisconnect(generation: number): Promise<GitStatus> {
+  return call('git_disconnect', { generation }, gitStatusSchema)
+}
+
+/**
+ * Clone a backup repository into an absolute `path` (restore on a fresh
+ * machine — runs before any graph is open). Refuses non-empty destinations.
+ */
+export async function gitClone(url: string, path: string, token: string | null): Promise<void> {
+  await call('git_clone', { url, path, token }, z.null())
 }
 
 /** Commit every pending change (no-op when the tree is clean). */

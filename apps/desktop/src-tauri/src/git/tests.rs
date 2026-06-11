@@ -164,7 +164,8 @@ fn push_and_fetch_round_trip() {
     let fixture = fixture();
     let root = &fixture.graph_a;
     write(root, "notes/a.md", "# A\n");
-    commit_all(root, "first", MAX_FILE_BYTES).unwrap();
+    let first = commit_all(root, "first", MAX_FILE_BYTES).unwrap();
+    assert!(first.ahead >= 1, "{first:?}");
 
     let outcome = push(root, None).unwrap();
     assert!(outcome.pushed, "push failed: {outcome:?}");
@@ -172,6 +173,50 @@ fn push_and_fetch_round_trip() {
     let delta = fetch(root, None).unwrap();
     assert_eq!(delta.ahead, 0);
     assert_eq!(delta.behind, 0);
+
+    // The engine's skip condition: a clean no-op commit that is also not
+    // ahead means there is nothing to push at all.
+    let idle = commit_all(root, "noop", MAX_FILE_BYTES).unwrap();
+    assert!(!idle.committed);
+    assert_eq!(idle.ahead, 0);
+}
+
+#[test]
+fn disconnect_drops_origin_but_keeps_history() {
+    let fixture = fixture();
+    let root = &fixture.graph_a;
+    write(root, "notes/a.md", "# A\n");
+    commit_all(root, "first", MAX_FILE_BYTES).unwrap();
+    push(root, None).unwrap();
+
+    let after = super::disconnect(root).unwrap();
+    assert!(after.initialized);
+    assert!(after.remote_url.is_none());
+    assert!(head_tree_paths(root).contains(&"notes/a.md".to_string()));
+
+    // Idempotent, and reconnecting works.
+    super::disconnect(root).unwrap();
+    let reconnected = setup(root, Some(fixture.remote_url.clone()), None).unwrap();
+    assert!(reconnected.remote_url.is_some());
+}
+
+#[test]
+fn clone_restores_a_backup_into_an_empty_destination() {
+    let fixture = fixture();
+    let root = &fixture.graph_a;
+    write(root, "notes/a.md", "# A\n");
+    commit_all(root, "first", MAX_FILE_BYTES).unwrap();
+    push(root, None).unwrap();
+
+    let target = fixture._dir.path().join("restored");
+    super::remote::clone(&fixture.remote_url, &target, None).unwrap();
+    assert_eq!(read(&target, "notes/a.md"), "# A\n");
+
+    // A non-empty destination is refused — a restore must never overwrite.
+    let occupied = fixture._dir.path().join("occupied");
+    fs::create_dir_all(&occupied).unwrap();
+    fs::write(occupied.join("keep.txt"), "existing").unwrap();
+    assert!(super::remote::clone(&fixture.remote_url, &occupied, None).is_err());
 }
 
 #[test]

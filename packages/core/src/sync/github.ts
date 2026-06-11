@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { deleteSecret, getSecret, setSecret } from '../ai/secrets'
+import { ReflectError } from '../errors'
+import { deleteSecret, getSecret, setSecret } from '../secrets/keychain'
 
 /**
  * GitHub specifics for backup/sync (Plan 12): device-flow auth, token
@@ -98,14 +99,17 @@ const tokenResponseSchema = z.object({
 const JSON_HEADERS = { Accept: 'application/json', 'Content-Type': 'application/json' }
 
 /** Begin the device flow: returns the code to show + where the user enters it. */
-export async function deviceFlowStart(fetchFn: FetchFn = fetch): Promise<DeviceFlowStart> {
-  if (!isDeviceFlowConfigured()) {
-    throw new Error('GitHub device flow is not configured (no app client id)')
+export async function deviceFlowStart(
+  fetchFn: FetchFn = fetch,
+  clientId: string = GITHUB_APP_CLIENT_ID,
+): Promise<DeviceFlowStart> {
+  if (clientId.length === 0) {
+    throw new ReflectError('auth', 'GitHub device flow is not configured (no app client id)')
   }
   const response = await fetchFn('https://github.com/login/device/code', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ client_id: GITHUB_APP_CLIENT_ID }),
+    body: JSON.stringify({ client_id: clientId }),
   })
   if (!response.ok) {
     throw new Error(`GitHub device flow start failed (${response.status})`)
@@ -132,12 +136,13 @@ export async function deviceFlowPoll(
   deviceCode: string,
   fetchFn: FetchFn = fetch,
   now: () => number = Date.now,
+  clientId: string = GITHUB_APP_CLIENT_ID,
 ): Promise<DevicePollResult> {
   const response = await fetchFn('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({
-      client_id: GITHUB_APP_CLIENT_ID,
+      client_id: clientId,
       device_code: deviceCode,
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
     }),
@@ -161,6 +166,66 @@ export async function deviceFlowPoll(
     throw new Error('GitHub device flow returned neither a token nor an error')
   }
   return { status: 'authorized', auth: toAuth(parsed.access_token, parsed, now()) }
+}
+
+export interface RunDeviceFlowOptions {
+  fetchFn?: FetchFn
+  /** Called once GitHub issues the code — show it and the verification URI. */
+  onCode: (code: { userCode: string; verificationUri: string }) => void
+  /** Aborting stops polling and resolves `null` (the dialog was closed). */
+  signal?: AbortSignal
+  /** Injected for tests; defaults to real timers. */
+  sleep?: (ms: number) => Promise<void>
+  now?: () => number
+  /** Defaults to the registered {@link GITHUB_APP_CLIENT_ID}. */
+  clientId?: string
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Drive the whole device flow: start it, surface the user code, poll at
+ * GitHub's pace (honoring `slow_down`) until it authorizes — the credential
+ * is persisted to the keychain and returned — or fails. Denial and expiry
+ * throw a ReflectError('auth'); an abort resolves `null`. The polling loop
+ * lives here, not in the dialog: it's sync policy, and its edge cases
+ * (timeout, slow-down, teardown) are unit-tested where they belong.
+ */
+export async function runDeviceFlow(options: RunDeviceFlowOptions): Promise<GithubAuth | null> {
+  const fetchFn = options.fetchFn ?? fetch
+  const sleep = options.sleep ?? defaultSleep
+  const now = options.now ?? Date.now
+  const clientId = options.clientId ?? GITHUB_APP_CLIENT_ID
+
+  const flow = await deviceFlowStart(fetchFn, clientId)
+  options.onCode({ userCode: flow.userCode, verificationUri: flow.verificationUri })
+  let intervalSeconds = flow.intervalSeconds
+  const deadline = now() + flow.expiresInSeconds * 1000
+
+  while (now() < deadline) {
+    await sleep(intervalSeconds * 1000)
+    if (options.signal?.aborted === true) {
+      return null
+    }
+    const result = await deviceFlowPoll(flow.deviceCode, fetchFn, now, clientId)
+    switch (result.status) {
+      case 'pending':
+        continue
+      case 'slowDown':
+        intervalSeconds = result.intervalSeconds
+        continue
+      case 'authorized':
+        await saveGithubAuth(result.auth)
+        return result.auth
+      case 'denied':
+        throw new ReflectError('auth', 'GitHub sign-in was denied.')
+      case 'expired':
+        throw new ReflectError('auth', 'The sign-in code expired — try again.')
+    }
+  }
+  throw new ReflectError('auth', 'The sign-in code expired — try again.')
 }
 
 function toAuth(
@@ -203,10 +268,7 @@ export async function refreshGithubAuth(
     }),
   })
   if (!response.ok) {
-    throw {
-      kind: 'network' as const,
-      message: `GitHub token refresh failed (${response.status}); will retry`,
-    }
+    throw new ReflectError('network', `GitHub token refresh failed (${response.status}); will retry`)
   }
   const parsed = tokenResponseSchema.parse(await response.json())
   if (parsed.access_token !== undefined) {
@@ -215,10 +277,10 @@ export async function refreshGithubAuth(
   if (parsed.error === 'bad_refresh_token') {
     return null
   }
-  throw {
-    kind: 'auth' as const,
-    message: `GitHub token refresh failed${parsed.error === undefined ? '' : ` (${parsed.error})`}`,
-  }
+  throw new ReflectError(
+    'auth',
+    `GitHub token refresh failed${parsed.error === undefined ? '' : ` (${parsed.error})`}`,
+  )
 }
 
 /** Proactive-refresh margin: refresh when within 5 minutes of expiry. */
@@ -322,11 +384,11 @@ export async function createGithubRepo(
     }),
   })
   if (response.status === 401 || response.status === 403) {
-    throw { kind: 'auth' as const, message: `GitHub rejected the token (${response.status})` }
+    throw new ReflectError('auth', `GitHub rejected the token (${response.status})`)
   }
   if (!response.ok) {
     const body = await response.text()
-    throw { kind: 'io' as const, message: `creating the repo failed (${response.status}): ${body}` }
+    throw new ReflectError('io', `creating the repo failed (${response.status}): ${body}`)
   }
   return toRepo(repoResponseSchema.parse(await response.json()))
 }
@@ -344,10 +406,10 @@ export async function getGithubRepo(
     return null
   }
   if (response.status === 401 || response.status === 403) {
-    throw { kind: 'auth' as const, message: `GitHub rejected the token (${response.status})` }
+    throw new ReflectError('auth', `GitHub rejected the token (${response.status})`)
   }
   if (!response.ok) {
-    throw { kind: 'io' as const, message: `looking up the repo failed (${response.status})` }
+    throw new ReflectError('io', `looking up the repo failed (${response.status})`)
   }
   return toRepo(repoResponseSchema.parse(await response.json()))
 }

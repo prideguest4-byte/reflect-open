@@ -38,7 +38,14 @@ export {
   type RetrievalHit,
   type RetrieveOptions,
 } from './embeddings/retrieve'
-export { appErrorSchema, errorMessage, isAppError, toAppError, type AppError } from './errors'
+export {
+  appErrorSchema,
+  errorMessage,
+  isAppError,
+  toAppError,
+  ReflectError,
+  type AppError,
+} from './errors'
 
 // Graph & file storage (Plan 02)
 export {
@@ -113,7 +120,8 @@ export {
   type AiProviderInfo,
   type AiModelOption,
 } from './ai/provider-catalog'
-export { aiKeySecretName, setSecret, getSecret, deleteSecret } from './ai/secrets'
+export { aiKeySecretName } from './ai/secrets'
+export { setSecret, getSecret, deleteSecret } from './secrets/keychain'
 export {
   KEY_HINT_LENGTH,
   apiKeyHint,
@@ -138,7 +146,10 @@ export {
   clearGithubAuth,
   deviceFlowStart,
   deviceFlowPoll,
+  runDeviceFlow,
   getGithubToken,
+  gitDisconnect,
+  gitClone,
   parseGithubRemote,
   githubRemoteUrl,
   createGithubRepo,
@@ -178,6 +189,7 @@ export {
   parseFrontmatter,
   upsertFrontmatter,
   detectConflictMarkers,
+  resolveConflictMarkers,
   parseBody,
   reflectMarkdownParser,
   wikiLinkExtension,
@@ -187,6 +199,7 @@ export {
   foldTag,
   isTagName,
   normalizeWikiTarget,
+  type ConflictResolution,
   type Frontmatter,
   type Span,
   type WikiLink,

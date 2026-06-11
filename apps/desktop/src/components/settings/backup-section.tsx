@@ -16,7 +16,7 @@ function statusLine(backup: Extract<BackupState, { phase: 'connected' }>): strin
       return 'Backed up'
     case 'syncing':
       return 'Backing up…'
-    case 'pending':
+    case 'offline':
       return backup.status.message ?? 'Waiting for a connection'
     case 'error':
       return backup.status.errorKind === 'auth'
@@ -32,7 +32,7 @@ function statusLine(backup: Extract<BackupState, { phase: 'connected' }>): strin
  * also shows its own banner when opened.
  */
 export function BackupSection(): ReactElement {
-  const { backup, disconnect, backUpNow } = useSync()
+  const { backup, disconnectGraph, signOut, backUpNow } = useSync()
   const { graph } = useGraph()
   const [connectOpen, setConnectOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -91,7 +91,7 @@ export function BackupSection(): ReactElement {
                   — open it to keep the version you want.
                 </p>
               ) : null}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -100,8 +100,21 @@ export function BackupSection(): ReactElement {
                 >
                   Back up now
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => void runAction(disconnect)}>
-                  Disconnect
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="This graph stops backing up; its history and your GitHub sign-in stay"
+                  onClick={() => void runAction(disconnectGraph)}
+                >
+                  Stop backing up
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Removes the GitHub token from this machine — every connected graph stops backing up"
+                  onClick={() => void runAction(signOut)}
+                >
+                  Sign out of GitHub
                 </Button>
               </div>
             </>

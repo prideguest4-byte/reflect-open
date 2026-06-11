@@ -1,5 +1,7 @@
-import { type ReactElement } from 'react'
-import { Folder, FolderPlus } from 'lucide-react'
+import { useState, type ReactElement } from 'react'
+import { CloudDownload, Folder, FolderPlus } from 'lucide-react'
+import { hasBridge } from '@reflect/core'
+import { RestoreFromGithubDialog } from '@/components/restore-from-github-dialog'
 import { Button } from '@/components/ui/button'
 import { useGraphColors } from '@/hooks/use-graph-colors'
 import { graphColorCss } from '@/lib/graph-colors'
@@ -15,6 +17,7 @@ import { useGraph } from '@/providers/graph-provider'
 export function GraphChooser(): ReactElement {
   const { recents, error, pickAndOpen, openRecent, forget } = useGraph()
   const { colorFor } = useGraphColors()
+  const [restoring, setRestoring] = useState(false)
 
   return (
     <div className="flex h-screen w-screen overflow-auto bg-surface-app p-8">
@@ -37,6 +40,20 @@ export function GraphChooser(): ReactElement {
           <FolderPlus aria-hidden strokeWidth={1.75} />
           Open graph…
         </Button>
+
+        {hasBridge() ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => setRestoring(true)}
+          >
+            <CloudDownload aria-hidden strokeWidth={1.75} />
+            Restore from GitHub…
+          </Button>
+        ) : null}
+
+        {restoring ? <RestoreFromGithubDialog onClose={() => setRestoring(false)} /> : null}
 
         {error ? (
           <p role="alert" className="text-center text-sm text-destructive">

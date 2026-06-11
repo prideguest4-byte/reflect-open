@@ -147,8 +147,11 @@ export function NotePane({
   }
 
   if (document.protected) {
+    // Sync-conflicted notes land here (markers classify as lossy), so the
+    // conflict notice — with its raw-text resolution actions — leads the view.
     return (
       <div className={cn(gutterClassName, className)}>
+        <SyncConflictNotice path={path} className="mb-4" />
         <ProtectedNoteView content={document.initialContent} />
         <BacklinksPanel path={path} />
       </div>

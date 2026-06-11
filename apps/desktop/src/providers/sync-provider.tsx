@@ -1,75 +1,41 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
-  useRef,
+  useMemo,
   useState,
+  useSyncExternalStore,
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { ReflectError, type GithubRepoRef, type GraphInfo } from '@reflect/core'
 import {
-  applyIndexChanges,
-  clearGithubAuth,
-  createGithubRepo,
-  createSyncEngine,
-  emitFileChanges,
-  getGithubRepo,
-  getGithubToken,
-  githubRemoteUrl,
-  gitSetup,
-  gitStatus,
-  loadGithubAuth,
-  parseGithubRemote,
-  subscribeFileChanges,
-  type ChangedFile,
-  type GithubRepoRef,
-  type GraphInfo,
-  type SyncEngine,
-  type SyncStatus,
-  type Unlisten,
-} from '@reflect/core'
-import { startOperation } from '@/lib/operations'
-import { providerFetch } from '@/lib/provider-fetch'
-import { invalidateIndexQueries } from '@/lib/query-client'
+  createBackupController,
+  type BackupController,
+  type BackupState,
+  type ConnectExistingResult,
+} from '@/lib/backup-controller'
+import { useGraph } from '@/providers/graph-provider'
 
-/** Pull-changed paths the index tracks (mirrors the watcher's filter). */
-function isIndexablePath(path: string): boolean {
-  return (path.startsWith('daily/') || path.startsWith('notes/')) && path.endsWith('.md')
-}
-
-/**
- * Backup state as the UI sees it. `connected` means the graph has a repo,
- * an `origin` remote, and a stored GitHub credential — the engine is running.
- */
-export type BackupState =
-  | { phase: 'loading' }
-  | { phase: 'disconnected' }
-  | { phase: 'connected'; remoteUrl: string; repo: GithubRepoRef | null; status: SyncStatus }
-
-/** Outcome of connecting to an existing repo (the public case needs consent). */
-export type ConnectExistingResult = 'connected' | 'needsPublicConfirm' | 'notFound'
+export type { BackupState, ConnectExistingResult } from '@/lib/backup-controller'
 
 interface SyncContextValue {
   backup: BackupState
-  /** Create a new **private** repo for the signed-in user and connect it. */
   connectNewRepo: (name: string) => Promise<void>
-  /**
-   * Connect an existing repo. A public repo returns `needsPublicConfirm`
-   * unless `allowPublic` — everything in the graph (including `private:
-   * true` notes) would be world-readable, so that needs an explicit yes.
-   */
   connectExistingRepo: (
     ref: GithubRepoRef,
     options?: { allowPublic?: boolean },
   ) => Promise<ConnectExistingResult>
-  /** Stop backups and drop the stored GitHub credential (repo stays intact). */
-  disconnect: () => Promise<void>
-  /** Full cycle now: commit, pull/merge, push. */
+  /** Stop backing this graph up (other graphs and the credential stay). */
+  disconnectGraph: () => Promise<void>
+  /** Sign the machine out of GitHub (every connected graph stops syncing). */
+  signOut: () => Promise<void>
   backUpNow: () => Promise<void>
 }
 
 const SyncContext = createContext<SyncContextValue | null>(null)
+
+const LOADING: BackupState = { phase: 'loading' }
 
 interface SyncProviderProps {
   graph: GraphInfo
@@ -77,168 +43,48 @@ interface SyncProviderProps {
 }
 
 /**
- * Per-graph backup & sync (Plan 12): owns the sync engine's lifecycle and
- * exposes the product-state view plus the connect/disconnect actions. The
- * engine starts only when the graph is fully connected; watcher file-change
- * events feed its debounce, window focus and launch trigger full pulls.
+ * Thin React shim over the {@link createBackupController} lifecycle (Plan
+ * 12): one controller per (graph, index session), created and disposed by an
+ * effect, surfaced through `useSyncExternalStore`. All sync behavior lives in
+ * the controller — this component owns nothing but the mounting.
  */
 export function SyncProvider({ graph, children }: SyncProviderProps): ReactElement {
-  const [backup, setBackup] = useState<BackupState>({ phase: 'loading' })
-  // Bumped after connect/disconnect so the lifecycle effect re-evaluates.
-  const [connectEpoch, setConnectEpoch] = useState(0)
-  const engineRef = useRef<SyncEngine | null>(null)
-  const generation = graph.generation
+  const { indexGeneration } = useGraph()
+  const [controller, setController] = useState<BackupController | null>(null)
 
   useEffect(() => {
-    let cancelled = false
-    let engine: SyncEngine | null = null
-    let unlisten: Unlisten | null = null
-    let onFocus: (() => void) | null = null
-
-    async function start(): Promise<void> {
-      const [status, auth] = await Promise.all([gitStatus(), loadGithubAuth()])
-      if (cancelled) {
-        return
-      }
-      if (!status.initialized || status.remoteUrl === null || auth === null) {
-        setBackup({ phase: 'disconnected' })
-        return
-      }
-      const remoteUrl = status.remoteUrl
-      const repo = parseGithubRemote(remoteUrl)
-      engine = createSyncEngine({
-        generation,
-        getToken: () => getGithubToken(providerFetch),
-        onStatus: (engineStatus) => {
-          setBackup({ phase: 'connected', remoteUrl, repo, status: engineStatus })
-        },
-        onLargeFilesSkipped: (files) => {
-          // Surface the guardrail loudly: these files are NOT in the backup.
-          const names = files.map((file) => file.path).join(', ')
-          startOperation('Backing up').fail(`Too large for GitHub backup (kept local): ${names}`)
-        },
-        onRemoteChanges: (changes: ChangedFile[]) => {
-          const indexable = changes.filter((change) => isIndexablePath(change.path))
-          if (indexable.length === 0) {
-            return
-          }
-          // Pull-applied writes must not depend on the file watcher being up
-          // (the launch pull can land before watch start), so both consumers
-          // are notified directly:
-          // - open editors, via the local file-changes channel — an
-          //   unnotified open note would overwrite the merged content on its
-          //   next save;
-          // - the index, via a direct apply (a live watcher subscription may
-          //   double-apply the same content, which is idempotent).
-          emitFileChanges(indexable)
-          void applyIndexChanges(indexable, generation).then(invalidateIndexQueries)
-        },
-      })
-      engineRef.current = engine
-      setBackup({ phase: 'connected', remoteUrl, repo, status: { state: 'idle' } })
-
-      const subscription = await subscribeFileChanges(() => {
-        engine?.noteChanged()
-      })
-      if (cancelled) {
-        // Teardown won the race against the subscribe — unhook the late
-        // arrival here or the index:changed handler leaks forever.
-        subscription()
-        return
-      }
-      unlisten = subscription
-      onFocus = () => {
-        void engine?.syncNow()
-      }
-      window.addEventListener('focus', onFocus)
-      void engine.syncNow() // launch pull: pick up other devices' changes
-    }
-
-    void start().catch(() => {
-      if (!cancelled) {
-        setBackup({ phase: 'disconnected' })
-      }
-    })
-
+    const next = createBackupController({ graph, indexGeneration })
+    setController(next)
+    void next.start()
     return () => {
-      cancelled = true
-      engine?.stop()
-      if (engineRef.current === engine) {
-        engineRef.current = null
-      }
-      unlisten?.()
-      if (onFocus !== null) {
-        window.removeEventListener('focus', onFocus)
-      }
+      next.dispose()
+      setController((current) => (current === next ? null : current))
     }
-  }, [generation, connectEpoch])
+  }, [graph, indexGeneration])
 
-  const connectRemote = useCallback(
-    async (remoteUrl: string, branch: string) => {
-      await gitSetup(remoteUrl, branch, generation)
-      setConnectEpoch((epoch) => epoch + 1)
-    },
-    [generation],
+  const backup = useSyncExternalStore(
+    controller?.subscribe ?? (() => () => {}),
+    controller?.getState ?? (() => LOADING),
   )
 
-  const requireToken = useCallback(async (): Promise<string> => {
-    const token = await getGithubToken(providerFetch)
-    if (token === null) {
-      throw { kind: 'auth' as const, message: 'Connect GitHub first (no credential stored)' }
+  const value = useMemo<SyncContextValue>(() => {
+    const require = (): BackupController => {
+      if (controller === null) {
+        throw new ReflectError('io', 'backup is still initializing')
+      }
+      return controller
     }
-    return token
-  }, [])
+    return {
+      backup,
+      connectNewRepo: (name) => require().connectNewRepo(name),
+      connectExistingRepo: (ref, options) => require().connectExistingRepo(ref, options),
+      disconnectGraph: () => require().disconnectGraph(),
+      signOut: () => require().signOut(),
+      backUpNow: () => require().backUpNow(),
+    }
+  }, [controller, backup])
 
-  const connectNewRepo = useCallback(
-    async (name: string) => {
-      const token = await requireToken()
-      const repo = await createGithubRepo(token, name, { isPrivate: true, fetchFn: providerFetch })
-      const [owner, repoName] = repo.fullName.split('/')
-      // Align with the account's default branch for new repos so the first
-      // push creates the branch GitHub already considers the default.
-      await connectRemote(githubRemoteUrl({ owner, name: repoName }), repo.defaultBranch)
-    },
-    [connectRemote, requireToken],
-  )
-
-  const connectExistingRepo = useCallback(
-    async (
-      ref: GithubRepoRef,
-      options: { allowPublic?: boolean } = {},
-    ): Promise<ConnectExistingResult> => {
-      const token = await requireToken()
-      const repo = await getGithubRepo(token, ref, providerFetch)
-      if (repo === null) {
-        return 'notFound'
-      }
-      if (!repo.isPrivate && options.allowPublic !== true) {
-        return 'needsPublicConfirm'
-      }
-      // The repo's default branch is where its existing backup history lives —
-      // the local branch must match or sync would create a parallel branch
-      // and never integrate it.
-      await connectRemote(githubRemoteUrl(ref), repo.defaultBranch)
-      return 'connected'
-    },
-    [connectRemote, requireToken],
-  )
-
-  const disconnect = useCallback(async () => {
-    await clearGithubAuth()
-    setConnectEpoch((epoch) => epoch + 1)
-  }, [])
-
-  const backUpNow = useCallback(async () => {
-    await engineRef.current?.syncNow()
-  }, [])
-
-  return (
-    <SyncContext.Provider
-      value={{ backup, connectNewRepo, connectExistingRepo, disconnect, backUpNow }}
-    >
-      {children}
-    </SyncContext.Provider>
-  )
+  return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>
 }
 
 /** Backup state + actions; must be used under a {@link SyncProvider}. */

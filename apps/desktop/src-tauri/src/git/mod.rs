@@ -33,6 +33,7 @@ use self::remote::{PushOutcome, RemoteDelta};
 const MAX_FILE_BYTES: u64 = 95 * 1024 * 1024;
 
 /// Snapshot of the graph's backup repository for the UI and the sync engine.
+/// Deliberately cheap — refs and config only, no working-tree scan.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitStatus {
@@ -40,8 +41,6 @@ pub struct GitStatus {
     pub initialized: bool,
     pub branch: Option<String>,
     pub remote_url: Option<String>,
-    /// Graph-relative paths with uncommitted changes (untracked included).
-    pub dirty_paths: Vec<String>,
     /// Commits ahead/behind the last-fetched remote branch (no network).
     pub ahead: usize,
     pub behind: usize,
@@ -55,7 +54,6 @@ fn status(root: &Path) -> AppResult<GitStatus> {
             initialized: false,
             branch: None,
             remote_url: None,
-            dirty_paths: Vec::new(),
             ahead: 0,
             behind: 0,
             in_progress: false,
@@ -67,13 +65,6 @@ fn status(root: &Path) -> AppResult<GitStatus> {
         .find_remote("origin")
         .ok()
         .and_then(|remote| remote.url().ok().map(str::to_string));
-    let mut opts = git2::StatusOptions::new();
-    opts.include_untracked(true).recurse_untracked_dirs(true);
-    let dirty_paths = repo
-        .statuses(Some(&mut opts))?
-        .iter()
-        .filter_map(|entry| entry.path().ok().map(str::to_string))
-        .collect();
     let delta = remote::local_delta(&repo).unwrap_or(RemoteDelta {
         ahead: 0,
         behind: 0,
@@ -82,11 +73,22 @@ fn status(root: &Path) -> AppResult<GitStatus> {
         initialized: true,
         branch,
         remote_url,
-        dirty_paths,
         ahead: delta.ahead,
         behind: delta.behind,
         in_progress: repo.state() != git2::RepositoryState::Clean,
     })
+}
+
+/// Stop backing this graph up: drop the `origin` remote. The repository and
+/// its history stay intact (reconnecting re-adds a remote); the machine-level
+/// GitHub credential is untouched — other graphs keep syncing.
+fn disconnect(root: &Path) -> AppResult<GitStatus> {
+    let repo = repo::open_existing(root)?;
+    if repo.find_remote("origin").is_ok() {
+        repo.remote_delete("origin")?;
+    }
+    drop(repo);
+    status(root)
 }
 
 fn setup(root: &Path, remote_url: Option<String>, branch: Option<String>) -> AppResult<GitStatus> {
@@ -137,6 +139,22 @@ pub async fn git_setup(
 ) -> AppResult<GitStatus> {
     let root = crate::fs::root_for_generation(&state, generation)?;
     run_blocking(move || setup(&root, remote_url, branch)).await
+}
+
+/// Stop backing this graph up (drop `origin`; repo, history, and the
+/// machine-level credential all stay).
+#[tauri::command]
+pub async fn git_disconnect(generation: u64, state: State<'_, GraphState>) -> AppResult<GitStatus> {
+    let root = crate::fs::root_for_generation(&state, generation)?;
+    run_blocking(move || disconnect(&root)).await
+}
+
+/// Clone a backup repository into `path` (restore on a fresh machine). Runs
+/// before any graph is open, so it takes an absolute destination rather than
+/// a graph-relative path; the caller opens the result as a graph afterwards.
+#[tauri::command]
+pub async fn git_clone(url: String, path: String, token: Option<String>) -> AppResult<()> {
+    run_blocking(move || remote::clone(&url, Path::new(&path), token)).await
 }
 
 /// Commit every pending change (no-op when clean). See [`commit::commit_all`].

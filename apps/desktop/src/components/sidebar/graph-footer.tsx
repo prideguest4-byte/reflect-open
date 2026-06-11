@@ -33,7 +33,7 @@ function backupDot(backup: BackupState): { className: string; label: string } | 
   switch (backup.status.state) {
     case 'syncing':
       return { className: 'bg-accent motion-safe:animate-pulse', label: 'Backing up' }
-    case 'pending':
+    case 'offline':
       return { className: 'bg-amber-500', label: 'Backup waiting for a connection' }
     case 'error':
       return { className: 'bg-red-500', label: 'Backup failed — see Settings' }

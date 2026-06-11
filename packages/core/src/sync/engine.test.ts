@@ -11,8 +11,8 @@ afterEach(() => {
   setBridge(null)
 })
 
-const CLEAN_COMMIT = { committed: false, sha: null, skippedLargeFiles: [] }
-const COMMITTED = { committed: true, sha: 'abc', skippedLargeFiles: [] }
+const CLEAN_COMMIT = { committed: false, sha: null, ahead: 0, skippedLargeFiles: [] }
+const COMMITTED = { committed: true, sha: 'abc', ahead: 1, skippedLargeFiles: [] }
 const PUSHED = { pushed: true, nonFastForward: false, rejectionMessage: null }
 const NON_FAST_FORWARD = {
   pushed: false,
@@ -139,7 +139,7 @@ describe('createSyncEngine', () => {
     engine.stop()
   })
 
-  it('maps a network failure to the pending (offline) state', async () => {
+  it('maps a network failure to the offline state', async () => {
     fakeGit((command) => {
       if (command === 'git_push') {
         throw { kind: 'network', message: 'could not resolve github.com' }
@@ -157,7 +157,7 @@ describe('createSyncEngine', () => {
     engine.noteChanged()
     await vi.runAllTimersAsync()
 
-    expect(statuses.at(-1)?.state).toBe('pending')
+    expect(statuses.at(-1)?.state).toBe('offline')
     engine.stop()
   })
 
@@ -321,6 +321,7 @@ describe('createSyncEngine', () => {
         ? {
             committed: true,
             sha: 'abc',
+            ahead: 1,
             skippedLargeFiles: [{ path: 'assets/movie.mp4', size: 200_000_000 }],
           }
         : defaultResponses(command),
@@ -373,6 +374,42 @@ describe('createSyncEngine', () => {
       'git_commit_all',
       'git_push',
     ])
+    engine.stop()
+  })
+
+  it('skips the push when a debounced pass finds nothing committed and nothing ahead', async () => {
+    // The watcher re-reports a pull's own writes; the resulting cycle must
+    // not buy a network round-trip for them.
+    const calls = fakeGit((command) =>
+      command === 'git_commit_all' ? CLEAN_COMMIT : defaultResponses(command),
+    )
+    const engine = createSyncEngine({ generation: 1, getToken: async () => 'tok', idleMs: 10 })
+
+    engine.noteChanged()
+    await vi.runAllTimersAsync()
+
+    expect(commandsOf(calls)).toEqual(['git_commit_all'])
+    engine.stop()
+  })
+
+  it('skips the push when a launch pull finds both sides already in step', async () => {
+    const calls = fakeGit((command) => {
+      if (command === 'git_commit_all') {
+        return CLEAN_COMMIT
+      }
+      if (command === 'git_fetch') {
+        return { ahead: 0, behind: 0 }
+      }
+      if (command === 'git_merge_remote') {
+        return { kind: 'upToDate', conflictedPaths: [], changedFiles: [] }
+      }
+      return defaultResponses(command)
+    })
+    const engine = createSyncEngine({ generation: 1, getToken: async () => 'tok' })
+
+    await engine.syncNow()
+
+    expect(commandsOf(calls)).toEqual(['git_commit_all', 'git_fetch', 'git_merge_remote'])
     engine.stop()
   })
 

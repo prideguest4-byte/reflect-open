@@ -25,6 +25,11 @@ pub struct SkippedFile {
 pub struct CommitOutcome {
     pub committed: bool,
     pub sha: Option<String>,
+    /// Commits the local branch is ahead of the last-fetched remote (no
+    /// network). The sync engine skips the push entirely when a debounced
+    /// pass finds nothing committed and nothing ahead — pull-applied watcher
+    /// events would otherwise buy a pointless network negotiation each time.
+    pub ahead: usize,
     pub skipped_large_files: Vec<SkippedFile>,
 }
 
@@ -97,6 +102,7 @@ pub(super) fn commit_all(
         return Ok(CommitOutcome {
             committed: false,
             sha: None,
+            ahead: ahead_of_remote(&repo),
             skipped_large_files: skipped.into_inner(),
         });
     }
@@ -107,6 +113,7 @@ pub(super) fn commit_all(
             return Ok(CommitOutcome {
                 committed: false,
                 sha: None,
+                ahead: ahead_of_remote(&repo),
                 skipped_large_files: skipped.into_inner(),
             });
         }
@@ -119,6 +126,15 @@ pub(super) fn commit_all(
     Ok(CommitOutcome {
         committed: true,
         sha: Some(oid.to_string()),
+        ahead: ahead_of_remote(&repo),
         skipped_large_files: skipped.into_inner(),
     })
+}
+
+/// Ahead-count vs the last-fetched remote branch. When it can't be computed
+/// it reports `1` so the engine errs toward pushing, never toward skipping.
+fn ahead_of_remote(repo: &git2::Repository) -> usize {
+    super::remote::local_delta(repo)
+        .map(|delta| delta.ahead)
+        .unwrap_or(1)
 }
