@@ -53,7 +53,7 @@ export function AllNotesTable({
         <span className="text-right">Updated</span>
       </div>
       {notes.length === 0 ? (
-        <p className="py-8 pl-12 pr-7 text-sm text-text-muted">
+        <p className="py-8 pl-4 pr-7 text-sm text-text-muted lg:pl-12">
           {tag === null ? 'No notes yet.' : `No notes tagged #${tag}.`}
         </p>
       ) : (

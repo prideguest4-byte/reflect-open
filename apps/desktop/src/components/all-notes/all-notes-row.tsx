@@ -9,7 +9,7 @@ import { useSettings } from '@/providers/settings-provider'
  * row in {@link AllNotesTable} uses the same classes so the columns line up.
  */
 export const ALL_NOTES_GRID =
-  'grid grid-cols-[15rem_minmax(0,1fr)_minmax(0,8rem)_5rem] items-center gap-4 pl-12 pr-7'
+  'grid grid-cols-[15rem_minmax(0,1fr)_minmax(0,8rem)_5rem] items-center gap-4 pl-4 pr-7 lg:pl-12'
 
 interface AllNotesRowProps {
   note: NoteListEntry
