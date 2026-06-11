@@ -4,13 +4,22 @@ import { setBridge } from '@reflect/core'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { GithubAuthStep } from './github-auth-step'
 
-// The device flow is unconfigured in OSS builds (no app client id), so the
-// step renders the PAT path — exactly what these tests exercise. The keychain
-// is the bridge fake; GET /user (instant token validation) goes through the
-// mocked Tauri HTTP plugin.
+// The Reflect GitHub App is registered, so the device flow leads and the PAT
+// path sits behind a "use a personal access token instead" toggle — these
+// tests exercise the PAT path through that toggle. The keychain is the
+// bridge fake; GET /user (instant token validation) goes through the mocked
+// Tauri HTTP plugin.
 
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: vi.fn() }))
 const httpFetch = vi.mocked(tauriFetch)
+
+/** Switch the step from the device-flow lead to PAT entry. */
+async function switchToPat(): Promise<void> {
+  fireEvent.click(
+    await screen.findByRole('button', { name: /use a personal access token instead/i }),
+  )
+  await screen.findByLabelText('Personal access token')
+}
 
 afterEach(() => {
   cleanup()
@@ -76,6 +85,7 @@ describe('GithubAuthStep', () => {
     githubAccepts('alex')
     const onAuthed = vi.fn()
     render(<GithubAuthStep onAuthed={onAuthed} />)
+    await switchToPat()
 
     fireEvent.change(screen.getByLabelText('Personal access token'), {
       target: { value: '  github_pat_abc  ' },
@@ -99,6 +109,7 @@ describe('GithubAuthStep', () => {
     githubRejects()
     const onAuthed = vi.fn()
     render(<GithubAuthStep onAuthed={onAuthed} />)
+    await switchToPat()
 
     fireEvent.change(screen.getByLabelText('Personal access token'), {
       target: { value: 'github_pat_typo' },
@@ -114,6 +125,7 @@ describe('GithubAuthStep', () => {
     fakeKeychain()
     const onAuthed = vi.fn()
     render(<GithubAuthStep onAuthed={onAuthed} />)
+    await switchToPat()
 
     fireEvent.click(screen.getByRole('button', { name: 'Save token' }))
 
@@ -124,6 +136,7 @@ describe('GithubAuthStep', () => {
   it('names the backup repository in the token instructions when known', async () => {
     fakeKeychain()
     render(<GithubAuthStep onAuthed={vi.fn()} repoName="my-notes-backup" />)
+    await switchToPat()
 
     expect(await screen.findByText('my-notes-backup')).toBeTruthy()
   })

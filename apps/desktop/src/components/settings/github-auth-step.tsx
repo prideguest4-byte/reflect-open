@@ -37,6 +37,9 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
   const deviceFlow = useDeviceFlowAuth()
   const pat = useAsyncAction()
   const [patValue, setPatValue] = useState('')
+  // The device flow leads when the app is registered; the PAT path stays one
+  // click away (some users prefer a scoped token; GHES needs it).
+  const [usePat, setUsePat] = useState(!isDeviceFlowConfigured())
 
   // Already signed in with a working credential (e.g. connecting a second
   // graph) → skip the step. A stored-but-rejected credential is cleared by
@@ -93,10 +96,23 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
   return (
     <div className="flex flex-col gap-3">
       {flowView.view === 'idle' ? (
-        isDeviceFlowConfigured() ? (
-          <Button onClick={() => void signIn()} disabled={deviceFlow.busy || pat.pending} size="sm">
-            Sign in with GitHub
-          </Button>
+        !usePat ? (
+          <>
+            <Button
+              onClick={() => void signIn()}
+              disabled={deviceFlow.busy || pat.pending}
+              size="sm"
+            >
+              Sign in with GitHub
+            </Button>
+            <button
+              type="button"
+              className="text-left text-xs text-text-muted underline"
+              onClick={() => setUsePat(true)}
+            >
+              Use a personal access token instead
+            </button>
+          </>
         ) : (
           <>
             <p className="text-xs text-text-muted">
@@ -125,6 +141,15 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
             <Button onClick={() => void savePat()} disabled={pat.pending} size="sm">
               {pat.pending ? 'Checking…' : 'Save token'}
             </Button>
+            {isDeviceFlowConfigured() ? (
+              <button
+                type="button"
+                className="text-left text-xs text-text-muted underline"
+                onClick={() => setUsePat(false)}
+              >
+                Sign in with GitHub instead
+              </button>
+            ) : null}
           </>
         )
       ) : (

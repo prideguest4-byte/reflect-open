@@ -1,6 +1,12 @@
 import { useState, type ReactElement } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { newRepoUrl, type GithubRepoRef, type GithubUser } from '@reflect/core'
+import {
+  githubAppInstallUrl,
+  isDeviceFlowConfigured,
+  newRepoUrl,
+  type GithubRepoRef,
+  type GithubUser,
+} from '@reflect/core'
 import { InlineAlert } from '@/components/inline-alert'
 import { GithubAuthStep } from '@/components/settings/github-auth-step'
 import { Button } from '@/components/ui/button'
@@ -278,6 +284,20 @@ export function ConnectGithubDialog({
 
             {!action.pending && action.error !== null ? (
               <InlineAlert tone="error">{action.error}</InlineAlert>
+            ) : null}
+
+            {isDeviceFlowConfigured() && publicConfirm === null ? (
+              // Authorization and installation are separate GitHub App
+              // concepts: a signed-in token only reaches repositories the
+              // app is installed on. When the repo can't be seen, this is
+              // usually why.
+              <button
+                type="button"
+                className="text-left text-xs text-text-muted underline"
+                onClick={() => void openUrl(githubAppInstallUrl())}
+              >
+                Can’t see your repository? Grant the Reflect app access on GitHub…
+              </button>
             ) : null}
           </div>
         ) : null}

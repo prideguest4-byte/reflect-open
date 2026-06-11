@@ -6,6 +6,7 @@ import {
   getAuthenticatedUser,
   getGithubRepo,
   getGithubToken,
+  githubAppInstallUrl,
   githubRemoteUrl,
   loadGithubAuth,
   newRepoUrl,
@@ -323,6 +324,14 @@ describe('newRepoUrl', () => {
     expect(url.searchParams.get('name')).toBe('my notes-backup')
     expect(url.searchParams.get('visibility')).toBe('private')
     expect(url.searchParams.get('description')).toBe('Reflect notes backup')
+  })
+})
+
+describe('githubAppInstallUrl', () => {
+  it('points at the registered app’s installation page', () => {
+    expect(githubAppInstallUrl()).toBe(
+      'https://github.com/apps/reflect-github-app/installations/new',
+    )
   })
 })
 

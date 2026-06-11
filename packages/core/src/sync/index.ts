@@ -29,7 +29,9 @@ export {
 } from './commands'
 export {
   GITHUB_APP_CLIENT_ID,
+  GITHUB_APP_SLUG,
   GITHUB_AUTH_SECRET,
+  githubAppInstallUrl,
   isDeviceFlowConfigured,
   githubAuthSchema,
   saveGithubAuth,

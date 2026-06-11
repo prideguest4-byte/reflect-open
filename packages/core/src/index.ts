@@ -141,6 +141,7 @@ export {
   gitMergeRemote,
   gitPush,
   isDeviceFlowConfigured,
+  githubAppInstallUrl,
   saveGithubAuth,
   loadGithubAuth,
   clearGithubAuth,

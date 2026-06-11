@@ -14,12 +14,26 @@ import { deleteSecret, getSecret, setSecret } from '../secrets/keychain'
  */
 
 /**
- * The GitHub App client id used by the device flow. Public by design — the
- * device flow needs no client secret, even for refresh, so there is no
- * Reflect-hosted anything. Empty until the app is registered; the UI falls
- * back to fine-grained-PAT entry while it is.
+ * The Reflect GitHub App's client id, used by the device flow. Public by
+ * design — the device flow needs no client secret, even for refresh, so
+ * there is no Reflect-hosted anything and nothing here is sensitive.
+ * Registered 2026-06-11 (app id 4032425, owned by team-reflect).
  */
-export const GITHUB_APP_CLIENT_ID = ''
+export const GITHUB_APP_CLIENT_ID = 'Iv23liURhf4d0EazsLl4'
+
+/** The app's public slug — `github.com/apps/<slug>`. */
+export const GITHUB_APP_SLUG = 'reflect-github-app'
+
+/**
+ * Where the user grants the app access to repositories. Authorization
+ * (device flow) and **installation** are separate GitHub App concepts: a
+ * user access token can only reach repositories the app is installed on,
+ * so a device-flow sign-in that can't see the backup repo sends the user
+ * here to grant it.
+ */
+export function githubAppInstallUrl(): string {
+  return `https://github.com/apps/${GITHUB_APP_SLUG}/installations/new`
+}
 
 /** Whether the guided device flow is available (a GitHub App is registered). */
 export function isDeviceFlowConfigured(): boolean {
