@@ -138,10 +138,8 @@ describe('AiModelsSection', () => {
     // options render in a portal, so they're queried from screen.
     fireEvent.keyDown(dialog.getByRole('combobox', { name: 'Provider' }), { key: 'ArrowDown' })
     fireEvent.keyDown(await screen.findByRole('option', { name: 'Anthropic' }), { key: 'Enter' })
-    fireEvent.keyDown(dialog.getByRole('combobox', { name: 'Model' }), { key: 'ArrowDown' })
-    fireEvent.keyDown(await screen.findByRole('option', { name: 'Claude Sonnet 4.6' }), {
-      key: 'Enter',
-    })
+    fireEvent.click(dialog.getByRole('combobox', { name: 'Model' }))
+    fireEvent.click(await screen.findByRole('option', { name: /Claude Sonnet 4\.6/ }))
     fireEvent.change(dialog.getByLabelText('API key'), {
       target: { value: 'sk-ant-test-wxyz1' },
     })
