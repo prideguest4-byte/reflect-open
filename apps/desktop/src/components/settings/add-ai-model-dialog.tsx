@@ -27,6 +27,7 @@ import {
 import { InlineAlert } from '@/components/inline-alert'
 import { providerFetch } from '@/lib/provider-fetch'
 import type { NewAiModel } from '@/hooks/use-ai-models'
+import { ModelCombobox } from './model-combobox'
 
 interface AddAiModelDialogProps {
   /** Persists the new model (keychain + settings); rejects on failure. */
@@ -151,21 +152,12 @@ export function AddAiModelDialog({ onAdd, onClose }: AddAiModelDialogProps): Rea
 
           <div className="flex flex-col gap-1">
             <span className={FIELD_LABEL_CLASS}>Model</span>
-            <Select
+            <ModelCombobox
               value={watch('model')}
-              onValueChange={(value) => setValue('model', value)}
-            >
-              <SelectTrigger aria-label="Model" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {provider.models.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    {model.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              provider={provider.id}
+              models={provider.models}
+              onChange={(modelId) => setValue('model', modelId)}
+            />
           </div>
 
           <label className="flex flex-col gap-1">

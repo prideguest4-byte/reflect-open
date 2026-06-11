@@ -15,6 +15,14 @@ vi.mock('@/lib/provider-fetch', () => ({ providerFetch: providerFetchMock }))
 // view when the listbox opens.
 Element.prototype.scrollIntoView ??= () => {}
 
+// jsdom doesn't implement ResizeObserver; cmdk uses it to observe the command
+// list dimensions.
+globalThis.ResizeObserver ??= class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 let stored: Record<string, unknown>
 let saved: unknown[]
 let secrets: Map<string, string>
@@ -138,10 +146,8 @@ describe('AiModelsSection', () => {
     // options render in a portal, so they're queried from screen.
     fireEvent.keyDown(dialog.getByRole('combobox', { name: 'Provider' }), { key: 'ArrowDown' })
     fireEvent.keyDown(await screen.findByRole('option', { name: 'Anthropic' }), { key: 'Enter' })
-    fireEvent.keyDown(dialog.getByRole('combobox', { name: 'Model' }), { key: 'ArrowDown' })
-    fireEvent.keyDown(await screen.findByRole('option', { name: 'Claude Sonnet 4.6' }), {
-      key: 'Enter',
-    })
+    fireEvent.click(dialog.getByRole('combobox', { name: 'Model' }))
+    fireEvent.click(await screen.findByRole('option', { name: /Claude Sonnet 4\.6/ }))
     fireEvent.change(dialog.getByLabelText('API key'), {
       target: { value: 'sk-ant-test-wxyz1' },
     })
