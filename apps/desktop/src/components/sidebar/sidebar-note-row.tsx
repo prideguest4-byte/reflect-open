@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { formatDayLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
+import { useSettings } from '@/providers/settings-provider'
 import { routeForPath, routesEqual } from '@/routing/route'
 import { useRouter } from '@/routing/router'
 
@@ -13,12 +14,12 @@ interface SidebarNoteRowProps {
 }
 
 /**
- * One note row in a sidebar list (Pinned, Recents), in the original app's
+ * One note row in a sidebar list (the Pinned shelf), in the original app's
  * idiom: a plain truncated title — no icon — with an active-route highlight.
- * Shared so the sidebar's note lists can't drift apart visually.
  */
 export function SidebarNoteRow({ path, title, date }: SidebarNoteRowProps): ReactElement {
   const { route, navigate } = useRouter()
+  const { settings } = useSettings()
   const target = routeForPath(path)
   const active = routesEqual(route, target)
   return (
@@ -36,7 +37,7 @@ export function SidebarNoteRow({ path, title, date }: SidebarNoteRowProps): Reac
         )}
       >
         <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
-          {date !== null ? formatDayLabel(date) : title}
+          {date !== null ? formatDayLabel(date, settings.dateFormat) : title}
         </span>
       </button>
     </li>

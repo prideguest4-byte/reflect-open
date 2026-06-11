@@ -13,7 +13,6 @@ import { GraphFooter } from './graph-footer'
 import { NavigateArrows } from './navigate-arrows'
 import { SidebarItem } from './sidebar-item'
 import { SidebarPinned } from './sidebar-pinned'
-import { SidebarRecents } from './sidebar-recents'
 import { SidebarSearch } from './sidebar-search'
 
 interface SidebarProps {
@@ -25,9 +24,9 @@ interface SidebarProps {
 /**
  * The workspace sidebar, in the original app's shape: history arrows top
  * right, search, primary navigation with hover-revealed shortcut keycaps, the
- * Pinned shelf, the Recents feed, and the graph switcher footer. Nav rows run
- * registered commands so a binding and its behavior stay one definition.
- * (Sidebar collapse stays on `Mod-\` via the command registry.)
+ * Pinned shelf, and the graph switcher footer. Nav rows run registered
+ * commands so a binding and its behavior stay one definition. (Sidebar
+ * collapse stays on `Mod-\` via the command registry.)
  */
 export function Sidebar({ graph, context }: SidebarProps): ReactElement {
   const { route } = useRouter()
@@ -95,7 +94,6 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
 
       <div className="mt-1 min-h-0 flex-1 overflow-y-auto pb-2">
         <SidebarPinned />
-        <SidebarRecents />
       </div>
 
       <GraphFooter graph={graph} />

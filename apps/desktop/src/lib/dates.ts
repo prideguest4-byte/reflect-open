@@ -1,4 +1,5 @@
 import { addDays, format, isSameDay, isSameWeek, isValid, parse } from 'date-fns'
+import type { DateFormat, TimeFormat } from '@reflect/core'
 
 /**
  * The one date module (Plan 06). Daily notes are keyed by **local** calendar
@@ -33,25 +34,61 @@ export function addDaysIso(date: string, days: number): string {
 }
 
 /**
- * Human label for an ISO date, e.g. `Tue, June 9th, 2026` — the original
- * app's default daily-note subject format (`weekMonthDayYear`).
+ * Human label for an ISO date per the user's date-format setting, in the
+ * original app's daily-subject form: `Tue, June 9th, 2026` for `mdy`
+ * (V1's `weekMonthDayYear`), `Tue, 9th June, 2026` for `dmy`
+ * (V1's `weekDayMonthYear`).
  */
-export function formatDayLabel(date: string): string {
-  return format(parseIsoDate(date), 'EEE, MMMM do, yyyy')
+export function formatDayLabel(date: string, dateFormat: DateFormat): string {
+  return format(
+    parseIsoDate(date),
+    dateFormat === 'dmy' ? 'EEE, do MMMM, yyyy' : 'EEE, MMMM do, yyyy',
+  )
+}
+
+/**
+ * A date spelled out in full per the date-format setting: `June 10th, 2026`
+ * for `mdy`, `10th June 2026` for `dmy` (the forms the settings screen shows
+ * as the options themselves).
+ */
+export function formatFullDate(date: Date, dateFormat: DateFormat): string {
+  return format(date, dateFormat === 'dmy' ? 'do MMMM yyyy' : 'MMMM do, yyyy')
+}
+
+/**
+ * A time of day per the user's time-format setting: `8:22pm` for `12h`,
+ * `20:22` for `24h`. Every time the app displays goes through this.
+ */
+export function formatTimeOfDay(date: Date, timeFormat: TimeFormat): string {
+  return format(date, timeFormat === '24h' ? 'HH:mm' : 'h:mmaaa')
+}
+
+/**
+ * The display-format preferences the date/time formatters need — a structural
+ * subset of the settings document, so call sites can pass `settings` whole.
+ */
+export interface DateTimePrefs {
+  timeFormat: TimeFormat
+  dateFormat: DateFormat
 }
 
 /**
  * Compact recency label for list rows (the original app's Updated column):
- * the time for today (`8:22pm`), the weekday within the current week (`Mon`),
- * the short date otherwise (`6/3/2026`). `now` is injectable for tests.
+ * the time for today (per `timeFormat`), the weekday within the current week
+ * (`Mon`), the short date otherwise (`6/3/2026`, or `3/6/2026` for `dmy`).
+ * `now` is injectable for tests.
  */
-export function formatRecencyLabel(epochMs: number, now: Date = new Date()): string {
+export function formatRecencyLabel(
+  epochMs: number,
+  prefs: DateTimePrefs,
+  now: Date = new Date(),
+): string {
   const date = new Date(epochMs)
   if (isSameDay(date, now)) {
-    return format(date, 'h:mmaaa')
+    return formatTimeOfDay(date, prefs.timeFormat)
   }
   if (isSameWeek(date, now)) {
     return format(date, 'EEE')
   }
-  return format(date, 'M/d/yyyy')
+  return format(date, prefs.dateFormat === 'dmy' ? 'd/M/yyyy' : 'M/d/yyyy')
 }

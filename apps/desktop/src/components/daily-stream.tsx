@@ -4,6 +4,7 @@ import { dailyPath } from '@reflect/core'
 import { NotePane } from '@/components/note-pane'
 import { formatDayLabel, todayIso } from '@/lib/dates'
 import { cn } from '@/lib/utils'
+import { useSettings } from '@/providers/settings-provider'
 import { useToday } from '@/lib/use-today'
 import { createDayWindow, dateAtIndex, indexOfDate } from '@/lib/day-window'
 import { useRouter } from '@/routing/router'
@@ -29,6 +30,7 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
   // (`dayWindow`, not `window` — shadowing the DOM global here was a footgun.)
   const [dayWindow] = useState(() => createDayWindow(todayIso()))
   const today = useToday()
+  const { settings } = useSettings()
 
   const virtualizer = useVirtualizer({
     count: dayWindow.count,
@@ -114,14 +116,14 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
                 {/* V1 renders the date as the note's H1-sized subject, with
                     today's tinted brand (its `highlightSubject`). */}
                 <h2 className={cn('reflect-daily-subject mb-3', isToday && 'text-accent')}>
-                  {formatDayLabel(date)}
+                  {formatDayLabel(date, settings.dateFormat)}
                 </h2>
                 <NotePane
                   path={dailyPath(date)}
                   lazy
                   autoFocus={autoFocus}
                   onAutoFocused={consumeFocus}
-                  editorClassName={isPast ? 'min-h-[200px]' : 'min-h-[60vh]'}
+                  editorClassName={isPast ? 'min-h-[100px]' : 'min-h-[60vh]'}
                 />
               </section>
             </div>

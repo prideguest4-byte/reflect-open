@@ -2,8 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setBridge, type EmbedStatus } from '@reflect/core'
+import { formatFullDate } from '@/lib/dates'
 import { SettingsProvider } from '@/providers/settings-provider'
 import { SettingsScreen } from './settings-screen'
+
+// jsdom doesn't implement this; Radix Select scrolls the selected option into
+// view when the listbox opens.
+Element.prototype.scrollIntoView ??= () => {}
 
 let stored: Record<string, unknown>
 let saved: unknown[]
@@ -86,8 +91,12 @@ describe('SettingsScreen', () => {
       expect(saved).toEqual([
         {
           editorMarkdownSyntax: 'show',
+          editorSpellCheck: true,
           semanticSearchEnabled: false,
           theme: 'system',
+          timeFormat: '12h',
+          dateFormat: 'mdy',
+          weekStartDay: 'monday',
           allNotesFilterTags: ['book', 'link', 'person'],
           aiModels: [],
           defaultAiModelId: null,
@@ -96,6 +105,40 @@ describe('SettingsScreen', () => {
     )
     expect(radio(/^show/i).checked).toBe(true)
     expect(radio(/^focus/i).checked).toBe(false)
+  })
+
+  it('reflects a persisted spell check opt-out', async () => {
+    stored = { editorSpellCheck: false }
+    renderScreen()
+    const toggle = screen.getByRole('switch', { name: /spell check/i })
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'))
+  })
+
+  it('toggling spell check off applies instantly and persists', async () => {
+    renderScreen()
+    const toggle = screen.getByRole('switch', { name: /spell check/i })
+    // On by default.
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+
+    fireEvent.click(toggle)
+
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    await waitFor(() =>
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'focus',
+          editorSpellCheck: false,
+          semanticSearchEnabled: false,
+          theme: 'system',
+          timeFormat: '12h',
+          dateFormat: 'mdy',
+          weekStartDay: 'monday',
+          allNotesFilterTags: ['book', 'link', 'person'],
+          aiModels: [],
+          defaultAiModelId: null,
+        },
+      ]),
+    )
   })
 
   it('reflects the persisted theme and persists a new choice', async () => {
@@ -110,8 +153,86 @@ describe('SettingsScreen', () => {
       expect(saved).toEqual([
         {
           editorMarkdownSyntax: 'focus',
+          editorSpellCheck: true,
           semanticSearchEnabled: false,
           theme: 'light',
+          timeFormat: '12h',
+          dateFormat: 'mdy',
+          weekStartDay: 'monday',
+          allNotesFilterTags: ['book', 'link', 'person'],
+          aiModels: [],
+          defaultAiModelId: null,
+        },
+      ]),
+    )
+  })
+
+  it('reflects the persisted date format', async () => {
+    stored = { dateFormat: 'dmy' }
+    renderScreen()
+    const trigger = screen.getByRole('combobox', { name: 'Date format' })
+    // The options label themselves with today's date in each order.
+    await waitFor(() => expect(trigger.textContent).toContain(formatFullDate(new Date(), 'dmy')))
+  })
+
+  it('selecting day-month-year persists the date format', async () => {
+    renderScreen()
+    const trigger = screen.getByRole('combobox', { name: 'Date format' })
+    await waitFor(() => expect(trigger.textContent).toContain(formatFullDate(new Date(), 'mdy')))
+
+    // Keyboard-driven (the pointer path needs capture APIs jsdom lacks).
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    fireEvent.keyDown(
+      await screen.findByRole('option', { name: formatFullDate(new Date(), 'dmy') }),
+      { key: 'Enter' },
+    )
+
+    expect(trigger.textContent).toContain(formatFullDate(new Date(), 'dmy'))
+    await waitFor(() =>
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'focus',
+          editorSpellCheck: true,
+          semanticSearchEnabled: false,
+          theme: 'system',
+          timeFormat: '12h',
+          dateFormat: 'dmy',
+          weekStartDay: 'monday',
+          allNotesFilterTags: ['book', 'link', 'person'],
+          aiModels: [],
+          defaultAiModelId: null,
+        },
+      ]),
+    )
+  })
+
+  it('reflects the persisted time format', async () => {
+    stored = { timeFormat: '24h' }
+    renderScreen()
+    const trigger = screen.getByRole('combobox', { name: 'Time format' })
+    await waitFor(() => expect(trigger.textContent).toContain('24-hour'))
+  })
+
+  it('selecting 24-hour persists the time format', async () => {
+    renderScreen()
+    const trigger = screen.getByRole('combobox', { name: 'Time format' })
+    await waitFor(() => expect(trigger.textContent).toContain('12-hour'))
+
+    // Keyboard-driven (the pointer path needs capture APIs jsdom lacks).
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: '24-hour' }), { key: 'Enter' })
+
+    expect(trigger.textContent).toContain('24-hour')
+    await waitFor(() =>
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'focus',
+          editorSpellCheck: true,
+          semanticSearchEnabled: false,
+          theme: 'system',
+          timeFormat: '24h',
+          dateFormat: 'mdy',
+          weekStartDay: 'monday',
           allNotesFilterTags: ['book', 'link', 'person'],
           aiModels: [],
           defaultAiModelId: null,
@@ -132,8 +253,12 @@ describe('SettingsScreen', () => {
       expect(saved).toEqual([
         {
           editorMarkdownSyntax: 'focus',
+          editorSpellCheck: true,
           semanticSearchEnabled: false,
           theme: 'system',
+          timeFormat: '12h',
+          dateFormat: 'mdy',
+          weekStartDay: 'monday',
           allNotesFilterTags: ['book', 'link', 'person', 'meeting'],
           aiModels: [],
           defaultAiModelId: null,
@@ -186,8 +311,12 @@ describe('SettingsScreen', () => {
       expect(saved).toEqual([
         {
           editorMarkdownSyntax: 'focus',
+          editorSpellCheck: true,
           semanticSearchEnabled: false,
           theme: 'system',
+          timeFormat: '12h',
+          dateFormat: 'mdy',
+          weekStartDay: 'monday',
           allNotesFilterTags: ['person'],
           aiModels: [],
           defaultAiModelId: null,
@@ -204,7 +333,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: true, theme: 'system', allNotesFilterTags: ['book', 'link', 'person'], aiModels: [], defaultAiModelId: null },
+        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, semanticSearchEnabled: true, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], aiModels: [], defaultAiModelId: null },
       ]),
     )
     // The control flips to the loading state (EmbeddingsSync owns the actual
@@ -233,7 +362,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: false, theme: 'system', allNotesFilterTags: ['book', 'link', 'person'], aiModels: [], defaultAiModelId: null },
+        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, semanticSearchEnabled: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], aiModels: [], defaultAiModelId: null },
       ]),
     )
     expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()
@@ -256,7 +385,7 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(invoked).toContain('embed_ensure'))
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: true, theme: 'system', allNotesFilterTags: ['book', 'link', 'person'], aiModels: [], defaultAiModelId: null },
+        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, semanticSearchEnabled: true, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], aiModels: [], defaultAiModelId: null },
       ]),
     )
   })
@@ -275,7 +404,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: false, theme: 'system', allNotesFilterTags: ['book', 'link', 'person'], aiModels: [], defaultAiModelId: null },
+        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, semanticSearchEnabled: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], aiModels: [], defaultAiModelId: null },
       ]),
     )
     expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()

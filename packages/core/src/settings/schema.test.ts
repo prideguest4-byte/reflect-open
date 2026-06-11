@@ -5,15 +5,23 @@ describe('settingsSchema', () => {
   it('defaults every key on an empty document (fresh install)', () => {
     expect(settingsSchema.parse({})).toEqual({
       editorMarkdownSyntax: 'focus',
+      editorSpellCheck: true,
       semanticSearchEnabled: false,
       theme: 'system',
+      timeFormat: '12h',
+      dateFormat: 'mdy',
+      weekStartDay: 'monday',
       allNotesFilterTags: ['book', 'link', 'person'],
       aiModels: [],
       defaultAiModelId: null,
     })
     expect(DEFAULT_SETTINGS.editorMarkdownSyntax).toBe('focus')
+    expect(DEFAULT_SETTINGS.editorSpellCheck).toBe(true)
     expect(DEFAULT_SETTINGS.semanticSearchEnabled).toBe(false)
     expect(DEFAULT_SETTINGS.theme).toBe('system')
+    expect(DEFAULT_SETTINGS.timeFormat).toBe('12h')
+    expect(DEFAULT_SETTINGS.dateFormat).toBe('mdy')
+    expect(DEFAULT_SETTINGS.weekStartDay).toBe('monday')
     expect(DEFAULT_SETTINGS.allNotesFilterTags).toEqual(['book', 'link', 'person'])
     expect(DEFAULT_SETTINGS.aiModels).toEqual([])
     expect(DEFAULT_SETTINGS.defaultAiModelId).toBeNull()
@@ -22,9 +30,17 @@ describe('settingsSchema', () => {
   it('accepts valid values', () => {
     expect(settingsSchema.parse({ editorMarkdownSyntax: 'show' }).editorMarkdownSyntax).toBe('show')
     expect(settingsSchema.parse({ editorMarkdownSyntax: 'focus' }).editorMarkdownSyntax).toBe('focus')
+    expect(settingsSchema.parse({ editorSpellCheck: false }).editorSpellCheck).toBe(false)
+    expect(settingsSchema.parse({ editorSpellCheck: true }).editorSpellCheck).toBe(true)
     expect(settingsSchema.parse({ theme: 'dark' }).theme).toBe('dark')
     expect(settingsSchema.parse({ theme: 'light' }).theme).toBe('light')
     expect(settingsSchema.parse({ theme: 'system' }).theme).toBe('system')
+    expect(settingsSchema.parse({ timeFormat: '24h' }).timeFormat).toBe('24h')
+    expect(settingsSchema.parse({ timeFormat: '12h' }).timeFormat).toBe('12h')
+    expect(settingsSchema.parse({ dateFormat: 'dmy' }).dateFormat).toBe('dmy')
+    expect(settingsSchema.parse({ dateFormat: 'mdy' }).dateFormat).toBe('mdy')
+    expect(settingsSchema.parse({ weekStartDay: 'monday' }).weekStartDay).toBe('monday')
+    expect(settingsSchema.parse({ weekStartDay: 'sunday' }).weekStartDay).toBe('sunday')
     expect(settingsSchema.parse({ semanticSearchEnabled: true }).semanticSearchEnabled).toBe(true)
     expect(settingsSchema.parse({ semanticSearchEnabled: false }).semanticSearchEnabled).toBe(false)
     expect(
@@ -36,8 +52,16 @@ describe('settingsSchema', () => {
   it('degrades an invalid value to its default instead of failing the load', () => {
     expect(settingsSchema.parse({ editorMarkdownSyntax: 'sideways' }).editorMarkdownSyntax).toBe('focus')
     expect(settingsSchema.parse({ editorMarkdownSyntax: 42 }).editorMarkdownSyntax).toBe('focus')
+    expect(settingsSchema.parse({ editorSpellCheck: 'off' }).editorSpellCheck).toBe(true)
+    expect(settingsSchema.parse({ editorSpellCheck: 0 }).editorSpellCheck).toBe(true)
     expect(settingsSchema.parse({ theme: 'sepia' }).theme).toBe('system')
     expect(settingsSchema.parse({ theme: 7 }).theme).toBe('system')
+    expect(settingsSchema.parse({ timeFormat: '36h' }).timeFormat).toBe('12h')
+    expect(settingsSchema.parse({ timeFormat: 24 }).timeFormat).toBe('12h')
+    expect(settingsSchema.parse({ dateFormat: 'ymd' }).dateFormat).toBe('mdy')
+    expect(settingsSchema.parse({ dateFormat: 10 }).dateFormat).toBe('mdy')
+    expect(settingsSchema.parse({ weekStartDay: 'saturday' }).weekStartDay).toBe('monday')
+    expect(settingsSchema.parse({ weekStartDay: 42 }).weekStartDay).toBe('monday')
     expect(settingsSchema.parse({ semanticSearchEnabled: 'yes' }).semanticSearchEnabled).toBe(false)
     expect(settingsSchema.parse({ semanticSearchEnabled: 1 }).semanticSearchEnabled).toBe(false)
     expect(settingsSchema.parse({ allNotesFilterTags: 'book' }).allNotesFilterTags).toEqual([
@@ -56,8 +80,12 @@ describe('settingsSchema', () => {
     const parsed = settingsSchema.parse({ editorMarkdownSyntax: 'show', futureKey: true })
     expect(parsed).toEqual({
       editorMarkdownSyntax: 'show',
+      editorSpellCheck: true,
       semanticSearchEnabled: false,
       theme: 'system',
+      timeFormat: '12h',
+      dateFormat: 'mdy',
+      weekStartDay: 'monday',
       allNotesFilterTags: ['book', 'link', 'person'],
       aiModels: [],
       defaultAiModelId: null,

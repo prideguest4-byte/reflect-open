@@ -21,7 +21,7 @@ vi.mock('@/providers/graph-provider', () => ({
 }))
 vi.mock('@/providers/settings-provider', () => ({
   useSettings: () => ({
-    settings: { semanticSearchEnabled: true },
+    settings: { semanticSearchEnabled: true, dateFormat: 'mdy', weekStartDay: 'monday' },
     updateSettings: () => {},
   }),
 }))
@@ -67,7 +67,7 @@ describe('DailyContextSidebar calendar', () => {
     expect(dailyDatesInRange).toHaveBeenCalledWith('2026-06-01', '2026-07-05')
     expect(view.queryByTestId('note-dot-2026-06-04')).toBeNull()
 
-    await userEvent.click(view.getByRole('button', { name: formatDayLabel('2026-06-18') }))
+    await userEvent.click(view.getByRole('button', { name: formatDayLabel('2026-06-18', 'mdy') }))
     expect(view.getByTestId('route').textContent).toContain('2026-06-18')
     view.unmount()
   })

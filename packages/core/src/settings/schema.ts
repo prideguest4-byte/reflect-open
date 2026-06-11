@@ -24,12 +24,46 @@ export const editorMarkdownSyntaxSchema = z.enum(['focus', 'show']).catch('focus
 export type EditorMarkdownSyntax = z.infer<typeof editorMarkdownSyntaxSchema>
 
 /**
+ * Whether the editor underlines misspelled words (the platform's native
+ * spell check on the contenteditable). On by default — turning it off is the
+ * preference of users who find the underlines noisy in note-taking.
+ */
+export const editorSpellCheckSchema = z.boolean().catch(true)
+
+/**
  * The app color theme. `system` (the default) follows the OS preference;
  * `light`/`dark` pin it. Persisted here so the choice survives relaunch.
  */
 export const themePreferenceSchema = z.enum(['system', 'light', 'dark']).catch('system')
 
 export type ThemePreference = z.infer<typeof themePreferenceSchema>
+
+/**
+ * How times of day are displayed throughout the app. `12h` (the default)
+ * renders `8:22pm`; `24h` renders `20:22`. Display-only — stored timestamps
+ * and daily-note keys are unaffected.
+ */
+export const timeFormatSchema = z.enum(['12h', '24h']).catch('12h')
+
+export type TimeFormat = z.infer<typeof timeFormatSchema>
+
+/**
+ * How calendar dates are ordered when displayed throughout the app:
+ * `mdy` (the default) renders `June 10th, 2026`; `dmy` renders
+ * `10th June 2026`. Display-only — daily-note filenames and stored dates
+ * stay ISO `YYYY-MM-DD` regardless.
+ */
+export const dateFormatSchema = z.enum(['mdy', 'dmy']).catch('mdy')
+
+export type DateFormat = z.infer<typeof dateFormatSchema>
+
+/**
+ * Which day opens the calendar week. `monday` (the default) follows ISO 8601;
+ * `sunday` matches the North-American convention.
+ */
+export const weekStartDaySchema = z.enum(['monday', 'sunday']).catch('monday')
+
+export type WeekStartDay = z.infer<typeof weekStartDaySchema>
 
 /**
  * Tags pinned as one-click filters on the All Notes screen, in display order.
@@ -99,8 +133,12 @@ export const aiModelsSchema = z
 export const settingsSchema = z
   .object({
     editorMarkdownSyntax: editorMarkdownSyntaxSchema,
+    editorSpellCheck: editorSpellCheckSchema,
     semanticSearchEnabled: semanticSearchEnabledSchema,
     theme: themePreferenceSchema,
+    timeFormat: timeFormatSchema,
+    dateFormat: dateFormatSchema,
+    weekStartDay: weekStartDaySchema,
     allNotesFilterTags: allNotesFilterTagsSchema,
     aiModels: aiModelsSchema,
     defaultAiModelId: defaultAiModelIdSchema,
