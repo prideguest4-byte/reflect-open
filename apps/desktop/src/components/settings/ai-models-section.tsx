@@ -16,7 +16,7 @@ export function AiModelsSection(): ReactElement {
   const [adding, setAdding] = useState(false)
 
   return (
-    <SettingsSection title="AI models">
+    <SettingsSection id="ai-models">
       {models.length === 0 ? (
         <p className="px-4 py-3.5 text-xs text-text-muted">
           No AI models configured. Add a provider API key to use AI features — keys are
