@@ -13,6 +13,7 @@ import {
   clearGithubAuth,
   createGithubRepo,
   createSyncEngine,
+  emitFileChanges,
   getGithubRepo,
   getGithubToken,
   githubRemoteUrl,
@@ -117,13 +118,20 @@ export function SyncProvider({ graph, children }: SyncProviderProps): ReactEleme
           startOperation('Backing up').fail(`Too large for GitHub backup (kept local): ${names}`)
         },
         onRemoteChanges: (changes: ChangedFile[]) => {
-          // Reindex pull-applied writes directly: the launch pull can land
-          // before the file watcher is running, and a watcher event for these
-          // paths would only repeat work the hash check makes cheap.
           const indexable = changes.filter((change) => isIndexablePath(change.path))
-          if (indexable.length > 0) {
-            void applyIndexChanges(indexable, generation).then(invalidateIndexQueries)
+          if (indexable.length === 0) {
+            return
           }
+          // Pull-applied writes must not depend on the file watcher being up
+          // (the launch pull can land before watch start), so both consumers
+          // are notified directly:
+          // - open editors, via the local file-changes channel — an
+          //   unnotified open note would overwrite the merged content on its
+          //   next save;
+          // - the index, via a direct apply (a live watcher subscription may
+          //   double-apply the same content, which is idempotent).
+          emitFileChanges(indexable)
+          void applyIndexChanges(indexable, generation).then(invalidateIndexQueries)
         },
       })
       engineRef.current = engine

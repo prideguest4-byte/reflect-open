@@ -215,6 +215,7 @@ export {
   watchStop,
   subscribeIndexChanges,
   subscribeFileChanges,
+  emitFileChanges,
   applyIndexChanges,
   hashContent,
   buildIndexedNote,

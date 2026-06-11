@@ -15,6 +15,7 @@ export {
 export {
   FILE_CHANGES_EVENT,
   subscribeFileChanges,
+  emitFileChanges,
   type FileChange,
 } from './file-changes'
 export {

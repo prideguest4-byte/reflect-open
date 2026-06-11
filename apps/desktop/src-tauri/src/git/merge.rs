@@ -49,6 +49,9 @@ pub struct ChangedFile {
     /// Graph-relative path, forward-slashed.
     pub path: String,
     pub kind: ChangeKind,
+    /// Last-modified time of the written file (epoch ms; upserts only), so
+    /// the reindex stamps the real mtime like the watcher path does.
+    pub modified_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,13 +114,15 @@ pub(super) fn merge_remote(root: &Path) -> AppResult<MergeOutcome> {
         // Capture the outgoing tree before the ref moves (None on unborn).
         let old_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
         let new_tree = repo.find_commit(remote_oid)?.tree()?;
-        let changed_files = changed_between(&repo, old_tree.as_ref(), &new_tree)?;
+        let mut changed_files = changed_between(&repo, old_tree.as_ref(), &new_tree)?;
         let refname = format!("refs/heads/{branch}");
         repo.reference(&refname, remote_oid, true, "reflect sync: fast-forward")?;
         repo.set_head(&refname)?;
         // Force is safe here: the pre-merge invariant is a committed working
         // tree, so there is nothing uncommitted to clobber.
         repo.checkout_head(Some(CheckoutBuilder::new().force()))?;
+        // Stamp mtimes only now — the checkout above is what wrote the files.
+        stamp_modified_times(root, &mut changed_files);
         return Ok(MergeOutcome {
             kind: MergeKind::FastForward,
             conflicted_paths: Vec::new(),
@@ -172,7 +177,10 @@ fn complete_merge(
     let tree = repo.find_tree(index.write_tree()?)?;
     let local_commit = repo.head()?.peel_to_commit()?;
     let remote_commit = repo.find_commit(remote_oid)?;
-    let changed_files = changed_between(repo, Some(&local_commit.tree()?), &tree)?;
+    // The working tree is final here (merge checkout + conflict resolution
+    // wrote everything), so the stamped mtimes are the files' real ones.
+    let mut changed_files = changed_between(repo, Some(&local_commit.tree()?), &tree)?;
+    stamp_modified_times(root, &mut changed_files);
     let sig = signature(repo)?;
     let message = if conflicted_paths.is_empty() {
         "Merge changes from other devices"
@@ -215,10 +223,27 @@ fn changed_between(
                 } else {
                     ChangeKind::Upsert
                 },
+                modified_ms: None, // stamped once the working tree is final
             });
         }
     }
     Ok(out)
+}
+
+/// Fill `modified_ms` for upserts from the (now final) working-tree files.
+fn stamp_modified_times(root: &Path, changes: &mut [ChangedFile]) {
+    for change in changes {
+        if matches!(change.kind, ChangeKind::Remove) {
+            continue;
+        }
+        change.modified_ms = root
+            .join(&change.path)
+            .metadata()
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64);
+    }
 }
 
 /// Turn every index conflict into committed working-tree content:

@@ -25,23 +25,52 @@ const fileChangesSchema = z.array(fileChangeSchema)
 /** A single tracked change reported by the watcher. */
 export type FileChange = z.infer<typeof fileChangeSchema>
 
+/** Subscribers also reachable by {@link emitFileChanges} (sync-applied writes). */
+const localHandlers = new Set<(changes: FileChange[]) => void>()
+
 /**
- * Subscribe to the raw {@link FILE_CHANGES_EVENT} batches (zod-validated).
- * The general notification primitive: the indexing subscription builds on it,
- * and the editor (Plan 05) uses it for external-change reconciliation of the
- * open note.
+ * Subscribe to file-change batches: the watcher's {@link FILE_CHANGES_EVENT}
+ * (zod-validated) plus batches produced in-process via
+ * {@link emitFileChanges}. The general notification primitive: the indexing
+ * subscription builds on it, and the editor (Plan 05) uses it for
+ * external-change reconciliation of the open note.
  */
 export function subscribeFileChanges(
   handler: (changes: FileChange[]) => void,
 ): Promise<Unlisten> {
-  return getBridge().listen(FILE_CHANGES_EVENT, (payload) => {
-    const parsed = fileChangesSchema.safeParse(payload)
-    if (parsed.success) {
-      handler(parsed.data)
-    } else {
-      // A malformed payload means the Rust↔TS event contract drifted — loud
-      // beats silently-stale indexes and editors.
-      console.error('invalid index:changed payload:', parsed.error)
-    }
-  })
+  localHandlers.add(handler)
+  return getBridge()
+    .listen(FILE_CHANGES_EVENT, (payload) => {
+      const parsed = fileChangesSchema.safeParse(payload)
+      if (parsed.success) {
+        handler(parsed.data)
+      } else {
+        // A malformed payload means the Rust↔TS event contract drifted — loud
+        // beats silently-stale indexes and editors.
+        console.error('invalid index:changed payload:', parsed.error)
+      }
+    })
+    .then(
+      (unlisten) => () => {
+        localHandlers.delete(handler)
+        unlisten()
+      },
+      (error: unknown) => {
+        localHandlers.delete(handler)
+        throw error
+      },
+    )
+}
+
+/**
+ * Fan a locally produced batch (files a sync merge just wrote, Plan 12) to
+ * every subscriber, exactly as if the watcher had reported it. Pull-applied
+ * writes must reach open editors and the index even when the Rust watcher
+ * isn't running yet — the launch pull can land before watch start, and an
+ * unnotified open editor would overwrite the merged content on its next save.
+ */
+export function emitFileChanges(changes: FileChange[]): void {
+  for (const handler of [...localHandlers]) {
+    handler(changes)
+  }
 }

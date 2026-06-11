@@ -304,7 +304,7 @@ fn non_fast_forward_push_is_rejected_as_data() {
     let merged = merge_remote(root_a).unwrap();
     assert!(matches!(merged.kind, MergeKind::Merged), "{merged:?}");
     // The merge reports what it wrote (b's note) so the caller can reindex
-    // without depending on the file watcher.
+    // without depending on the file watcher — with the file's real mtime.
     assert_eq!(
         merged
             .changed_files
@@ -312,6 +312,10 @@ fn non_fast_forward_push_is_rejected_as_data() {
             .map(|change| change.path.as_str())
             .collect::<Vec<_>>(),
         vec!["notes/b.md"],
+    );
+    assert!(
+        merged.changed_files[0].modified_ms.is_some(),
+        "upserts carry the written file's mtime: {merged:?}"
     );
     assert!(push(root_a, None).unwrap().pushed);
 }
