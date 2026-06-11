@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { useVirtualizer, type VirtualItem, type Virtualizer } from '@tanstack/react-virtual'
 import { dailyPath } from '@reflect/core'
 import { NotePane } from '@/components/note-pane'
 import { formatDayLabel, todayIso } from '@/lib/dates'
@@ -23,6 +23,23 @@ interface DailyStreamProps {
  * across the row focuses that day's note.
  */
 const STREAM_GUTTER = 'px-[max(1.5rem,calc((100%-42rem)/2))]'
+
+/**
+ * Compensate the scroll position whenever a row **above** the viewport changes
+ * size, unconditionally. Days mount as a short loading placeholder and grow
+ * when their note arrives, so every load above the anchor would otherwise push
+ * the viewport's content down the stream — a fresh "Today" navigation lands
+ * days off target. The library default skips compensation while the last
+ * scroll direction is backward, which is exactly the state the anchor scroll's
+ * own downward adjustments leave us in when those loads complete.
+ */
+function adjustScrollForResizeAboveViewport(
+  item: VirtualItem,
+  _delta: number,
+  instance: Virtualizer<HTMLDivElement, Element>,
+): boolean {
+  return item.start < (instance.scrollOffset ?? 0)
+}
 
 /**
  * The daily stream (Plan 06b): a virtualized chronological run of days — past
@@ -49,6 +66,8 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
     overscan: 2,
     paddingEnd: 240,
   })
+  // An instance field, not an option — reassigning every render is idempotent.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = adjustScrollForResizeAboveViewport
 
   // Only the day navigated to receives focus, once per navigation — a row that
   // scrolls offscreen and back must not steal focus from wherever the user is.
