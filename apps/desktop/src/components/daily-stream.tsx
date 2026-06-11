@@ -15,6 +15,16 @@ interface DailyStreamProps {
 }
 
 /**
+ * The stream's horizontal gutter: the old scroll-container `px-6` and centered
+ * `max-w-2xl` column folded into one `padding-inline`, applied *inside* each
+ * row's elements (day label, editor, pane chrome) instead of around the rows.
+ * Rows and the dividers between them span the pane's full width, and because
+ * the editor's share of the gutter is its own padding, clicking anywhere
+ * across the row focuses that day's note.
+ */
+const STREAM_GUTTER = 'px-[max(1.5rem,calc((100%-42rem)/2))]'
+
+/**
  * The daily stream (Plan 06b): a virtualized chronological run of days — past
  * above, future below — where **every day is a virtual note**. Each visible row
  * mounts the Plan 05 editor lazily (`createIfMissing`), so a day only becomes a
@@ -82,7 +92,7 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
     <div
       ref={scrollRef}
       data-testid="daily-stream"
-      className="h-full overflow-auto px-6"
+      className="h-full overflow-auto"
       onScroll={(event) => saveScrollState(event.currentTarget.scrollTop)}
       // An explicit click/touch picks its own focus target — a focus still
       // pending for a day whose editor hasn't mounted yet must not steal the
@@ -92,10 +102,7 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
         focusPending.current = null
       }}
     >
-      <div
-        className="relative mx-auto w-full max-w-2xl"
-        style={{ height: virtualizer.getTotalSize() }}
-      >
+      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((item) => {
           const date = dateAtIndex(dayWindow, item.index)
           const isToday = date === today
@@ -115,7 +122,13 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
               <section className="border-b border-border py-6">
                 {/* V1 renders the date as the note's H1-sized subject, with
                     today's tinted brand (its `highlightSubject`). */}
-                <h2 className={cn('reflect-daily-subject mb-3', isToday && 'text-accent')}>
+                <h2
+                  className={cn(
+                    'reflect-daily-subject mb-3',
+                    STREAM_GUTTER,
+                    isToday && 'text-accent',
+                  )}
+                >
                   {formatDayLabel(date, settings.dateFormat)}
                 </h2>
                 <NotePane
@@ -123,6 +136,7 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
                   lazy
                   autoFocus={autoFocus}
                   onAutoFocused={consumeFocus}
+                  gutterClassName={STREAM_GUTTER}
                   editorClassName={isPast ? 'min-h-[100px]' : 'min-h-[60vh]'}
                 />
               </section>
