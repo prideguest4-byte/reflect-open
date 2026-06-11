@@ -111,46 +111,46 @@ describe('NoteActionsSection pin toggle', () => {
 })
 
 describe('NoteActionsSection private toggle', () => {
-  it('offers Mark this note as private and toggles on click', async () => {
+  it('offers Mark as private and toggles on click', async () => {
     const view = renderSection('notes/a.md')
-    await userEvent.click(view.getByRole('button', { name: /Mark this note as private/ }))
+    await userEvent.click(view.getByRole('button', { name: /Mark as private/ }))
     expect(toggleNotePrivate).toHaveBeenCalledWith('notes/a.md', 7)
     view.unmount()
   })
 
-  it('offers Un-mark this note as private when the index reports the note private', async () => {
+  it('offers Mark as public when the index reports the note private', async () => {
     getNote.mockResolvedValue(noteRow('daily/2026-06-10.md', true))
     const view = renderSection('daily/2026-06-10.md')
-    await view.findByText('Un-mark this note as private')
-    await userEvent.click(view.getByRole('button', { name: /Un-mark this note as private/ }))
+    await view.findByText('Mark as public')
+    await userEvent.click(view.getByRole('button', { name: /Mark as public/ }))
     expect(toggleNotePrivate).toHaveBeenCalledWith('daily/2026-06-10.md', 7)
     view.unmount()
   })
 
   it('flips the label from the toggle result before the index catches up', async () => {
     const view = renderSection('notes/a.md')
-    await userEvent.click(view.getByRole('button', { name: /Mark this note as private/ }))
-    expect(await view.findByText('Un-mark this note as private')).toBeDefined()
+    await userEvent.click(view.getByRole('button', { name: /Mark as private/ }))
+    expect(await view.findByText('Mark as public')).toBeDefined()
     toggleNotePrivate.mockResolvedValueOnce(false)
-    await userEvent.click(view.getByRole('button', { name: /Un-mark this note as private/ }))
-    expect(await view.findByText('Mark this note as private')).toBeDefined()
+    await userEvent.click(view.getByRole('button', { name: /Mark as public/ }))
+    expect(await view.findByText('Mark as private')).toBeDefined()
     expect(toggleNotePrivate).toHaveBeenCalledTimes(2)
     view.unmount()
   })
 
-  it('stays on Mark this note as private for a note the index reports as not private', async () => {
+  it('stays on Mark as private for a note the index reports as not private', async () => {
     getNote.mockResolvedValue(noteRow('notes/a.md', false))
     const view = renderSection('notes/a.md')
     await waitFor(() => expect(getNote).toHaveBeenCalled())
-    expect(view.getByText('Mark this note as private')).toBeDefined()
-    expect(view.queryByText('Un-mark this note as private')).toBeNull()
+    expect(view.getByText('Mark as private')).toBeDefined()
+    expect(view.queryByText('Mark as public')).toBeNull()
     view.unmount()
   })
 
   it('surfaces a toggle failure through the operations status', async () => {
     toggleNotePrivate.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
     const view = renderSection('notes/a.md')
-    await userEvent.click(view.getByRole('button', { name: /Mark this note as private/ }))
+    await userEvent.click(view.getByRole('button', { name: /Mark as private/ }))
     expect(startOperation).toHaveBeenCalledWith('Marking note as private')
     expect(operationFail).toHaveBeenCalled()
     view.unmount()
@@ -160,7 +160,7 @@ describe('NoteActionsSection private toggle', () => {
     getNote.mockResolvedValue(noteRow('notes/a.md', true))
     toggleNotePrivate.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
     const view = renderSection('notes/a.md')
-    await userEvent.click(await view.findByRole('button', { name: /Un-mark this note as private/ }))
+    await userEvent.click(await view.findByRole('button', { name: /Mark as public/ }))
     expect(startOperation).toHaveBeenCalledWith('Un-marking note as private')
     expect(operationFail).toHaveBeenCalled()
     view.unmount()
