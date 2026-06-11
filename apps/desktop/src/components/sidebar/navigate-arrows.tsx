@@ -25,7 +25,12 @@ export function NavigateArrows(): ReactElement {
     'disabled:hover:bg-transparent disabled:hover:text-text-muted'
 
   return (
-    <div className="flex items-center">
+    // The arrows sit inside the overlaid macOS title-bar band, where the
+    // WindowDragRegion strip (z-40, mounted before the app) would otherwise
+    // swallow their clicks into a window drag. Matching its z-index puts the
+    // buttons above it by tree order while same-z overlays mounted later
+    // (the command palette) still cover them.
+    <div className="relative z-40 flex items-center">
       <button
         type="button"
         aria-label="Go back"

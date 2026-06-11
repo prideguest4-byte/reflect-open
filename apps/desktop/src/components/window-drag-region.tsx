@@ -8,10 +8,12 @@ import { hasMacosTitleBarOverlay } from '@/lib/window-chrome'
  * double-click toggle zoom, matching native title-bar behavior.
  *
  * Mouse events on the strip never reach content beneath it, so interactive
- * elements must stay below its 28px height (`h-7` here, `pt-7` clearance in
- * the surfaces that need it — see `hasMacosTitleBarOverlay` call sites).
- * Renders nothing outside the macOS desktop webview, where the native title
- * bar still exists.
+ * elements within its 28px height (`h-7`) must raise themselves above it
+ * with `relative z-40`: the strip mounts before the app, so at equal
+ * z-index the app's controls win by tree order, while same-z overlays
+ * mounted later (the command palette) still cover those controls. See
+ * `NavigateArrows` and the `DayCalendar` header. Renders nothing outside
+ * the macOS desktop webview, where the native title bar still exists.
  */
 export function WindowDragRegion(): ReactElement | null {
   if (!hasMacosTitleBarOverlay) {
