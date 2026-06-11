@@ -196,7 +196,9 @@ Every capture lands in two phases so saving never waits on the network or AI:
   (test-asserted).
 - Enrichment failure still saves the raw link; the extension shows honest
   saved/queued/failed status.
-- Re-capturing the same URL updates rather than duplicates.
+- Re-capturing the same URL **on the same day into the same note with the same
+  selection context** updates rather than duplicates; a different day, note, or
+  selection always creates a new entry.
 - `pnpm typecheck` + tests pass.
 
 ## Risks
