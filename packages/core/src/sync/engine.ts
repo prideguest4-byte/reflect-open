@@ -50,7 +50,11 @@ export interface SyncEngine {
   noteChanged(): void
   /** Full cycle now — commit, pull/merge, push. For launch/focus/manual. */
   syncNow(): Promise<void>
-  /** Cancel timers; in-flight work finishes but nothing new schedules. */
+  /**
+   * Cancel timers, suppress further status emissions, and unwind any
+   * in-flight cycle at its next step boundary (the one git command already
+   * in flight completes; nothing further is issued).
+   */
   stop(): void
 }
 
@@ -67,6 +71,9 @@ const MAX_PUSH_ATTEMPTS = 3
 /** A push the remote refused for a non-divergence reason (e.g. push protection). */
 class PushRejectedError extends Error {}
 
+/** Unwinds an in-flight cycle when the engine stops mid-step (silent). */
+class EngineStoppedError extends Error {}
+
 export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   const idleMs = options.idleMs ?? DEFAULT_IDLE_MS
   const maxWaitMs = options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS
@@ -79,7 +86,24 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   let stopped = false
 
   function emit(status: SyncStatus): void {
+    if (stopped) {
+      return // a stopped engine must not resurrect UI state (e.g. post-disconnect)
+    }
     options.onStatus?.(status)
+  }
+
+  /**
+   * Await one cycle step, then bail if the engine stopped meanwhile. An
+   * already-issued git command can't be recalled, but nothing further runs
+   * after `stop()` — disconnect/teardown must not keep committing or pushing
+   * with a token resolved before the stop.
+   */
+  async function step<T>(promise: Promise<T>): Promise<T> {
+    const result = await promise
+    if (stopped) {
+      throw new EngineStoppedError()
+    }
+    return result
   }
 
   function schedule(delayMs: number): void {
@@ -119,7 +143,9 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         await cycle(mode)
         emit({ state: 'idle' })
       } catch (error) {
-        emit(statusForError(error))
+        if (!(error instanceof EngineStoppedError)) {
+          emit(statusForError(error))
+        }
       } finally {
         deadline = null
         running = null
@@ -133,18 +159,18 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   async function cycle(mode: 'push' | 'full'): Promise<void> {
-    const token = await options.getToken()
-    const commit = await gitCommitAll('Update notes', options.generation)
+    const token = await step(options.getToken())
+    const commit = await step(gitCommitAll('Update notes', options.generation))
     if (commit.skippedLargeFiles.length > 0) {
       options.onLargeFilesSkipped?.(commit.skippedLargeFiles)
     }
     if (mode === 'full') {
       // Launch/focus: pick up other devices' changes even with nothing to push.
-      await gitFetch(token, options.generation)
-      await gitMergeRemote(options.generation) // upToDate is a no-op
+      await step(gitFetch(token, options.generation))
+      await step(gitMergeRemote(options.generation)) // upToDate is a no-op
     }
     for (let attempt = 0; attempt < MAX_PUSH_ATTEMPTS; attempt++) {
-      const push = await gitPush(token, options.generation)
+      const push = await step(gitPush(token, options.generation))
       if (push.pushed) {
         return
       }
@@ -153,8 +179,8 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       }
       // The normal two-device race: another device pushed first. Converge and
       // retry — a conflicted merge still commits (markers in the note).
-      await gitFetch(token, options.generation)
-      await gitMergeRemote(options.generation)
+      await step(gitFetch(token, options.generation))
+      await step(gitMergeRemote(options.generation))
     }
     throw new PushRejectedError(
       'the backup repo kept changing while syncing; will retry on the next edit',

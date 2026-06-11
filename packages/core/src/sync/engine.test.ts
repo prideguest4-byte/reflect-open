@@ -322,4 +322,37 @@ describe('createSyncEngine', () => {
 
     expect(calls).toHaveLength(0)
   })
+
+  it('stop() mid-cycle issues no further commands and emits no further status', async () => {
+    const pushGate: { resolve: ((value: unknown) => void) | null } = { resolve: null }
+    const calls = fakeGit((command) => {
+      if (command === 'git_push') {
+        return new Promise((resolve) => {
+          pushGate.resolve = resolve
+        })
+      }
+      return defaultResponses(command)
+    })
+    const statuses: SyncStatus[] = []
+    const engine = createSyncEngine({
+      generation: 1,
+      getToken: async () => 'tok',
+      onStatus: (status) => statuses.push(status),
+      idleMs: 10,
+    })
+
+    engine.noteChanged()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(commandsOf(calls)).toEqual(['git_commit_all', 'git_push'])
+
+    // Disconnect/teardown while the push is in flight: the resolution would
+    // normally trigger fetch+merge+retry (non-fast-forward) and a status
+    // emission — a stopped engine must do neither.
+    engine.stop()
+    pushGate.resolve?.(NON_FAST_FORWARD)
+    await vi.runAllTimersAsync()
+
+    expect(commandsOf(calls)).toEqual(['git_commit_all', 'git_push'])
+    expect(statuses.map((status) => status.state)).toEqual(['syncing'])
+  })
 })
