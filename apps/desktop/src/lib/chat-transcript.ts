@@ -60,20 +60,43 @@ export function appendEvent(parts: AssistantPart[], event: ChatStreamEvent): Ass
       )
     case 'tool-error':
       return [
-        ...parts.map((part): AssistantPart =>
-          part.kind === 'tool' && part.call.toolCallId === event.toolCallId && isToolPending(part)
-            ? { ...part, error: event.message }
-            : part,
-        ),
+        ...settleTools(parts, event.message, event.toolCallId),
         { kind: 'notice', tone: 'error', text: event.message },
       ]
     case 'error':
-      return [...parts, { kind: 'notice', tone: 'error', text: event.message }]
+      // A terminal event settles every still-pending tool call — a chip must
+      // never keep spinning after its turn is over.
+      return [
+        ...settleTools(parts, event.message),
+        { kind: 'notice', tone: 'error', text: event.message },
+      ]
     case 'aborted':
-      return [...parts, { kind: 'notice', tone: 'info', text: 'Stopped.' }]
+      return [
+        ...settleTools(parts, 'Stopped.'),
+        { kind: 'notice', tone: 'info', text: 'Stopped.' },
+      ]
     case 'complete':
       return parts
   }
+}
+
+/**
+ * Mark pending tool parts as failed with `message` — one call when a tool
+ * errors (scoped by `toolCallId`), every still-pending call when the turn
+ * itself ends in abort or error.
+ */
+function settleTools(
+  parts: AssistantPart[],
+  message: string,
+  toolCallId?: string,
+): AssistantPart[] {
+  return parts.map((part): AssistantPart =>
+    part.kind === 'tool' &&
+    isToolPending(part) &&
+    (toolCallId === undefined || part.call.toolCallId === toolCallId)
+      ? { ...part, error: message }
+      : part,
+  )
 }
 
 /**

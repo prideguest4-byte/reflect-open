@@ -99,6 +99,20 @@ describe('appendEvent', () => {
 
     expect(appendEvent(errored, { type: 'complete', messages: [] })).toEqual(errored)
   })
+
+  it('a terminal event settles tool calls still in flight — no eternal spinners', () => {
+    const aborted = fold([
+      { type: 'tool-call', call: { tool: 'read', toolCallId: 'tool-5', path: 'notes/a.md' } },
+      { type: 'aborted', messages: [] },
+    ])
+    expect(aborted[0]).toMatchObject({ kind: 'tool', result: null, error: 'Stopped.' })
+
+    const errored = fold([
+      { type: 'tool-call', call: { tool: 'search', toolCallId: 'tool-6', query: 'atlas' } },
+      { type: 'error', message: 'connection lost', messages: [] },
+    ])
+    expect(errored[0]).toMatchObject({ kind: 'tool', result: null, error: 'connection lost' })
+  })
 })
 
 describe('buildHistory', () => {
