@@ -35,6 +35,13 @@ export const flushResultSchema = z.object({
   sent: z.number(),
   /** Captures dropped as permanently unsendable (host said invalid-payload). */
   failed: z.number(),
+  /**
+   * Envelope ids of the dropped captures — the popup matches its own id here
+   * to tell *its* capture's fate apart from an older queued one's (aggregate
+   * counts alone would let a stale entry's rejection masquerade as the
+   * current save failing).
+   */
+  rejectedIds: z.array(z.string()),
   /** Captures still held, with why. */
   held: z.number(),
   holdReason: holdReasonSchema.nullable(),

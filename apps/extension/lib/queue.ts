@@ -1,13 +1,14 @@
 import { z } from 'zod'
-import { captureWireMessageSchema, type CaptureWireMessage } from '@reflect/core/capture-envelope'
+import { captureWireMessageSchema } from '@reflect/core/capture-envelope'
 
 /**
- * The pending-capture queue, persisted in `chrome.storage.local`: the single
- * source of truth for every capture the host hasn't acked yet. The popup
- * enqueues **before** asking the background to flush, so its window closing
- * mid-send can never drop a capture; the background removes entries only on
- * a `queued` ack from the native host. Pure operations live here (tested
- * directly); the storage IO wraps them in `entrypoints/background.ts`.
+ * The pending-capture queue, persisted in `chrome.storage.local` under **one
+ * key per capture** (`capture:<id>`). Two contexts write the store — the
+ * popup enqueues, the background flushes — and per-entry keys make every
+ * mutation a single atomic `set`/`remove` on its own key: there is no shared
+ * array to read-modify-write, so a save landing mid-flush can never be
+ * clobbered by the flush writing back a stale snapshot. Pure helpers live
+ * here (tested directly); the storage IO wraps them in `lib/flush.ts`.
  */
 
 export const queuedCaptureSchema = z.object({
@@ -20,8 +21,13 @@ export const queuedCaptureSchema = z.object({
 
 export type QueuedCapture = z.infer<typeof queuedCaptureSchema>
 
-/** Tolerant read of a stored queue: anything unreadable drops to empty. */
-export const storedQueueSchema = z.array(queuedCaptureSchema).catch([])
+/** Storage-key prefix for queued captures. */
+export const QUEUE_KEY_PREFIX = 'capture:'
+
+/** The storage key holding one capture. */
+export function queueKey(id: string): string {
+  return `${QUEUE_KEY_PREFIX}${id}`
+}
 
 /**
  * Hard cap on held captures. Screenshots make entries multi-MB; past this
@@ -30,31 +36,16 @@ export const storedQueueSchema = z.array(queuedCaptureSchema).catch([])
  */
 export const QUEUE_CAP = 50
 
-export interface PushOutcome {
-  queue: QueuedCapture[]
-  /** Entries dropped to enforce {@link QUEUE_CAP}, oldest first. */
-  dropped: QueuedCapture[]
-}
-
-/** Append a capture, enforcing the cap (drop-oldest, reported not silent). */
-export function pushCapture(
-  queue: QueuedCapture[],
-  wire: CaptureWireMessage,
-  queuedAt: number,
-): PushOutcome {
-  const next = [...queue, { wire, queuedAt, attempts: 0 }]
-  const overflow = Math.max(0, next.length - QUEUE_CAP)
-  return { queue: next.slice(overflow), dropped: next.slice(0, overflow) }
-}
-
-/** Remove the entry for `id` (after a `queued` ack, or as a poison drop). */
-export function removeCapture(queue: QueuedCapture[], id: string): QueuedCapture[] {
-  return queue.filter((entry) => entry.wire.envelope.id !== id)
-}
-
-/** Stamp one more attempt on the entry for `id`. */
-export function markAttempt(queue: QueuedCapture[], id: string): QueuedCapture[] {
-  return queue.map((entry) =>
-    entry.wire.envelope.id === id ? { ...entry, attempts: entry.attempts + 1 } : entry,
+/** Oldest first — the flush order, and the drop order at the cap. */
+export function sortQueue(entries: QueuedCapture[]): QueuedCapture[] {
+  return [...entries].sort(
+    (first, second) =>
+      first.queuedAt - second.queuedAt ||
+      first.wire.envelope.id.localeCompare(second.wire.envelope.id),
   )
+}
+
+/** The oldest entries past {@link QUEUE_CAP} — what an enqueue must drop. */
+export function overCap(entries: QueuedCapture[]): QueuedCapture[] {
+  return sortQueue(entries).slice(0, Math.max(0, entries.length - QUEUE_CAP))
 }

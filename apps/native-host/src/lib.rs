@@ -149,7 +149,10 @@ mod tests {
         );
         let inbox = graph.join(".reflect/inbox");
         let id = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
-        assert_eq!(std::fs::read(inbox.join(format!("{id}.jpg"))).unwrap(), b"hello");
+        assert_eq!(
+            std::fs::read(inbox.join(format!("{id}.jpg"))).unwrap(),
+            b"hello"
+        );
         let spooled: serde_json::Value =
             serde_json::from_slice(&std::fs::read(inbox.join(format!("{id}.json"))).unwrap())
                 .unwrap();

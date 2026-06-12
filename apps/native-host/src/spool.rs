@@ -80,15 +80,15 @@ fn atomic_write(directory: &Path, filename: &str, bytes: &[u8]) -> Result<(), Ho
 /// `<id>.json` envelope as the commit point.
 pub fn spool_capture(inbox: &Path, capture: &ValidatedCapture) -> Result<(), HostError> {
     if let Some(screenshot) = &capture.screenshot {
-        atomic_write(
-            inbox,
-            &format!("{}.jpg", capture.envelope.id),
-            screenshot,
-        )?;
+        atomic_write(inbox, &format!("{}.jpg", capture.envelope.id), screenshot)?;
     }
     let envelope_json = serde_json::to_vec(&capture.envelope)
         .map_err(|error| HostError::Io(format!("envelope serialization failed: {error}")))?;
-    atomic_write(inbox, &format!("{}.json", capture.envelope.id), &envelope_json)
+    atomic_write(
+        inbox,
+        &format!("{}.json", capture.envelope.id),
+        &envelope_json,
+    )
 }
 
 #[cfg(test)]

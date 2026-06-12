@@ -48,10 +48,9 @@ fn is_uuid(candidate: &str) -> bool {
     let groups: Vec<&str> = candidate.split('-').collect();
     let lengths = [8, 4, 4, 4, 12];
     groups.len() == lengths.len()
-        && groups
-            .iter()
-            .zip(lengths)
-            .all(|(group, length)| group.len() == length && group.chars().all(|c| c.is_ascii_hexdigit()))
+        && groups.iter().zip(lengths).all(|(group, length)| {
+            group.len() == length && group.chars().all(|c| c.is_ascii_hexdigit())
+        })
 }
 
 impl ValidatedCapture {
@@ -72,9 +71,7 @@ impl ValidatedCapture {
             return Err(HostError::InvalidPayload("id is not a UUID".to_string()));
         }
         if !envelope.url.starts_with("https://") && !envelope.url.starts_with("http://") {
-            return Err(HostError::InvalidPayload(
-                "url must be http(s)".to_string(),
-            ));
+            return Err(HostError::InvalidPayload("url must be http(s)".to_string()));
         }
         if envelope.captured_at.is_empty() {
             return Err(HostError::InvalidPayload("capturedAt is empty".to_string()));
@@ -96,11 +93,12 @@ impl ValidatedCapture {
                     })?,
             ),
         };
-        envelope.screenshot_ref = screenshot
-            .is_some()
-            .then(|| format!("{}.jpg", envelope.id));
+        envelope.screenshot_ref = screenshot.is_some().then(|| format!("{}.jpg", envelope.id));
 
-        Ok(ValidatedCapture { envelope, screenshot })
+        Ok(ValidatedCapture {
+            envelope,
+            screenshot,
+        })
     }
 }
 
@@ -154,7 +152,11 @@ mod tests {
 
     #[test]
     fn rejects_traversal_shaped_ids() {
-        for id in ["../../../etc/passwd", "x".repeat(36).as_str(), "7C9E6679-7425-40DE-944B-../7fc1f9"] {
+        for id in [
+            "../../../etc/passwd",
+            "x".repeat(36).as_str(),
+            "7C9E6679-7425-40DE-944B-../7fc1f9",
+        ] {
             let result = ValidatedCapture::parse(&payload(|message| {
                 message["envelope"]["id"] = id.into();
             }));
@@ -164,18 +166,26 @@ mod tests {
 
     #[test]
     fn rejects_bad_fields() {
-        let cases: Vec<Box<dyn FnOnce(&mut serde_json::Value)>> = vec![
-            Box::new(|m| m["envelope"]["version"] = 2.into()),
-            Box::new(|m| m["envelope"]["url"] = "file:///etc/passwd".into()),
-            Box::new(|m| m["envelope"]["capturedAt"] = "".into()),
-            Box::new(|m| m["envelope"]["source"] = "ios".into()),
-            Box::new(|m| m["screenshotBase64"] = "not base64!!!".into()),
+        let cases = [
+            (Some("envelope"), "version", serde_json::json!(2)),
+            (
+                Some("envelope"),
+                "url",
+                serde_json::json!("file:///etc/passwd"),
+            ),
+            (Some("envelope"), "capturedAt", serde_json::json!("")),
+            (Some("envelope"), "source", serde_json::json!("ios")),
+            (None, "screenshotBase64", serde_json::json!("not base64!!!")),
         ];
-        for mutate in cases {
-            assert!(matches!(
-                ValidatedCapture::parse(&payload(mutate)),
-                Err(HostError::InvalidPayload(_))
-            ));
+        for (parent, key, value) in cases {
+            let result = ValidatedCapture::parse(&payload(|message| {
+                let target = match parent {
+                    Some(field) => &mut message[field],
+                    None => message,
+                };
+                target[key] = value;
+            }));
+            assert!(matches!(result, Err(HostError::InvalidPayload(_))), "{key}");
         }
     }
 

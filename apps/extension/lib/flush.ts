@@ -3,82 +3,106 @@ import type { CaptureWireMessage } from '@reflect/core/capture-envelope'
 import type { FlushResult } from './messages'
 import { sendToHost } from './native'
 import {
-  markAttempt,
-  pushCapture,
-  removeCapture,
-  storedQueueSchema,
+  overCap,
+  queueKey,
+  QUEUE_KEY_PREFIX,
+  queuedCaptureSchema,
+  sortQueue,
   type QueuedCapture,
 } from './queue'
 
 /**
  * Queue persistence + the flush driver, shared by the background (which owns
- * retries) and the popup (which enqueues before asking for a flush). The
- * queue is written back after **every** entry-level change, so a service
- * worker dying mid-flush loses at most one in-flight send — never an acked
- * removal or a captured page.
+ * retries) and the popup (which enqueues before asking for a flush). Every
+ * capture lives under its own storage key, so the popup's enqueue and the
+ * background's per-entry removals are independent atomic writes — no shared
+ * snapshot is ever written back (see `lib/queue.ts`).
  */
 
-const QUEUE_KEY = 'captureQueue'
-
+/** Every queued capture, oldest first. Unreadable entries are skipped. */
 export async function readQueue(): Promise<QueuedCapture[]> {
-  const stored = await browser.storage.local.get(QUEUE_KEY)
-  return storedQueueSchema.parse(stored[QUEUE_KEY])
-}
-
-async function writeQueue(queue: QueuedCapture[]): Promise<void> {
-  await browser.storage.local.set({ [QUEUE_KEY]: queue })
-}
-
-/** Persist a capture (cap-enforced) — the durable step before any flush. */
-export async function enqueueCapture(wire: CaptureWireMessage): Promise<void> {
-  const { queue, dropped } = pushCapture(await readQueue(), wire, Date.now())
-  if (dropped.length > 0) {
-    console.warn(`capture queue at cap: dropped ${dropped.length} oldest capture(s)`)
+  const stored = await browser.storage.local.get(null)
+  const entries: QueuedCapture[] = []
+  for (const [key, value] of Object.entries(stored)) {
+    if (!key.startsWith(QUEUE_KEY_PREFIX)) {
+      continue
+    }
+    const parsed = queuedCaptureSchema.safeParse(value)
+    if (parsed.success) {
+      entries.push(parsed.data)
+    }
   }
-  await writeQueue(queue)
+  return sortQueue(entries)
 }
 
-let inFlight: Promise<FlushResult> | null = null
+/** Persist a capture — the durable step before any flush. Cap-enforced. */
+export async function enqueueCapture(wire: CaptureWireMessage): Promise<void> {
+  const entry: QueuedCapture = { wire, queuedAt: Date.now(), attempts: 0 }
+  await browser.storage.local.set({ [queueKey(wire.envelope.id)]: entry })
+  const dropped = overCap(await readQueue())
+  if (dropped.length > 0) {
+    console.warn(`capture queue at cap: dropping ${dropped.length} oldest capture(s)`)
+    await browser.storage.local.remove(dropped.map((old) => queueKey(old.wire.envelope.id)))
+  }
+}
+
+let tail: Promise<FlushResult> | null = null
 
 /**
  * Send every queued capture to the host, oldest first. A `queued` ack
  * removes the entry; `invalid-payload` drops it (it can never succeed); any
  * hold (host missing, no graph, IO) stops the pass — the condition affects
- * every later entry too — and the next trigger retries. Single-flight.
+ * every later entry too — and the next trigger retries.
+ *
+ * Passes never overlap, but a caller is never handed an already-running
+ * pass either: its pass **starts after** every earlier request, so a save
+ * that enqueued just before calling this is guaranteed a pass whose
+ * snapshot includes it (an in-flight pass started earlier would miss it
+ * and falsely report it queued). A pass over an already-empty queue is one
+ * storage read, so the occasional chained extra pass costs nothing.
  */
 export function flushQueue(): Promise<FlushResult> {
-  inFlight ??= runFlush().finally(() => {
-    inFlight = null
+  const next = tail === null ? runFlush() : tail.then(runFlush, runFlush)
+  tail = next
+  void next.finally(() => {
+    if (tail === next) {
+      tail = null
+    }
   })
-  return inFlight
+  return next
 }
 
 async function runFlush(): Promise<FlushResult> {
   const snapshot = await readQueue()
-  let queue = snapshot
   let sent = 0
-  let failed = 0
+  const rejectedIds: string[] = []
   let holdReason: FlushResult['holdReason'] = null
 
   for (const entry of snapshot) {
     const id = entry.wire.envelope.id
     const outcome = await sendToHost(entry.wire)
     if (outcome.kind === 'queued') {
-      queue = removeCapture(queue, id)
+      await browser.storage.local.remove(queueKey(id))
       sent += 1
     } else if (outcome.kind === 'rejected') {
       console.error(`capture ${id} dropped — the host rejected it: ${outcome.message}`)
-      queue = removeCapture(queue, id)
-      failed += 1
+      await browser.storage.local.remove(queueKey(id))
+      rejectedIds.push(id)
     } else {
       console.warn(`captures held (${outcome.reason}): ${outcome.message}`)
-      queue = markAttempt(queue, id)
+      await browser.storage.local.set({
+        [queueKey(id)]: { ...entry, attempts: entry.attempts + 1 },
+      })
       holdReason = outcome.reason
-      await writeQueue(queue)
       break
     }
-    await writeQueue(queue)
   }
 
-  return { sent, failed, held: queue.length, holdReason }
+  return {
+    sent,
+    failed: rejectedIds.length,
+    rejectedIds,
+    held: (await readQueue()).length,
+    holdReason,
+  }
 }

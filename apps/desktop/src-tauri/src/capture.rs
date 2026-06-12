@@ -174,10 +174,7 @@ fn inbox_file(root: &Path, name: &str) -> AppResult<PathBuf> {
 /// List the capture inbox (flat; `.json` envelopes and their screenshot
 /// siblings). A missing inbox lists as empty — the host creates it lazily.
 #[tauri::command]
-pub fn capture_inbox_list(
-    generation: u64,
-    state: State<GraphState>,
-) -> AppResult<Vec<FileMeta>> {
+pub fn capture_inbox_list(generation: u64, state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
     let root = root_for_generation(&state, generation)?;
     let inbox = root.join(INBOX_DIR);
     let mut out = Vec::new();
@@ -359,7 +356,9 @@ mod tests {
 
     #[test]
     fn manifest_pins_name_path_and_origins() {
-        let manifest = host_manifest_json(Path::new("/Applications/Reflect.app/Contents/MacOS/reflect-capture-host"));
+        let manifest = host_manifest_json(Path::new(
+            "/Applications/Reflect.app/Contents/MacOS/reflect-capture-host",
+        ));
         let parsed: serde_json::Value = serde_json::from_str(&manifest).unwrap();
         assert_eq!(parsed["name"], "app.reflect.capture");
         assert_eq!(parsed["type"], "stdio");

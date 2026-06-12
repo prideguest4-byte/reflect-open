@@ -19,7 +19,7 @@ export default defineBackground(() => {
     if (isFlushRequest(message)) {
       flushQueue().then(sendResponse, (cause: unknown) => {
         console.error('capture flush failed:', cause)
-        sendResponse({ sent: 0, failed: 0, held: -1, holdReason: 'io' })
+        sendResponse({ sent: 0, failed: 0, rejectedIds: [], held: -1, holdReason: 'io' })
       })
       return true // responding asynchronously
     }

@@ -22,10 +22,28 @@ type SaveState =
 const RELEASES_URL = 'https://github.com/team-reflect/reflect-open/releases/latest'
 const CLOSE_DELAY_MS = 900
 
-async function saveCapture(page: Parameters<typeof buildWireMessage>[0]): Promise<FlushResult> {
-  await enqueueCapture(buildWireMessage(page))
+type SaveOutcome =
+  | { fate: 'queued' }
+  | { fate: 'held'; result: FlushResult }
+  | { fate: 'rejected' }
+
+/**
+ * Persist the capture, flush, and report **this capture's** fate — aggregate
+ * flush counts can't distinguish an older queued entry's failure from the
+ * current save's, so the verdict comes from this id's rejection or its
+ * continued presence in the queue.
+ */
+async function saveCapture(page: Parameters<typeof buildWireMessage>[0]): Promise<SaveOutcome> {
+  const wire = buildWireMessage(page)
+  await enqueueCapture(wire)
   const response: unknown = await browser.runtime.sendMessage({ type: 'flush' })
-  return flushResultSchema.parse(response)
+  const result = flushResultSchema.parse(response)
+  if (result.rejectedIds.includes(wire.envelope.id)) {
+    return { fate: 'rejected' }
+  }
+  const queue = await readQueue()
+  const stillHeld = queue.some((entry) => entry.wire.envelope.id === wire.envelope.id)
+  return stillHeld ? { fate: 'held', result } : { fate: 'queued' }
 }
 
 function holdMessage(result: FlushResult): string {
@@ -64,17 +82,17 @@ export function CapturePopup(): ReactElement {
     }
     setSave({ phase: 'saving' })
     try {
-      const result = await saveCapture({
+      const outcome = await saveCapture({
         ...captured.page,
         note,
         id: crypto.randomUUID(),
         capturedAt: new Date(),
       })
-      if (result.holdReason === null && result.failed === 0) {
+      if (outcome.fate === 'queued') {
         setSave({ phase: 'queued' })
-      } else if (result.holdReason !== null) {
-        setSave({ phase: 'held', result })
-        setHeldCount(result.held)
+      } else if (outcome.fate === 'held') {
+        setSave({ phase: 'held', result: outcome.result })
+        setHeldCount(outcome.result.held)
       } else {
         setSave({ phase: 'failed', message: 'The capture was rejected — please report this.' })
       }
