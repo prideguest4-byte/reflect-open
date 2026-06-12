@@ -131,6 +131,29 @@ export {
   type AiModelsState,
 } from './ai/models'
 export { validateApiKey, type ApiKeyValidation } from './ai/validate-key'
+export {
+  assertCloudAllowed,
+  isPrivateNoteError,
+  PrivateNoteError,
+  type CloudSendable,
+} from './ai/checkers'
+export {
+  buildNoteTools,
+  MAX_NOTE_CONTENT_CHARS,
+  type NoteToolDeps,
+  type NoteTools,
+  type ReadNoteOutput,
+  type SearchNotesHit,
+  type SearchNotesOutput,
+} from './ai/chat/tools'
+export { chatSystemPrompt, type SystemPromptInput } from './ai/chat/system-prompt'
+export {
+  streamChat,
+  type ChatStreamEvent,
+  type SearchEventHit,
+  type StreamChatOptions,
+} from './ai/chat/stream-chat'
+export type { ModelMessage as ChatModelMessage } from 'ai'
 
 // Backup & sync (Plan 12)
 export {

@@ -1,0 +1,171 @@
+import { describe, expect, it } from 'vitest'
+import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
+import type {
+  LanguageModelV3StreamPart,
+  LanguageModelV3StreamResult,
+  LanguageModelV3Usage,
+} from '@ai-sdk/provider'
+import type { RetrievalHit } from '../../embeddings/retrieve'
+import { streamChat, type ChatStreamEvent } from './stream-chat'
+
+const USAGE: LanguageModelV3Usage = {
+  inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+  outputTokens: { total: 1, text: 1, reasoning: undefined },
+}
+
+const MODEL_CONFIG = { id: 'cfg-1', provider: 'openai' as const, model: 'gpt-test', keyHint: '' }
+
+function stream(parts: LanguageModelV3StreamPart[]): LanguageModelV3StreamResult {
+  return {
+    stream: convertArrayToReadableStream<LanguageModelV3StreamPart>([
+      { type: 'stream-start', warnings: [] },
+      { type: 'response-metadata', id: 'res', modelId: 'mock', timestamp: new Date(0) },
+      ...parts,
+    ]),
+  }
+}
+
+/**
+ * One stream result per doStream call, in order. (The mock's own array form
+ * indexes by the post-push call count, skipping element 0 — a function keeps
+ * the sequencing explicit instead.)
+ */
+function sequence(results: LanguageModelV3StreamResult[]): () => Promise<LanguageModelV3StreamResult> {
+  let index = 0
+  return async () => {
+    const next = results[index]
+    index += 1
+    if (next === undefined) {
+      throw new Error(`mock model called ${index} times but only ${results.length} turns staged`)
+    }
+    return next
+  }
+}
+
+function toolCallTurn(query: string) {
+  return stream([
+    {
+      type: 'tool-call',
+      toolCallId: 'call-1',
+      toolName: 'search_notes',
+      input: JSON.stringify({ query }),
+    },
+    { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage: USAGE },
+  ])
+}
+
+function textTurn(text: string) {
+  return stream([
+    { type: 'text-start', id: 'text-1' },
+    { type: 'text-delta', id: 'text-1', delta: text },
+    { type: 'text-end', id: 'text-1' },
+    { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage: USAGE },
+  ])
+}
+
+async function collect(events: AsyncGenerator<ChatStreamEvent>): Promise<ChatStreamEvent[]> {
+  const all: ChatStreamEvent[] = []
+  for await (const event of events) {
+    all.push(event)
+  }
+  return all
+}
+
+const PUBLIC_HIT: RetrievalHit = {
+  path: 'notes/atlas.md',
+  title: 'Atlas Launch Plan',
+  score: 1,
+  snippet: 'launch plan',
+  heading: null,
+  isPrivate: false,
+}
+
+const PRIVATE_HIT: RetrievalHit = {
+  path: 'notes/diary.md',
+  title: 'Secret Diary',
+  score: 0.9,
+  snippet: '',
+  heading: null,
+  isPrivate: true,
+}
+
+describe('streamChat', () => {
+  it('streams tool activity, text, and a terminal complete event', async () => {
+    const model = new MockLanguageModelV3({
+      doStream: sequence([toolCallTurn('atlas'), textTurn('Found it: [[Atlas Launch Plan]]')]),
+    })
+    const events = await collect(
+      streamChat({
+        model: MODEL_CONFIG,
+        apiKey: 'k',
+        fetchFn: fetch,
+        messages: [{ role: 'user', content: 'where is the launch plan?' }],
+        today: '2026-06-11',
+        modelOverride: model,
+        toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT] },
+      }),
+    )
+
+    const types = events.map((event) => event.type)
+    expect(types).toEqual([
+      'search-call',
+      'search-result',
+      'text-delta',
+      'complete',
+    ])
+    expect(events[0]).toMatchObject({ query: 'atlas' })
+    // The private hit is dropped before it ever reaches an event or payload.
+    expect(events[1]).toMatchObject({
+      hits: [{ path: 'notes/atlas.md', title: 'Atlas Launch Plan' }],
+    })
+    expect(events[2]).toMatchObject({ text: 'Found it: [[Atlas Launch Plan]]' })
+    const complete = events.at(-1)
+    expect(complete?.type === 'complete' && complete.messages.length > 0).toBe(true)
+  })
+
+  it('never sends private content in the outbound prompt (payload assertion)', async () => {
+    const model = new MockLanguageModelV3({
+      doStream: sequence([toolCallTurn('diary'), textTurn('done')]),
+    })
+    await collect(
+      streamChat({
+        model: MODEL_CONFIG,
+        apiKey: 'k',
+        fetchFn: fetch,
+        messages: [{ role: 'user', content: 'what do my notes say?' }],
+        today: '2026-06-11',
+        modelOverride: model,
+        toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT] },
+      }),
+    )
+
+    // Every prompt that left for the "provider", including the second step
+    // carrying the tool result, must be free of the private note.
+    const outbound = JSON.stringify(model.doStreamCalls.map((call) => call.prompt))
+    expect(outbound).not.toContain('Secret Diary')
+    expect(outbound).not.toContain('notes/diary.md')
+    expect(outbound).toContain('notes/atlas.md')
+  })
+
+  it('yields a terminal error event when the stream errors', async () => {
+    const model = new MockLanguageModelV3({
+      doStream: sequence([
+        stream([
+          { type: 'error', error: new Error('rate limited') },
+          { type: 'finish', finishReason: { unified: 'error', raw: undefined }, usage: USAGE },
+        ]),
+      ]),
+    })
+    const events = await collect(
+      streamChat({
+        model: MODEL_CONFIG,
+        apiKey: 'k',
+        fetchFn: fetch,
+        messages: [{ role: 'user', content: 'hi' }],
+        today: '2026-06-11',
+        modelOverride: model,
+      }),
+    )
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'rate limited' })
+  })
+})
