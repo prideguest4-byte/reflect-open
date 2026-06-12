@@ -234,7 +234,11 @@ pub fn asset_read(path: String, generation: u64, state: State<GraphState>) -> Ap
 /// reason as `asset_read` — the listing seeds a background pass that must
 /// never mix graphs.
 #[tauri::command]
-pub fn dir_list(dir: String, generation: u64, state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
+pub fn dir_list(
+    dir: String,
+    generation: u64,
+    state: State<GraphState>,
+) -> AppResult<Vec<FileMeta>> {
     let root = root_for_generation(&state, generation)?;
     resolve(&root, &dir)?; // traversal guard; the walk itself skips symlinks
     let mut out = Vec::new();
