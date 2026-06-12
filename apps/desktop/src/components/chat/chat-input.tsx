@@ -50,6 +50,9 @@ export function ChatInput(): ReactElement {
           aria-label="Chat message"
           rows={2}
           autoFocus
+          /* Opts out of the global :focus-visible outline (styles/index.css);
+             the wrapper's focus-within border is the focus treatment here. */
+          data-slot="textarea"
           className="field-sizing-content max-h-48 w-full resize-none bg-transparent px-3.5 pt-3 text-sm text-text outline-none placeholder:text-text-muted"
         />
         <div className="flex items-center gap-2 px-2.5 pb-2.5">
