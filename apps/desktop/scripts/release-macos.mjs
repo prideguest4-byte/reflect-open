@@ -300,17 +300,17 @@ function ensureGhReady() {
 }
 
 /**
- * Assert HEAD is a clean, pushed commit and return its SHA. The release tag
- * is created at this commit, so it must exist on GitHub and match what gets
- * built.
+ * Assert HEAD is a clean commit pushed to origin — the repo gh releases to —
+ * and return its SHA. The release tag is created at this commit, so it must
+ * exist on GitHub and match what gets built.
  */
 function ensurePublishableCommit() {
   if (capture('git', ['status', '--porcelain']).trim() !== '') {
     fail('the working tree has uncommitted changes — commit or stash them before publishing')
   }
   const commit = capture('git', ['rev-parse', 'HEAD']).trim()
-  if (capture('git', ['branch', '--remotes', '--contains', commit]).trim() === '') {
-    fail('HEAD is not on any remote branch — push it first so the release tag points at published code')
+  if (capture('git', ['branch', '--remotes', '--contains', commit, '--list', 'origin/*']).trim() === '') {
+    fail('HEAD is not on any origin branch — push it first so the release tag points at published code')
   }
   return commit
 }

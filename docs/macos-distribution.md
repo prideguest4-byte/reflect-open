@@ -73,7 +73,7 @@ it needs the [GitHub CLI](https://cli.github.com) authenticated with `gh auth lo
 All preflight checks run before the build, so a doomed publish fails in seconds rather
 than after notarization:
 
-- the working tree is clean and `HEAD` is on a remote branch — the release tag is
+- the working tree is clean and `HEAD` is on an `origin` branch — the release tag is
   created at that exact commit;
 - no release for `v<version>` exists yet, and any existing `v<version>` tag on origin
   points at `HEAD` (`gh` reuses an existing tag, which would release the wrong commit).
