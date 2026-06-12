@@ -86,13 +86,15 @@ they are Reflect's organizing primitive.
   navigation.
 - **05b** — step 7 (images/assets, incl. a Rust binary asset-write command), heading
   toggles from step 9, a **round-trip safety guard** (see below), and the step 10
-  basics. **Task checkboxes (step 8) are blocked upstream:** meowdown's converter
-  currently *loses task-item text entirely* (`- [ ] todo` → empty list) — discovered
-  while building 05b. Until the first-party converter fix ships, any note the editor
-  can't faithfully round-trip opens **protected (read-only)** and is never
-  auto-rewritten, so a converter gap can degrade UX but can never destroy content.
-  Remaining for later: interactive checkboxes (after the upstream fix), ergonomics
-  (indent/outdent, move line, zen), the tight-list serializer fix (also upstream),
+  basics. **Task checkboxes (step 8) were blocked upstream** — meowdown's converter
+  *lost task-item text entirely* (`- [ ] todo` → empty list), discovered while
+  building 05b. **The blocker is cleared:** meowdown 0.3.0 round-trips task lists
+  byte-faithfully (verified 2026-06-12) and models them as `list` nodes with
+  `kind: "task"` + `checked`. Interactive checkboxes now land with
+  [Plan 18 (Tasks)](18-tasks.md) step 1. The round-trip safety guard stays regardless:
+  any note the editor can't faithfully round-trip opens **protected (read-only)** and
+  is never auto-rewritten, so a converter gap can degrade UX but can never destroy
+  content. Remaining for later: ergonomics (indent/outdent, move line, zen),
   and deeper perf/a11y.
 
 ## Steps
@@ -141,8 +143,8 @@ they are Reflect's organizing primitive.
    markdown link → render inline. Large-file guardrail hook for Plan 12.
 
 8. **Task checkboxes.** Add an interactive checkbox node mapped to `- [ ]`/`- [x]` (Lezer
-   emits `Task`/`TaskMarker`) that toggles the underlying markdown. (Tasks-as-a-feature
-   stay deferred; this is just faithful editor rendering.)
+   emits `Task`/`TaskMarker`) that toggles the underlying markdown. (This step now
+   ships as [Plan 18 (Tasks)](18-tasks.md) step 1, where tasks-as-a-feature land too.)
 
 9. **Keyboard ergonomics (product identity).** meowdown ships base keymap/commands/
    history. Layer Reflect shortcuts (bold/italic, toggle heading, toggle checkbox, indent/

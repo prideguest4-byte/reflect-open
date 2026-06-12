@@ -1,5 +1,11 @@
 # Plan 13 — Import / Export / Portability
 
+> **Status (2026-06-12): Not started — outstanding at the first release.** The graph is
+> already a plain markdown folder (the core "open your folder and it's just files"
+> promise holds, and Obsidian-style vaults are close enough to open directly in many
+> cases), but none of the in-app surfaces below — previewed import, Markdown/JSON/HTML
+> ZIP export — exist yet.
+
 **Goal:** Make data ownership tangible from day one: import existing markdown/Obsidian
 graphs, and export the graph to Markdown, JSON, and HTML with backlinks, tags, and
 daily dates preserved.

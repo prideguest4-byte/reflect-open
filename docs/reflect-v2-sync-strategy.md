@@ -4,6 +4,23 @@ This document captures the current V2 sync direction. It focuses on a storage/sy
 
 It complements [Reflect V2 Product Vision](./reflect-v2-product-vision.md).
 
+> **Status (2026-06-12) — what actually shipped in the first release** (see
+> [Plan 12](./plans/12-backup-and-sync.md) and
+> [Plan 16](./plans/16-generic-git-remotes.md), which supersede this doc where they
+> differ):
+>
+> - **Git is the only sync backend.** GitHub via device-flow auth (token in the OS
+>   keychain), plus generic git remotes over SSH (agent) and filesystem paths
+>   (Plan 16 V1). HTTPS credential helpers are a later phase.
+> - **File-sync folder providers (iCloud Drive/Dropbox/Drive) are unsupported for
+>   sync by design** in the first wave — not adapters-in-waiting. The adapter
+>   sections below are preserved as long-term direction only.
+> - **AI-assisted conflict resolution did not ship.** Conflicts surface as standard
+>   conflict markers; conflicted notes open protected, with a reviewable
+>   mine/theirs/both resolution flow and a `has_conflict` "Needs review" projection.
+> - Plain-language product states (Backed up / Backing up / Offline / Needs review /
+>   Backup failed) shipped as described below.
+
 ## Strategy
 
 Reflect V2 should treat sync as an adapter-backed capability, not as a single hard-coded backend.

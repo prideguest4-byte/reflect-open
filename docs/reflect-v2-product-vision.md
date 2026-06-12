@@ -316,7 +316,7 @@ Notes with `private: true` are hard-blocked from cloud AI. They may remain local
 
 ### BYOK First
 
-V2 should start with bring-your-own-key AI, especially OpenAI keys.
+V2 should start with bring-your-own-key AI. (As shipped: OpenAI, Anthropic, and Google keys, stored in the OS keychain.)
 
 The architecture should leave room for:
 
@@ -360,7 +360,11 @@ The search system should operate over markdown files plus the local projection d
 
 ## Link Capture
 
-Launch V2 should include basic link capture. This is narrower than a full browser clipper, but it is still part of Reflect's daily-first capture spine.
+> **Status (2026-06-12):** Link capture is **deferred — the first macOS release ships
+> without it**. The design below (and [Plan 11](./plans/11-link-capture.md) plus the
+> bridge spike) remains the intended post-launch direction.
+
+V2 should include basic link capture. This is narrower than a full browser clipper, but it is still part of Reflect's daily-first capture spine.
 
 The V1 implementation has a useful shape to preserve: browser capture creates a link record, a client-side operation turns that into a link note, and the daily note gets a `[[Links]]` entry pointing at the captured item. The V1 implementation also calls `link-description-api.vercel.app/describe` for an AI-generated summary. V2 should preserve the product behavior, but not the Reflect-hosted API shape.
 
@@ -420,15 +424,26 @@ Full editor parity, local semantic search, heavy AI workflows, and complex confl
 
 ### Shell Spike
 
+> **Resolved:** the spike happened and **Tauri 2 is the shipped desktop shell** (React/
+> TypeScript frontend in a Rust native shell, with the `reflect` CLI bundled as a
+> sidecar). The paragraph below is preserved as the original decision framing.
+
 V2 should not commit to Tauri or a native Mac shell before a focused spike.
 
-The spike should compare Tauri against a native Mac shell with WebView using the real editor, local file access, SQLite/indexing, GitHub backup, keyboard behavior, and window/menu requirements. Tauri remains a serious candidate, but the docs should not treat it as chosen.
+The spike should compare Tauri against a native Mac shell with WebView using the real editor, local file access, SQLite/indexing, GitHub backup, keyboard behavior, and window/menu requirements.
 
 ### Future Windows And Android
 
 Windows and Android should remain possible. The implementation should avoid choices that make them impossible, but should not over-optimize for them before the Mac product is excellent.
 
 ## Backup And Sync Strategy
+
+> **Status (2026-06-12):** the first release ships the Git adapter only — GitHub via
+> device-flow auth, plus generic git remotes over SSH/path. File-sync folder providers
+> (iCloud Drive/Dropbox/Drive) are **unsupported for sync by design** in the first wave
+> (see Plan 12); the adapter list below is the long-term direction. AI-assisted conflict
+> resolution did not ship — conflicts surface as reviewable conflict markers with
+> mine/theirs/both resolution.
 
 V2 should make backup free and understandable.
 
@@ -491,7 +506,7 @@ These should be treated as core to the V2 vision:
 | Semantic search    | Required on supported desktop runtimes; mobile can start lexical-only.                              |
 | AI note copilot    | Required right-sidebar experience.                                                                  |
 | BYOK AI            | Required initial AI model.                                                                          |
-| Link capture       | Required launch surface: Chrome extension to local desktop bridge, daily note entry, optional note. |
+| Link capture       | Designed (Plan 11) but **deferred from the first macOS release**: Chrome extension to local desktop bridge, daily note entry, optional note. |
 | Import/export      | Required for trust and portability; prioritize markdown and Obsidian-style vaults first.            |
 | Backup             | Free/open backup path required.                                                                     |
 | Open-source core   | Required.                                                                                           |
@@ -505,8 +520,8 @@ These may come later, but should not define the first wave:
 
 | Feature                  | V2 stance                                                                                                          |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| Tasks                    | Defer. Revisit once markdown task semantics and projections are clear.                                             |
-| Audio transcription      | Defer. When implemented, prefer cloud transcription providers so desktop and mobile can share the same capability. |
+| Tasks                    | Defer from the first release; now planned as a post-release add-on (Plan 18): GFM-checkbox tasks as a lightweight markdown-backed projection. |
+| Audio transcription      | **Shipped early** (despite this table): raw-first audio memos with async BYOK cloud transcription and `private: true` lockouts. |
 | Full browser clipper     | Defer beyond launch link capture. Article extraction, read-later state, and broad clipping can come later.         |
 | Graph/map view           | Defer. Keep backlink graph data, but visual map is not first-wave.                                                 |
 | Templates                | Defer or keep lightweight. Markdown snippets may be enough initially.                                              |
@@ -545,8 +560,8 @@ Implementation details are not final, but future agents should start from these 
 - **AI**: BYOK generative provider calls with visible/current context and local retrieval, excluding locked notes.
 - **AI edits**: multi-note patchsets, checkpointed before application; unsafe edits require review.
 - **Search**: local lexical search and local-only semantic embeddings.
-- **Link capture**: Chrome extension sends URL/title/selection/screenshot data to a local desktop bridge; the desktop app uses BYOK AI, writes markdown/assets, and appends the capture to today's daily note.
-- **Audio memos**: deferred; future transcription should use cloud providers, with explicit privacy UX and `private: true` cloud-processing lockouts.
+- **Link capture**: deferred from the first release. When built: Chrome extension sends URL/title/selection/screenshot data to a local desktop bridge; the desktop app uses BYOK AI, writes markdown/assets, and appends the capture to today's daily note.
+- **Audio memos**: shipped — raw-first capture (the recording is the durable artifact), async BYOK cloud transcription with `private: true` cloud-processing lockouts.
 - **Network model**: no Reflect-hosted APIs for the core product; external calls go directly to user-approved providers such as LLM providers, GitHub, Git remotes, iCloud Drive, or cloud transcription providers.
 - **Desktop shell**: Mac-first, no Electron, spike Tauri against a native WebView shell.
 - **Mobile**: capture/read/lexical search first; same sync assumptions later.
@@ -563,10 +578,8 @@ These should remain explicit until answered:
 
 - How much Git complexity can be fully hidden from users?
 - Which conflict edge cases need stricter review than the default content-conflict policy?
-- What exact model/runtime should power local embeddings?
 - How should mobile eventually access and mutate the same GitHub-backed workspace?
-- Which Chrome extension bridge should ship first: native messaging or loopback HTTP?
-- Which safe multi-note AI patches can auto-apply without review?
+- Which safe multi-note AI patches can auto-apply without review? (The first release ships the copilot read-only; patchsets are a later wave.)
 - What command/skill subset should `~/.agents` discovery expose inside Reflect?
 - What business model, if any, belongs in the long-term product?
 - What is the eventual V1 migration path?
@@ -581,8 +594,10 @@ Reflect V2 succeeds if a user can:
 4. Create `[[Wiki Links]]` naturally.
 5. Search notes locally.
 6. Ask the AI sidebar about the current note and related notes using their own API key.
-7. Save the current browser page into today's note with screenshot-backed BYOK AI enrichment.
-8. Back up their notes for free.
-9. Open their note folder and see portable markdown files.
+7. Back up their notes for free.
+8. Open their note folder and see portable markdown files.
+
+(A ninth item — save the current browser page into today's note with screenshot-backed
+BYOK AI enrichment — rejoins this list when link capture ships post-launch.)
 
 The product should feel like Reflect's memory model survived, but the substrate became open, local, markdown-native, and AI-ready.

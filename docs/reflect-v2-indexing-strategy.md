@@ -4,6 +4,21 @@ This document captures the current V2 indexing direction. It focuses on using a 
 
 It complements [Reflect V2 Product Vision](./reflect-v2-product-vision.md).
 
+> **Status (2026-06-12) — shipped as designed**, with these specifics:
+>
+> - SQLite lives at `<graph>/.reflect/index.sqlite`; migrations are shared between the
+>   desktop writer and the read-only `reflect` CLI via the `index-schema` crate.
+> - Canonical parser: `@lezer/markdown` (GFM + a first-party wiki-link extension),
+>   shared by the editor and the indexer. Note identity: lowercase ULID `id:` in
+>   frontmatter plus readable slug filenames (Plan 17).
+> - FTS5 lexical search; semantic search via `sqlite-vec` with **local embeddings**
+>   (fastembed/ONNX in Rust, outside the WebView; model downloaded on demand).
+>   Chunks are hashed so unchanged chunks are not re-embedded.
+> - **One durable exception to "projections only":** the `chat_*` tables hold AI chat
+>   history, which is not derivable from markdown. Index wipes/rebuilds must leave
+>   them untouched.
+> - The `web_captures` projection is deferred along with link capture (Plan 11).
+
 ## Strategy
 
 Reflect V2 should use a local projection database.
@@ -65,7 +80,7 @@ Potentially non-rebuildable local state includes:
 - Collapsed sidebar state.
 - Sync adapter credentials or references.
 - Conflict review state.
-- AI conversation history, if the user chooses to keep it.
+- AI conversation history (shipped as the durable `chat_*` tables — the one sanctioned non-rebuildable exception; rebuilds must preserve them).
 
 Secrets do not belong in SQLite or `.reflect/` unless a later security design explicitly chooses encrypted local storage there. BYOK model keys and GitHub credentials should live in per-device OS keychain or secure storage.
 
@@ -188,9 +203,11 @@ Mobile should share the same markdown and sync assumptions as desktop, but it sh
 
 ## Open Questions
 
-- What markdown parser should define the canonical AST?
-- How should note IDs be represented in markdown frontmatter?
-- What local embedding runtime should V2 use outside the WebView?
+Resolved (see the status note above): the canonical parser is `@lezer/markdown`; note
+IDs are lowercase ULID `id:` frontmatter; the local embedding runtime is fastembed/ONNX
+in Rust; chat history persists durably in `chat_*` with a moving context window.
+
+Still open:
+
 - Should vector search stay in sqlite-vec long term or move behind a vector-store adapter?
-- How much AI conversation history should be persisted locally?
 - How should mobile graduate from lexical search to local semantic search?

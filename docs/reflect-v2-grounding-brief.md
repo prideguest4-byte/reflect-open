@@ -399,8 +399,8 @@ V2 considerations:
 
 - Daily note is again the capture destination.
 - Web capture creates an information-ingestion stream that should be searchable and linkable.
-- Launch V2 should include basic link capture even if full article clipping is deferred.
-- The first launch path should be a Chrome extension talking to the installed desktop app through a local bridge.
+- V2 link capture is designed but deferred from the first macOS release; full article clipping is deferred further still.
+- When capture ships, the path should be a Chrome extension talking to the installed desktop app through a local bridge.
 - The desktop app should own markdown writes, screenshot asset storage, BYOK AI calls, keychain access, and privacy checks.
 - V2 should not host a link-description API; enrichment calls should go directly from the app to the user's chosen model provider.
 - Captured links should append to today's daily note by default, with a dedicated markdown note when the capture includes richer description, highlights, or screenshot context.
@@ -483,8 +483,8 @@ Use cases mentioned:
 
 V2 considerations:
 
-- Audio capture is a strong wedge for mobile, but it is deferred from the first V2 wave.
-- When V2 implements audio transcription, it should use cloud transcription providers rather than local-only transcription so Mac and mobile can share the same capability and quality expectations.
+- Audio capture is a strong wedge for mobile. (V2 shipped desktop audio memos in the first wave, ahead of the original deferral: raw-first local recordings with async BYOK cloud transcription.)
+- V2 audio transcription uses cloud transcription providers rather than local-only transcription so Mac and mobile can share the same capability and quality expectations.
 - Raw audio should be treated as external cloud-processing data, similar to BYOK/cloud AI context. The product must make this clear before upload.
 - `private: true` notes and captures should block cloud transcription and cloud transcript cleanup unless the user explicitly changes the privacy setting.
 - Transcription should produce structured outputs, not just raw text: summary, tasks, entities, linked notes, cleaned transcript, original audio retention policy.
@@ -1069,11 +1069,11 @@ Some earlier V2 questions have now been answered in the decision docs. This sect
 - **Entities**: do not introduce a typed entity layer in the first wave. Canonical people, companies, projects, and other entities can emerge later as projections over notes and aliases.
 - **AI model**: use BYOK/cloud generative AI first. Treat local generative models as a later possibility. Keep local embeddings separate from generative AI.
 - **API and automation**: start with read/discovery CLI operations such as `reflect search`, `reflect show`, `reflect today`, and path lookup. Manual markdown edits are the write path. Do not introduce Reflect-hosted APIs for the V2 core product.
-- **Tasks**: defer tasks. When ported, tasks should be lightweight markdown-backed projections rather than a full task-management system.
+- **Tasks**: deferred from the first release; now planned as a post-release add-on (Plan 18). As decided here: lightweight markdown-backed projections (GFM checkboxes + a `tasks` table + a Tasks view) rather than a full task-management system.
 - **Contacts and calendar**: defer as first-wave surfaces, but preserve them as future memory context for meetings, backlinks, daily notes, and AI.
 - **Daily AI automation**: allow opt-in background extraction into reviewable suggestions. Do not silently mutate notes with summaries, entities, backlinks, or tasks.
-- **Links**: treat basic Chrome link capture as a launch requirement. The extension should hand URL/title/selection/screenshot data to the desktop app, and the desktop app should use BYOK AI plus local markdown/assets to save the capture. V2 should not host a link-description API.
-- **Audio**: defer audio memos. When implemented, transcription should use cloud providers with explicit privacy UX.
+- **Links**: basic Chrome link capture is designed (Plan 11: extension hands URL/title/selection/screenshot to the desktop app via a local bridge; desktop owns BYOK AI and markdown/asset writes; no Reflect-hosted link-description API) but **deferred — the first macOS release ships without it**.
+- **Audio**: **shipped in the first release** (ahead of the original deferral): raw-first audio memos with async BYOK cloud transcription, explicit privacy UX, and `private: true` cloud-processing lockouts.
 - **Publishing and templates**: defer both. They should not block the first-wave editor, storage, search, sync, and AI foundation.
 
 ### Remaining Open Questions

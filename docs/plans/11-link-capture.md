@@ -1,5 +1,13 @@
 # Plan 11 — Link Capture
 
+> **Status (2026-06-12): Deferred — the first macOS release ships without link
+> capture.** Nothing below has been built (no `apps/extension`, no native-messaging
+> host, no capture inbox). The design and the
+> [bridge spike](../spikes/link-capture-bridge.md) remain the blueprint for when
+> capture is picked up post-launch; the shipped audio-memo pipeline
+> (`packages/core/src/actions/audio-memo.ts`) already follows the same raw-first
+> capture/async-enrichment shape and is the template to sit alongside.
+
 **Goal:** Launch-grade web capture: a Chrome extension hands URL/title/selection/
 screenshot to the **installed desktop app** through a local **capture inbox**; the
 desktop app owns all writes, BYOK AI enrichment, and privacy — appending to today's

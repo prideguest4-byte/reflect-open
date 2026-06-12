@@ -4,6 +4,26 @@ This directory holds the numbered, dependency-ordered plans for building the **f
 version (first wave)** of Reflect V2: the open-source, local-first, markdown-native,
 AI-native rewrite described in the product docs.
 
+## Status at first release (2026-06-12)
+
+The first macOS release ships Plans 01–10, 12, 14–17 (Plan 16 at its V1 scope: SSH +
+path remotes; HTTPS credential helpers later). Two deliberate divergences:
+
+- **Plan 11 (link capture) is deferred — the first release ships without the browser
+  integration.** The design and [bridge spike](../spikes/link-capture-bridge.md) stand;
+  the capture envelope/inbox architecture is unbuilt, and no extension exists yet.
+- **Plan 13 (import/export) has not been built.** The graph is already a plain markdown
+  folder (copyable, inspectable — the core portability promise holds), but the in-app
+  import (Obsidian/markdown) and export (Markdown/JSON/HTML ZIP) surfaces are
+  outstanding.
+
+Two features landed beyond the written plans: **audio memos** (raw-first capture with
+async BYOK cloud transcription — listed below as deferred, but shipped early via
+`actions/audio-memo`), and **durable AI chat persistence** (the `chat_*` tables in
+`index.sqlite` are the one sanctioned non-rebuildable exception to the
+projection-only rule). The AI copilot (Plan 10) shipped **read-only** (chat over
+local context); patchsets/edits remain a later wave, per the plan's revision note.
+
 Read these alongside the source docs they implement:
 
 - [V2 Product Vision](../reflect-v2-product-vision.md)
@@ -44,13 +64,14 @@ before the editor, and the editor lands before search/AI.
 | 08 | [Lexical search & command palette](08-lexical-search-and-command-palette.md) | `⌘K` search/command surface, FTS over titles/body, filters, navigation commands |
 | 09 | [Semantic search & local embeddings](09-semantic-search-and-embeddings.md) | Local embedding runtime (Rust), chunking, `sqlite-vec`, incremental re-embed, retrieval layer |
 | 10 | [AI copilot sidebar](10-ai-copilot-sidebar.md) | BYOK provider, keychain secrets, context/retrieval, chat/summarize/rewrite, reviewable patchsets, `private: true` hard-block |
-| 11 | [Link capture](11-link-capture.md) | Chrome extension → native-messaging bridge → desktop write path, screenshots, BYOK enrichment, daily-note `[[Links]]` |
+| 11 | [Link capture](11-link-capture.md) | **Deferred — not in the first release.** Chrome extension → native-messaging bridge → desktop write path, screenshots, BYOK enrichment, daily-note `[[Links]]` |
 | 12 | [Backup & sync (GitHub-only)](12-backup-and-sync.md) | GitHub/Git backup + restore (the only supported remote), Git-native conflict surface, manual review, checkpoints; file-sync providers unsupported |
-| 13 | [Import / export / portability](13-import-export-portability.md) | Markdown/Obsidian-graph import, JSON/Markdown/HTML export, attachments preserved |
+| 13 | [Import / export / portability](13-import-export-portability.md) | **Not started — outstanding at release.** Markdown/Obsidian-graph import, JSON/Markdown/HTML export, attachments preserved |
 | 14 | [CLI (read/discovery)](14-cli-read-discovery.md) | `reflect today`, `reflect search`, `reflect show`, path lookup |
 | 15 | [Hardening, packaging & OSS release](15-hardening-packaging-release.md) | a11y, perf budgets, signing/notarization, MIT + docs, onboarding, release pipeline |
 | 16 | [Generic git remotes](16-generic-git-remotes.md) | Any git host (GitLab/Gitea/GHES/NAS) via hand-wired `origin`, zero new UI — V1 SSH (agent) + path remotes, V2 HTTPS (credential helpers) |
 | 17 | [Readable filenames](17-readable-filenames.md) | Title-derived note filenames (slug + collision suffix), frontmatter `id` adoption, rename-on-settled-title file moves, id-healed external renames |
+| 18 | [Tasks](18-tasks.md) | **Post-release add-on.** GFM-checkbox tasks as a rebuildable projection: interactive editor checkboxes, Tasks view (Overdue/Today/Upcoming), `[[date]]`/daily scheduling, guarded toggle write-back, `checklist: true` opt-out |
 
 ## Milestone map
 
@@ -70,6 +91,8 @@ demonstrable.
   search, then local semantic search.
 - **M3 — AI-native** (Plan 10): the right-sidebar copilot over local context.
 - **M4 — Capture & durability** (Plans 11–13): link capture, backup/sync, import/export.
+  *(Shipped partially: backup/sync landed; link capture was cut from the first release;
+  import/export is unbuilt. Audio-memo capture shipped instead, ahead of plan.)*
 - **M5 — Reach & release** (Plans 14–15): CLI, hardening, packaging, open-source launch.
 
 ## Dependency graph (abridged)
@@ -129,8 +152,10 @@ they are not re-litigated per phase:
 
 ## Explicitly deferred (NOT first wave)
 
-Do not build these now; keep the door open in the data model. Tasks, audio
-transcription, full browser clipper / article extraction, graph-map view, templates,
+Do not build these now; keep the door open in the data model. Tasks (now planned as a
+post-release add-on — [Plan 18](18-tasks.md)), link capture
+(Plan 11 — designed, deferred from the first release), full browser clipper / article
+extraction, graph-map view, templates,
 contacts/calendar, publishing, any non-GitHub sync (iCloud/Dropbox/Drive are unsupported
 by design, not "deferred"), a public plugin API, typed-entity layer, and full multi-device
 sync conflict automation (incl. AI-assisted resolution). Mobile
