@@ -94,6 +94,44 @@ export async function cloudSafeSearchHits(
     )
 }
 
+/** One note-listing entry as an external service may see it. */
+export interface CloudNoteListing {
+  path: string
+  title: string
+  /** ISO `YYYY-MM-DD` when the note is a daily note, `null` otherwise. */
+  dailyDate: string | null
+  /** The indexed row preview (may be empty). */
+  snippet: string
+  /** Last file modification, ISO 8601 UTC. */
+  modifiedAt: string
+}
+
+/**
+ * Gate note-list entries (recents, daily ranges) for an outbound payload.
+ * Same contract as {@link cloudSafeSearchHits}: a private entry is dropped
+ * **entirely** — even its title or path is a leak — and the index's
+ * `isPrivate` flag only prefilters, so every survivor is re-checked through
+ * `isPrivateLive` against the note on disk, failing closed.
+ */
+export async function cloudSafeNoteListings(
+  entries: readonly (CloudSendable & Omit<CloudNoteListing, 'path'>)[],
+  isPrivateLive: (path: string) => Promise<boolean>,
+): Promise<CloudSafe<CloudNoteListing>[]> {
+  const indexedPublic = entries.filter((entry) => !entry.isPrivate)
+  const liveFlags = await Promise.all(indexedPublic.map((entry) => isPrivateLive(entry.path)))
+  return indexedPublic
+    .filter((_, index) => liveFlags[index] === false)
+    .map((entry) =>
+      mint({
+        path: entry.path,
+        title: entry.title,
+        dailyDate: entry.dailyDate,
+        snippet: entry.snippet,
+        modifiedAt: entry.modifiedAt,
+      }),
+    )
+}
+
 /** A note's content as an external service may see it. */
 export interface CloudNoteContent {
   path: string

@@ -16,7 +16,7 @@ export function chatSystemPrompt({ today }: SystemPromptInput): string {
     `Today’s date is ${today}. Daily notes are markdown files named daily/YYYY-MM-DD.md; other notes live under notes/.`,
     '',
     'Grounding rules:',
-    '- When a question could be answered by the user’s notes, call search_notes before answering, and read_note when you need a note’s full content.',
+    '- When a question could be answered by the user’s notes, look them up before answering: search_notes finds notes by topic or keyword, list_daily_notes finds daily notes in a date range (questions like “yesterday” or “last week”), and list_recent_notes shows what was edited lately. Call read_note when you need a note’s full content.',
     '- Ground answers in what the tools return. If the notes don’t cover something, say so plainly instead of guessing.',
     '- Cite every note you draw on with a wiki link of its exact title, e.g. [[Project Atlas]]. Do not invent titles that the tools did not return.',
     '- Private notes are excluded from search and cannot be read. If a tool reports a note is private, tell the user that — never speculate about its contents.',

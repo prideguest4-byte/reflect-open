@@ -129,6 +129,46 @@ describe('ChatScreen', () => {
     expect(options?.messages.at(-1)).toEqual({ role: 'user', content: 'when does atlas ship?' })
   })
 
+  it('renders listing chips: recent notes by tag and a daily range', async () => {
+    configureModel()
+    scriptTurn([
+      { type: 'tool-call', call: { tool: 'recents', toolCallId: 'tool-1', tag: 'book' } },
+      {
+        type: 'tool-result',
+        result: {
+          tool: 'recents',
+          toolCallId: 'tool-1',
+          tag: 'book',
+          notes: [{ path: 'notes/atlas.md', title: 'Atlas' }],
+        },
+      },
+      {
+        type: 'tool-call',
+        call: { tool: 'dailies', toolCallId: 'tool-2', start: '2026-06-01', end: '2026-06-11' },
+      },
+      {
+        type: 'tool-result',
+        result: {
+          tool: 'dailies',
+          toolCallId: 'tool-2',
+          start: '2026-06-01',
+          end: '2026-06-11',
+          days: [
+            { path: 'daily/2026-06-10.md', title: '2026-06-10' },
+            { path: 'daily/2026-06-09.md', title: '2026-06-09' },
+          ],
+        },
+      },
+      { type: 'complete', messages: [{ role: 'assistant', content: 'Done.' }] },
+    ])
+    const view = renderChat()
+
+    await userEvent.type(view.getByLabelText('Chat message'), 'what have I been reading?{Enter}')
+
+    await view.findByText(/Listed #book notes · 1 note/)
+    await view.findByText(/Listed daily notes 2026-06-01 – 2026-06-11 · 2 days/)
+  })
+
   it('renders streaming text as plain text until the turn settles', async () => {
     configureModel()
     streamChat.mockImplementation(() =>
