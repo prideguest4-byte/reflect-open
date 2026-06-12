@@ -134,6 +134,17 @@ pub(crate) fn root_for_generation(
     inner.root.clone().ok_or_else(AppError::no_graph)
 }
 
+/// `current_root`, or `root_for_generation` when the caller pinned the
+/// command. Read commands take an optional pin: UI reads for the open graph
+/// omit it, background passes (audio-memo reconcile) that can span a graph
+/// switch must supply it so every step of a pass sees one graph.
+fn root_for(state: &State<GraphState>, generation: Option<u64>) -> AppResult<PathBuf> {
+    match generation {
+        Some(generation) => root_for_generation(state, generation),
+        None => current_root(state),
+    }
+}
+
 // ---- commands --------------------------------------------------------------
 
 /// Let the asset protocol serve files from the graph (image rendering, Plan 05).
@@ -177,10 +188,15 @@ pub fn graph_open(
     Ok(info)
 }
 
-/// Read a note's markdown by graph-relative path.
+/// Read a note's markdown by graph-relative path. `generation`, when given,
+/// pins the read to the issuing graph session (see [`root_for`]).
 #[tauri::command]
-pub fn note_read(path: String, state: State<GraphState>) -> AppResult<String> {
-    let root = current_root(&state)?;
+pub fn note_read(
+    path: String,
+    generation: Option<u64>,
+    state: State<GraphState>,
+) -> AppResult<String> {
+    let root = root_for(&state, generation)?;
     Ok(fs::read_to_string(resolve(&root, &path)?)?)
 }
 
@@ -286,10 +302,11 @@ pub fn note_delete(path: String, generation: u64, state: State<GraphState>) -> A
     Ok(())
 }
 
-/// List markdown notes under `daily/` and `notes/`.
+/// List markdown notes under `daily/` and `notes/`. `generation`, when given,
+/// pins the listing to the issuing graph session (see [`root_for`]).
 #[tauri::command]
-pub fn list_files(state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
-    let root = current_root(&state)?;
+pub fn list_files(generation: Option<u64>, state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
+    let root = root_for(&state, generation)?;
     let mut out = Vec::new();
     for dir in NOTE_DIRS {
         collect_files(&root, dir, Some("md"), &mut out)?;

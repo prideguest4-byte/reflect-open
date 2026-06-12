@@ -178,10 +178,10 @@ export async function captureAudioMemo(
   return { ok: true, memo }
 }
 
-/** The daily note's source, where "no note yet" reads as empty. */
-async function dailyNoteSource(date: string): Promise<string> {
+/** The day's note source at `generation`, where "no note yet" reads as empty. */
+async function dailyNoteSource(date: string, generation: number): Promise<string> {
   try {
-    return await readNote(dailyPath(date))
+    return await readNote(dailyPath(date), generation)
   } catch (cause) {
     if (isAppError(cause) && cause.kind === 'notFound') {
       return ''
@@ -202,12 +202,15 @@ function hasBacklink(source: string, memo: AudioMemoIdentity): boolean {
 /**
  * Memos awaiting transcription, oldest first: a recording under
  * `audio-memos/` with no same-named transcription note and no daily-note
- * backlink (the backlink is the tombstone — see the module doc). The listing
- * is pinned to `generation` so a pass can never seed itself from a graph
- * opened after it was triggered.
+ * backlink (the backlink is the tombstone — see the module doc). Every read
+ * is pinned to `generation` — recordings, notes, and daily-note tombstones
+ * must come from one graph session, never a mix across a switch.
  */
 export async function listPendingAudioMemos(generation: number): Promise<AudioMemoIdentity[]> {
-  const [recordings, notes] = await Promise.all([listDir(AUDIO_MEMOS_DIR, generation), listFiles()])
+  const [recordings, notes] = await Promise.all([
+    listDir(AUDIO_MEMOS_DIR, generation),
+    listFiles(generation),
+  ])
   const existingNotes = new Set(notes.map((file) => file.path))
   const candidates = recordings
     .map((file) => audioMemoFromPath(file.path))
@@ -216,7 +219,7 @@ export async function listPendingAudioMemos(generation: number): Promise<AudioMe
     .sort((first, second) => first.base.localeCompare(second.base))
   const pending: AudioMemoIdentity[] = []
   for (const memo of candidates) {
-    if (!hasBacklink(await dailyNoteSource(memo.date), memo)) {
+    if (!hasBacklink(await dailyNoteSource(memo.date, generation), memo)) {
       pending.push(memo)
     }
   }
@@ -264,7 +267,7 @@ async function memoNoteBody(input: {
 
 /** Append the memo's wikilink to its day's daily note, once. */
 async function ensureDailyBacklink(memo: AudioMemoIdentity, generation: number): Promise<void> {
-  const source = await dailyNoteSource(memo.date)
+  const source = await dailyNoteSource(memo.date, generation)
   if (hasBacklink(source, memo)) {
     return
   }
@@ -434,7 +437,7 @@ export async function appendToDailyNote(input: AppendToDailyNoteInput): Promise<
   const path = dailyPath(input.date)
   let source = ''
   try {
-    source = await readNote(path)
+    source = await readNote(path, input.generation)
   } catch (cause) {
     if (!isAppError(cause) || cause.kind !== 'notFound') {
       throw cause

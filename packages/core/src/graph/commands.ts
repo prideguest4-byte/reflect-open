@@ -22,9 +22,13 @@ export async function createGraph(path: string): Promise<GraphInfo> {
   return call('graph_create', { path }, graphInfoSchema)
 }
 
-/** Read a note's markdown by graph-relative path. */
-export async function readNote(path: string): Promise<string> {
-  return call('note_read', { path }, z.string())
+/**
+ * Read a note's markdown by graph-relative path. `generation`, when given,
+ * pins the read to the issuing graph session — background passes that can
+ * span a graph switch must pin every read; UI reads of the open graph omit it.
+ */
+export async function readNote(path: string, generation?: number): Promise<string> {
+  return call('note_read', { path, generation }, z.string())
 }
 
 /**
@@ -80,9 +84,12 @@ export async function deleteNote(path: string, generation: number): Promise<void
   await call('note_delete', { path, generation }, voidSchema)
 }
 
-/** List markdown notes under `daily/` and `notes/`. */
-export async function listFiles(): Promise<FileMeta[]> {
-  return call('list_files', {}, z.array(fileMetaSchema))
+/**
+ * List markdown notes under `daily/` and `notes/`. `generation` pins the
+ * listing like {@link readNote}'s.
+ */
+export async function listFiles(generation?: number): Promise<FileMeta[]> {
+  return call('list_files', { generation }, z.array(fileMetaSchema))
 }
 
 /** The recently-opened graphs, newest first. */

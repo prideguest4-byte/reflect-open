@@ -433,7 +433,7 @@ describe('appendToDailyNote', () => {
   it('appends to the existing daily note, pinned to the generation', async () => {
     await appendToDailyNote({ date: '2026-06-11', text: 'memo text', generation: 7 })
 
-    expect(readNoteMock).toHaveBeenCalledWith('daily/2026-06-11.md')
+    expect(readNoteMock).toHaveBeenCalledWith('daily/2026-06-11.md', 7)
     expect(writeNoteMock).toHaveBeenCalledWith(
       'daily/2026-06-11.md',
       'morning thoughts\n\nmemo text\n',
