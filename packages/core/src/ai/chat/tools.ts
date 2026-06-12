@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { isAppError } from '../../errors'
 import { readNote } from '../../graph/commands'
 import { retrieve, type RetrievalHit, type RetrieveOptions } from '../../embeddings/retrieve'
-import { splitFrontmatter } from '../../markdown/frontmatter'
+import { parseFrontmatter, splitFrontmatter } from '../../markdown/frontmatter'
 import { parseNote } from '../../markdown/extract'
 import {
   cloudSafeNoteContent,
@@ -72,6 +72,19 @@ export function buildNoteTools(deps: NoteToolDeps = {}) {
   const retrieveFn = deps.retrieveFn ?? retrieve
   const readNoteFn = deps.readNoteFn ?? readNote
 
+  // The gate's live privacy probe: the index flag on a hit can lag a
+  // just-saved `private: true`, so each candidate's frontmatter is re-read
+  // from disk. Fail closed — a note that can't be read can't be cleared
+  // for sending.
+  const isPrivateLive = async (path: string): Promise<boolean> => {
+    try {
+      const { raw } = splitFrontmatter(await readNoteFn(path))
+      return parseFrontmatter(raw).data.private
+    } catch {
+      return true
+    }
+  }
+
   return {
     search_notes: tool({
       description:
@@ -83,7 +96,7 @@ export function buildNoteTools(deps: NoteToolDeps = {}) {
           limit: limit ?? DEFAULT_SEARCH_LIMIT,
           excludePrivateContent: true,
         })
-        return { hits: cloudSafeSearchHits(hits) }
+        return { hits: await cloudSafeSearchHits(hits, isPrivateLive) }
       },
     }),
 

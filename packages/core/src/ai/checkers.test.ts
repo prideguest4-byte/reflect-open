@@ -60,16 +60,42 @@ describe('cloudSafeSearchHits', () => {
     isPrivate: true,
   }
 
-  it('drops private hits entirely — not even the title survives', () => {
-    const safe = cloudSafeSearchHits([PUBLIC, PRIVATE])
+  const neverPrivate = async () => false
+
+  it('drops private hits entirely — not even the title survives', async () => {
+    const safe = await cloudSafeSearchHits([PUBLIC, PRIVATE], neverPrivate)
     const payload = JSON.stringify(safe)
     expect(payload).not.toContain(PRIVATE_TITLE)
     expect(payload).not.toContain(PRIVATE_PATH)
     expect(safe).toEqual([{ path: 'notes/a.md', title: 'Public', snippet: 'body', heading: null }])
   })
 
-  it('strips hits to the cloud-facing fields (no score, no flag)', () => {
-    const [hit] = cloudSafeSearchHits([PUBLIC])
+  it('drops hits the live probe flags even when the index lags (TOCTOU)', async () => {
+    const justMarkedPrivate: RetrievalHit = {
+      ...PRIVATE,
+      isPrivate: false, // the stale index still says public
+    }
+    const safe = await cloudSafeSearchHits(
+      [PUBLIC, justMarkedPrivate],
+      async (path) => path === PRIVATE_PATH,
+    )
+    const payload = JSON.stringify(safe)
+    expect(payload).not.toContain(PRIVATE_TITLE)
+    expect(payload).not.toContain(PRIVATE_PATH)
+    expect(safe).toHaveLength(1)
+  })
+
+  it('never probes hits the index already flags private', async () => {
+    const probed: string[] = []
+    await cloudSafeSearchHits([PUBLIC, PRIVATE], async (path) => {
+      probed.push(path)
+      return false
+    })
+    expect(probed).toEqual(['notes/a.md'])
+  })
+
+  it('strips hits to the cloud-facing fields (no score, no flag)', async () => {
+    const [hit] = await cloudSafeSearchHits([PUBLIC], neverPrivate)
     expect(Object.keys(hit ?? {}).sort()).toEqual(['heading', 'path', 'snippet', 'title'])
   })
 })

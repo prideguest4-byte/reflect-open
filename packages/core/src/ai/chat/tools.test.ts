@@ -79,6 +79,7 @@ describe('search_notes', () => {
         hit({}),
         hit({ path: PRIVATE_PATH, title: PRIVATE_TITLE, snippet: '', isPrivate: true }),
       ],
+      readNoteFn: async () => 'a public body\n',
     })
     const output = await runSearch(tools, { query: 'diary' })
     const payload = JSON.stringify(output)
@@ -87,6 +88,29 @@ describe('search_notes', () => {
     expect(output.hits).toEqual([
       { path: 'notes/public.md', title: 'Public note', snippet: 'a public snippet', heading: null },
     ])
+  })
+
+  it('drops a hit whose live frontmatter turned private before reindex (TOCTOU)', async () => {
+    const tools = buildNoteTools({
+      // The stale index still says public…
+      retrieveFn: async () => [hit({ path: PRIVATE_PATH, title: PRIVATE_TITLE })],
+      // …but the note on disk was just marked private.
+      readNoteFn: async () => '---\nprivate: true\n---\n# Diary\n',
+    })
+    const output = await runSearch(tools, { query: 'diary' })
+    expect(output.hits).toEqual([])
+    expect(JSON.stringify(output)).not.toContain(PRIVATE_TITLE)
+  })
+
+  it('fails closed: an unreadable hit is dropped, not sent', async () => {
+    const tools = buildNoteTools({
+      retrieveFn: async () => [hit({ path: PRIVATE_PATH, title: PRIVATE_TITLE })],
+      readNoteFn: async () => {
+        throw { kind: 'io', message: 'disk error' }
+      },
+    })
+    const output = await runSearch(tools, { query: 'diary' })
+    expect(output.hits).toEqual([])
   })
 
   it('passes the requested limit through', async () => {

@@ -101,7 +101,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'where is the launch plan?' }],
         today: '2026-06-11',
-        toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT] },
+        toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
     )
 
@@ -138,7 +138,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'what do my notes say?' }],
         today: '2026-06-11',
-        toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT] },
+        toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
     )
 
@@ -186,7 +186,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'where is the launch plan?' }],
         today: '2026-06-11',
-        toolDeps: { retrieveFn: async () => [PUBLIC_HIT] },
+        toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
     )
 
@@ -222,7 +222,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'plan and budget?' }],
         today: '2026-06-11',
-        toolDeps: { retrieveFn: async () => [PUBLIC_HIT] },
+        toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
     )
 

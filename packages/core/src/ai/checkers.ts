@@ -74,10 +74,21 @@ export interface CloudSearchHit {
  * the cloud-facing fields. Retrieval's own `excludePrivateContent` blanks
  * private snippets upstream; this second, stricter gate is what AI callers
  * must pass hits through, so no caller can forget the drop-titles rule.
+ *
+ * The index's `isPrivate` flag only prefilters: the index can lag a
+ * just-saved `private: true` (the same TOCTOU `cloudSafeNoteContent` guards
+ * with its live flag), so every surviving hit is re-checked through
+ * `isPrivateLive` against the note on disk. The probe must **fail closed**
+ * — a missing or unreadable note counts as private.
  */
-export function cloudSafeSearchHits(hits: readonly RetrievalHit[]): CloudSafe<CloudSearchHit>[] {
-  return hits
-    .filter((hit) => !hit.isPrivate)
+export async function cloudSafeSearchHits(
+  hits: readonly RetrievalHit[],
+  isPrivateLive: (path: string) => Promise<boolean>,
+): Promise<CloudSafe<CloudSearchHit>[]> {
+  const indexedPublic = hits.filter((hit) => !hit.isPrivate)
+  const liveFlags = await Promise.all(indexedPublic.map((hit) => isPrivateLive(hit.path)))
+  return indexedPublic
+    .filter((_, index) => liveFlags[index] === false)
     .map((hit) =>
       mint({ path: hit.path, title: hit.title, snippet: hit.snippet, heading: hit.heading }),
     )
