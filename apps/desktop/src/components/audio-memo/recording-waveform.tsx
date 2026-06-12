@@ -34,8 +34,16 @@ export function RecordingWaveform({ stream }: RecordingWaveformProps): ReactElem
     // The canvas carries a text color class; bars inherit the theme through it.
     const color = getComputedStyle(canvas).color
 
-    const audioContext = new AudioContext()
-    const source = audioContext.createMediaStreamSource(stream)
+    let audioContext: AudioContext
+    let source: MediaStreamAudioSourceNode
+    try {
+      audioContext = new AudioContext()
+      source = audioContext.createMediaStreamSource(stream)
+    } catch {
+      // Context limit reached or the stream already died — keep the static
+      // baseline rather than crash the tree over a decoration.
+      return
+    }
     const analyser = audioContext.createAnalyser()
     analyser.fftSize = 512
     source.connect(analyser)

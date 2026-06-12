@@ -100,14 +100,32 @@ function httpError(provider: TranscriptionProvider, status: number, body: string
   )
 }
 
+/**
+ * Bounds a provider connection that accepts and then stalls — the UI must
+ * always settle into success or a retryable error, never hang transcribing.
+ */
+export const TRANSCRIPTION_TIMEOUT_MS = 120_000
+
 async function send(
   fetchFn: typeof fetch,
   input: string,
   init: RequestInit,
 ): Promise<Response> {
   try {
-    return await fetchFn(input, init)
+    return await fetchFn(input, {
+      ...init,
+      signal: AbortSignal.timeout(TRANSCRIPTION_TIMEOUT_MS),
+    })
   } catch (cause) {
+    if (
+      cause instanceof DOMException &&
+      (cause.name === 'TimeoutError' || cause.name === 'AbortError')
+    ) {
+      throw new ReflectError(
+        'network',
+        `transcription request timed out after ${TRANSCRIPTION_TIMEOUT_MS / 1000}s`,
+      )
+    }
     throw new ReflectError('network', cause instanceof Error ? cause.message : String(cause))
   }
 }

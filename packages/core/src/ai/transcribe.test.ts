@@ -124,6 +124,29 @@ describe('transcribeAudio (openai)', () => {
       message: 'offline',
     })
   })
+
+  it('bounds every request with a timeout signal', async () => {
+    const signals: (AbortSignal | null | undefined)[] = []
+    const fetchFn: typeof fetch = async (_input, init) => {
+      signals.push(init?.signal)
+      return jsonResponse(200, { text: 'ok' })
+    }
+
+    await transcribeAudio(request({ fetchFn }))
+
+    expect(signals[0]).toBeInstanceOf(AbortSignal)
+  })
+
+  it('maps a stalled connection to a settled network error', async () => {
+    const fetchFn: typeof fetch = async () => {
+      throw new DOMException('The operation timed out.', 'TimeoutError')
+    }
+
+    await expect(transcribeAudio(request({ fetchFn }))).rejects.toMatchObject({
+      kind: 'network',
+      message: expect.stringContaining('timed out'),
+    })
+  })
 })
 
 describe('transcribeAudio (google)', () => {
