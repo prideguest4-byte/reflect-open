@@ -136,19 +136,42 @@ describe('createTitleRenameTracker', () => {
     expect(renames).toEqual([])
   })
 
-  it('the first authored title on an untitled note is a birth, not a rename', () => {
+  it('the first authored title on an untitled note is a birth (from: null), settled like a rename', () => {
     const { tracker, renames } = tracked()
     tracker.baseline('') // fresh lazy note (⌘N): derived title is the filename
+    tracker.saved('# My New\n') // intermediate typing state — must not fire
     tracker.saved('# My New Note\n')
+    expect(renames).toEqual([]) // births settle through the quiet timer too
     vi.advanceTimersByTime(10_000)
-    tracker.settle()
-    expect(renames).toEqual([]) // no phantom rename from the ULID stem
+    // No phantom rename from the ULID stem — a birth carries no `from` title.
+    expect(renames).toEqual([{ from: null, to: 'My New Note', previousAutoAlias: null }])
 
     tracker.saved('# Renamed\n') // a real rename afterwards still works
     tracker.settle()
     expect(renames).toEqual([
+      { from: null, to: 'My New Note', previousAutoAlias: null },
       { from: 'My New Note', to: 'Renamed', previousAutoAlias: null },
     ])
+  })
+
+  it('a birth pending at a settle point fires immediately', () => {
+    const { tracker, renames } = tracked()
+    tracker.baseline('')
+    tracker.saved('# Named On The Way Out\n')
+    tracker.settle() // teardown/blur before the quiet period elapses
+    expect(renames).toEqual([
+      { from: null, to: 'Named On The Way Out', previousAutoAlias: null },
+    ])
+  })
+
+  it('a birth cleared back to untitled never fires', () => {
+    const { tracker, renames } = tracked()
+    tracker.baseline('')
+    tracker.saved('# Oops\n')
+    tracker.saved('no heading any more\n') // title deleted before it settled
+    vi.advanceTimersByTime(10_000)
+    tracker.settle()
+    expect(renames).toEqual([])
   })
 
   it('removing the title mid-edit clears pending but keeps the baseline', () => {

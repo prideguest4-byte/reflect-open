@@ -2,12 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { onNoteMoved } from '@/lib/note-moves'
 import { normalizeRoute, routesEqual, type Route } from './route'
 
 /**
@@ -111,6 +113,28 @@ export function RouterProvider({
       current.index < current.stack.length - 1 ? { ...current, index: current.index + 1 } : current,
     )
   }, [])
+
+  // A note file move (Plan 17) rewrites every history entry that points at
+  // the old path — the current route follows the file without an arrival
+  // (same entry ids, so scroll offsets and back/forward stay intact), and a
+  // back-nav can never land on a path that no longer exists.
+  useEffect(
+    () =>
+      onNoteMoved((from, to) => {
+        setHistory((current) => {
+          let changed = false
+          const stack = current.stack.map((entry) => {
+            if (entry.route.kind === 'note' && entry.route.path === from) {
+              changed = true
+              return { ...entry, route: { kind: 'note' as const, path: to } }
+            }
+            return entry
+          })
+          return changed ? { ...current, stack } : current
+        })
+      }),
+    [],
+  )
 
   const saveScrollState = useCallback((offset: number) => {
     scrollById.current.set(currentId.current, offset)

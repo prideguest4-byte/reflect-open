@@ -230,6 +230,66 @@ export async function getConflictedNotes(): Promise<ConflictedNote[]> {
 }
 
 /**
+ * Bound variables per `IN (…)` clause. SQLite caps variables per statement
+ * (999 on older builds), and callers like the reconcile pass can legitimately
+ * present thousands of paths after a mass external move — chunking keeps
+ * every statement comfortably inside the budget.
+ */
+const IN_CLAUSE_LIMIT = 500
+
+/** Split `values` into `IN`-clause-sized chunks (no chunks for no values). */
+function inClauseChunks<Value>(values: readonly Value[]): Value[][] {
+  const chunks: Value[][] = []
+  for (let start = 0; start < values.length; start += IN_CLAUSE_LIMIT) {
+    chunks.push(values.slice(start, start + IN_CLAUSE_LIMIT))
+  }
+  return chunks
+}
+
+/** Notes sharing one frontmatter `id` — a sync fork (Plan 17). */
+export interface DuplicateIdGroup {
+  id: string
+  /** Every path claiming the id, ordered (the first is resolution's winner). */
+  paths: string[]
+}
+
+/**
+ * Frontmatter `id`s claimed by more than one note. Two files claiming one
+ * identity means a sync fork (e.g. rename/rename divergence) — surfaced for
+ * review like conflicts; repair is deliberately not automatic.
+ */
+export async function getDuplicateNoteIds(): Promise<DuplicateIdGroup[]> {
+  const duplicated = await db
+    .selectFrom('notes')
+    .where('id', 'is not', null)
+    .select('id')
+    .groupBy('id')
+    .having(sql<number>`count(*)`, '>', 1)
+    .execute()
+  // Sorted before chunking so group order stays deterministic across chunks.
+  const ids = duplicated.flatMap((row) => (row.id === null ? [] : [row.id])).sort()
+  const groups = new Map<string, string[]>()
+  for (const chunk of inClauseChunks(ids)) {
+    const rows = await db
+      .selectFrom('notes')
+      .where('id', 'in', chunk)
+      .select(['id', 'path'])
+      .orderBy('id')
+      .orderBy('path')
+      .execute()
+    for (const row of rows) {
+      if (row.id === null) {
+        continue
+      }
+      const paths = groups.get(row.id) ?? []
+      paths.push(row.path)
+      groups.set(row.id, paths)
+    }
+  }
+  return [...groups.entries()].map(([id, paths]) => ({ id, paths }))
+}
+
+/**
  * ISO dates within `[start, end]` (inclusive) that have an indexed daily note,
  * ascending. Daily files are created lazily on first write, so an indexed row
  * means the day has real content — this powers the calendar's day markers.
@@ -336,6 +396,28 @@ export async function searchNotes(query: string, limit = 50): Promise<SearchHit[
 export async function getIndexedHashes(): Promise<Map<string, string>> {
   const rows = await db.selectFrom('notes').select(['path', 'fileHash']).execute()
   return new Map(rows.map((row) => [row.path, row.fileHash]))
+}
+
+/**
+ * Frontmatter `id`s of the given indexed paths (a path with no row is simply
+ * absent; a row without an id maps to `null`). The move-detection input: both
+ * the reconcile pass and the watcher batch handler pair vanished rows with
+ * appeared files through this. Chunked — a mass external move can orphan
+ * thousands of paths at once, beyond SQLite's bound-variable budget.
+ */
+export async function getNoteIdsByPath(paths: string[]): Promise<Map<string, string | null>> {
+  const ids = new Map<string, string | null>()
+  for (const chunk of inClauseChunks(paths)) {
+    const rows = await db
+      .selectFrom('notes')
+      .where('path', 'in', chunk)
+      .select(['path', 'id'])
+      .execute()
+    for (const row of rows) {
+      ids.set(row.path, row.id)
+    }
+  }
+  return ids
 }
 
 /**

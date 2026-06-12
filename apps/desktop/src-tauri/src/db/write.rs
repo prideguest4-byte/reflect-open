@@ -137,6 +137,50 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
     Ok(())
 }
 
+/// Move every row keyed by `from` to `to` — the projection half of a file
+/// rename (Plan 17). The row *moves* rather than being re-created so nothing
+/// derived is lost: pinned state, conflict flags, and (critically) embedding
+/// chunks, whose vectors must survive a rename — re-embedding costs the user
+/// real BYOK money for identical content.
+///
+/// Caller wraps this in a transaction with `defer_foreign_keys` ON: the child
+/// tables reference `notes(path)` and SQLite would otherwise reject updating
+/// the parent key while children point at it.
+///
+/// An occupied destination refuses (loudly), like the filesystem half
+/// (`move_note_file`): the collision probe raced something — the caller's
+/// transaction rolls back, the rename reports failed, and the filename
+/// drifts until the next settled rename retries. One rule, no adoption
+/// heuristics. A missing `from` row is fine: an unindexed file can still be
+/// renamed, and the watcher indexes it at the new path.
+pub(super) fn move_note(conn: &Connection, from: &str, to: &str) -> AppResult<()> {
+    let occupied: bool = conn
+        .prepare_cached("SELECT 1 FROM notes WHERE path = ?1")?
+        .exists(params![to])?;
+    if occupied {
+        return Err(crate::error::AppError::io(format!(
+            "cannot move note: {to} is already indexed"
+        )));
+    }
+    conn.prepare_cached("UPDATE notes SET path = ?2 WHERE path = ?1")?
+        .execute(params![from, to])?;
+    conn.prepare_cached("UPDATE note_text SET note_path = ?2 WHERE note_path = ?1")?
+        .execute(params![from, to])?;
+    conn.prepare_cached("UPDATE links SET source_path = ?2 WHERE source_path = ?1")?
+        .execute(params![from, to])?;
+    conn.prepare_cached("UPDATE tags SET note_path = ?2 WHERE note_path = ?1")?
+        .execute(params![from, to])?;
+    conn.prepare_cached("UPDATE aliases SET note_path = ?2 WHERE note_path = ?1")?
+        .execute(params![from, to])?;
+    conn.prepare_cached("UPDATE assets SET note_path = ?2 WHERE note_path = ?1")?
+        .execute(params![from, to])?;
+    conn.prepare_cached("UPDATE embedding_chunks SET note_path = ?2 WHERE note_path = ?1")?
+        .execute(params![from, to])?;
+    conn.prepare_cached("UPDATE search_fts SET path = ?2 WHERE path = ?1")?
+        .execute(params![from, to])?;
+    Ok(())
+}
+
 /// Wipe every derived table (for a full rebuild driven by TS). Deleting `notes`
 /// cascades to every child table; `search_fts` (a virtual table, no FK) is
 /// cleared explicitly. `index_meta` is intentionally preserved across a rebuild.

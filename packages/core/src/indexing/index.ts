@@ -7,6 +7,7 @@ export {
   applyIndexedNote,
   applyIndexedNotes,
   removeFromIndex,
+  moveNoteIndexed,
   clearIndex,
   setIndexMeta,
   watchStart,
@@ -22,8 +23,10 @@ export {
   subscribeIndexChanges,
   applyIndexChanges,
   type ApplyErrorHandler,
+  type MovedHandler,
 } from './live'
 export { hashContent } from './hash'
+export { availableNotePath, slugPathForTitle } from './note-paths'
 export {
   buildIndexedNote,
   indexedNoteSchema,
@@ -49,6 +52,7 @@ export {
   getBacklinks,
   getBacklinksWithContext,
   getConflictedNotes,
+  getDuplicateNoteIds,
   getIndexMeta,
   getLinkSources,
   getNote,
@@ -64,6 +68,7 @@ export {
   type ConflictedNote,
   type DailyNoteRow,
   type DailyNotesRange,
+  type DuplicateIdGroup,
   type NoteRow,
   type PinnedNote,
   type SearchHit,

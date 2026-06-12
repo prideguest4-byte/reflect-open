@@ -1,21 +1,36 @@
-import { foldKey, parseNote } from '@reflect/core'
+import { foldKey, hasAuthoredTitle, parseNote } from '@reflect/core'
 
 /**
- * Settled-title detection for the auto-rename flow (Plan 07b). A title change
- * triggers a graph-wide link rewrite, so it must fire on **settled** titles
- * only — never per keystroke: editing "My Note" → "My Notebook" passes through
- * garbage intermediate titles ("My N…") as each debounced save lands, and
- * rewriting backlinks to those would spray the graph with junk.
+ * Settled-title detection for the auto-rename flow. A title change triggers a
+ * graph-wide link rewrite *and* a file move (`docs/readable-filenames.md`),
+ * so it must fire on **settled** titles only — never per keystroke: editing
+ * "My Note" → "My Notebook" passes through garbage intermediate titles
+ * ("My N…") as each debounced save lands, and rewriting backlinks to those
+ * would spray the graph with junk.
  *
- * The tracker consumes the session's `onContent` stream: `load`/`external`
- * content re-baselines (external edits never trigger rewrites — only edits
- * the user made here), `saved` content arms a quiet timer, and a settle point
- * (blur, pane teardown) fires the pending rename immediately. Renames chain:
- * the previous auto-added alias rides along so a re-rename can prune it.
+ * The tracker consumes the session's `onContent` stream and reduces it to at
+ * most one pending event:
+ *
+ * - `load`/`external` content **re-baselines** — external edits never trigger
+ *   rewrites, only edits the user made here;
+ * - `saved` content arms (or re-arms) a quiet timer;
+ * - a settle point (blur, pane teardown, quit) fires the pending event now.
+ *
+ * Two event shapes come out: a **rename** (`from` is the old title) and a
+ * **birth** (`from: null` — the first authored title on an untitled note;
+ * nothing links to a title that never existed, but the file still sheds its
+ * placeholder name). Renames chain: the previous auto-added alias rides along
+ * so a re-rename can prune it instead of accreting one alias per edit.
  */
 
 export interface TitleRename {
-  from: string
+  /**
+   * The settled-away-from title — or `null` for a **birth**: the first
+   * authored title on an untitled note. Births rewrite no links and add no
+   * alias (nothing links to a title that never existed), but the file still
+   * adopts its slug name (Plan 17), on the same settled cadence as renames.
+   */
+  from: string | null
   to: string
   /** The alias auto-added by this session's previous rename (prune candidate). */
   previousAutoAlias: string | null
@@ -58,17 +73,16 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
   let disposed = false
 
   // A title only counts when the *content* declares one (frontmatter `title:`
-  // or an H1). parseNote falls back to the filename stem for untitled notes —
-  // baselining on that would make a fresh lazy note's first heading look like
-  // a rename from its ULID filename, spraying a junk alias (and potentially
-  // rewrites) on every new note. Untitled is `null` here.
+  // or an H1) — `hasAuthoredTitle`, the same predicate the title derivation
+  // and the 17c migration share, so "is this note titled?" can never drift
+  // between birth/rename detection and the rest of the app. parseNote falls
+  // back to the filename stem for untitled notes — baselining on that would
+  // make a fresh lazy note's first heading look like a rename from its ULID
+  // filename, spraying a junk alias (and potentially rewrites) on every new
+  // note. Untitled is `null` here.
   const titleOf = (content: string): string | null => {
     const parsed = parseNote({ path, source: content })
-    const fmTitle = (parsed.frontmatter as Record<string, unknown>).title
-    const titled =
-      (typeof fmTitle === 'string' && fmTitle.trim() !== '') ||
-      parsed.headings.some((heading) => heading.level === 1 && heading.text !== '')
-    return titled ? parsed.title : null
+    return hasAuthoredTitle(parsed) ? parsed.title : null
   }
 
   function cancelTimer(): void {
@@ -80,7 +94,7 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
 
   function fire(): void {
     cancelTimer()
-    if (disposed || pending === null || baselineTitle === null) {
+    if (disposed || pending === null) {
       return
     }
     if (canFire !== undefined && !canFire()) {
@@ -89,10 +103,11 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
     const rename: TitleRename = {
       from: baselineTitle,
       to: pending,
-      previousAutoAlias,
+      previousAutoAlias: baselineTitle === null ? null : previousAutoAlias,
     }
     // The title we just renamed away from becomes this session's auto-alias —
     // a follow-up rename prunes it instead of accreting one alias per edit.
+    // A birth (`from: null`) leaves no alias behind, so the chain stays empty.
     previousAutoAlias = baselineTitle
     baselineTitle = pending
     pending = null
@@ -122,11 +137,14 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
       return
     }
     if (baselineTitle === null) {
-      // The first authored title on an untitled note is a birth, not a
-      // rename — nothing links to a title that never existed.
+      // The first authored title on an untitled note is a **birth**, not a
+      // rename — nothing links to a title that never existed, so no rewrite.
+      // It still settles through the quiet timer: the birth event is what
+      // moves the file onto its slug name (Plan 17), and firing it per save
+      // would rename the file under a half-typed title.
+      pending = title
       cancelTimer()
-      pending = null
-      baselineTitle = title
+      timer = setTimeout(fire, quietMs)
       return
     }
     if (foldKey(title) === foldKey(baselineTitle)) {

@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { readNote, writeNote, type FileChange } from '@reflect/core'
 import { useFileChanges } from '@/lib/use-file-changes'
+import { createDocumentBinding, type DocumentBinding } from './document-binding'
 import type { NoteEditorHandle } from './note-editor'
-import { registerOpenDocument } from './open-documents'
-import { createRenameCoordinator, type RenameCoordinator } from './rename-coordinator'
+import { createRenameCoordinator } from './rename-coordinator'
 import {
   createNoteSession,
   INITIAL_NOTE_SNAPSHOT,
-  type NoteSession,
   type NoteSessionSnapshot,
 } from './note-session'
 import { checkRoundTrip } from './roundtrip'
@@ -16,7 +15,10 @@ import { checkRoundTrip } from './roundtrip'
  * React adapter over the {@link createNoteSession} document state machine: one
  * session per open `(path, generation)`, wired to the `@reflect/core` file
  * commands, the watcher event stream, and the editor's imperative handle. All
- * save/conflict/protection semantics live in `note-session.ts`.
+ * save/conflict/protection semantics live in `note-session.ts`, and the
+ * create/adopt/teardown/hand-off lifecycle (a rename retargets the live
+ * session and the route follows, Plan 17) lives in `document-binding.ts` —
+ * this hook only adapts both to React.
  */
 
 export interface NoteDocument extends NoteSessionSnapshot {
@@ -28,6 +30,13 @@ export interface NoteDocument extends NoteSessionSnapshot {
   keepMine: () => void
   /** Resolve a conflict by loading the external content (discards the buffer). */
   loadTheirs: () => void
+  /**
+   * Stable identity of the underlying session: increments when a session is
+   * *created*, not when a rename retargets one (Plan 17). Key the editor on
+   * this instead of the path, so a note following its title to a new filename
+   * keeps its live editor — cursor, selection, undo history and all.
+   */
+  sessionEpoch: number
 }
 
 export interface NoteDocumentOptions {
@@ -38,9 +47,9 @@ export interface NoteDocumentOptions {
    */
   createIfMissing?: boolean
   /**
-   * Auto-rewrite inbound `[[links]]` when this note's settled title changes
-   * (Plan 07b). Off for daily notes — their date labels are stream chrome,
-   * not content.
+   * Auto-rewrite inbound `[[links]]` (and move the file onto its title's slug,
+   * Plan 17) when this note's settled title changes. Off for daily notes —
+   * their date labels are stream chrome, not content.
    */
   trackRenames?: boolean
   /**
@@ -67,10 +76,12 @@ export function useNoteDocument(
   const missingSeed = options?.missingSeed
   const [snapshot, setSnapshot] = useState<NoteSessionSnapshot>(INITIAL_NOTE_SNAPSHOT)
   const editorRef = useRef<NoteEditorHandle | null>(null)
-  const sessionRef = useRef<NoteSession | null>(null)
-  const coordinatorRef = useRef<RenameCoordinator | null>(null)
   /** Mirrors the snapshot's conflict for non-reactive checks (rename gating). */
   const conflictRef = useRef<string | null>(null)
+  /** The pane's lifecycle policy object — one per hook instance. */
+  const bindingRef = useRef<DocumentBinding | null>(null)
+  bindingRef.current ??= createDocumentBinding()
+  const binding = bindingRef.current
 
   // Writes read the generation at write time, not at session creation, so the
   // session must NOT be keyed on `generation`: reopening the *same* graph bumps
@@ -88,86 +99,65 @@ export function useNoteDocument(
     if (!path) {
       return
     }
-    // The auto-rename lifecycle (Plan 07b) is owned by the coordinator — the
-    // tracker, the rewrite chain, and alias placement live there. It holds no
-    // pane state at all: session liveness comes from the open-documents
-    // service, and status surfaces through the global operations store.
-    const coordinator = trackRenames
-      ? createRenameCoordinator({
-          path,
-          generation: () => generationRef.current,
-          canFire: () => conflictRef.current === null,
-        })
-      : null
-    coordinatorRef.current = coordinator
-
-    const session = createNoteSession({
-      path,
-      io: {
-        read: readNote,
-        write: canWrite
-          ? (forPath, contents) => {
-              const current = generationRef.current
-              if (current === null) {
-                return Promise.reject(new Error('no graph generation available for save'))
-              }
-              return writeNote(forPath, contents, current)
-            }
+    const { session, created } = binding.bind(path, {
+      // The auto-rename lifecycle (Plan 07b/17) is owned by the coordinator —
+      // the tracker, the rewrite chain, alias placement, and the file move.
+      coordinator: () =>
+        trackRenames
+          ? createRenameCoordinator({
+              path,
+              generation: () => generationRef.current,
+              canFire: () => conflictRef.current === null,
+            })
           : null,
-      },
-      classify: checkRoundTrip,
-      onSnapshot: (snapshot) => {
-        conflictRef.current = snapshot.conflict
-        setSnapshot(snapshot)
-      },
-      applyContent: (markdown) => editorRef.current?.setMarkdown(markdown),
-      onContent: coordinator ? coordinator.content : undefined,
-      createIfMissing,
-      missingSeed,
+      session: (coordinator) =>
+        createNoteSession({
+          path,
+          io: {
+            read: readNote,
+            write: canWrite
+              ? (forPath, contents) => {
+                  const current = generationRef.current
+                  if (current === null) {
+                    return Promise.reject(new Error('no graph generation available for save'))
+                  }
+                  return writeNote(forPath, contents, current)
+                }
+              : null,
+          },
+          classify: checkRoundTrip,
+          onSnapshot: (next) => {
+            conflictRef.current = next.conflict
+            setSnapshot(next)
+          },
+          applyContent: (markdown) => editorRef.current?.setMarkdown(markdown),
+          onContent: coordinator ? coordinator.content : undefined,
+          createIfMissing,
+          missingSeed,
+        }),
     })
-    sessionRef.current = session
-    // One registration covers everything app-global teardown needs: the
-    // quit-time flush, settle-time rename work, and reopened-note lookups.
-    const unregisterDocument = registerOpenDocument({
-      session,
-      settle: coordinator ? () => coordinator.settle() : undefined,
-      settled: coordinator ? () => coordinator.settled() : undefined,
-    })
-    session.load()
-    return () => {
-      if (sessionRef.current === session) {
-        sessionRef.current = null
-      }
-      if (coordinatorRef.current === coordinator) {
-        coordinatorRef.current = null
-      }
-      // Unregister first: a rename settling from this teardown must not see
-      // this session as "open" — its alias goes to disk (or to a reopened
-      // pane's live session, which registers under the same path).
-      unregisterDocument()
-      // Disposal flushes pending edits to the session's own path — the
-      // path-switch "final flush" lives here, not in cross-note bookkeeping.
-      // The flush's landed save reaches the tracker via onContent('saved');
-      // settle after it so a just-edited title still renames on the way out.
-      const settled = session.flush()
-      session.dispose()
-      if (coordinator) {
-        void settled.then(() => {
-          coordinator.settle()
-          coordinator.dispose()
-        })
-      }
+    if (created) {
+      session.load()
     }
-  }, [path, canWrite, createIfMissing, trackRenames, missingSeed])
+    return () => binding.unbind(path)
+  }, [binding, path, canWrite, createIfMissing, trackRenames, missingSeed])
 
-  // External-change reconciliation via the watcher (Plan 04b events).
+  // External-change reconciliation via the watcher (Plan 04b events). The
+  // comparison reads the session's CURRENT path, not the route prop: a rename
+  // retargets the session before React re-renders the pane (Plan 17), and an
+  // external change landing at the new path inside that window must still
+  // reconcile — matching the prop would leave the editor stale against disk.
   const onFileChanges = useCallback(
     (changes: FileChange[]) => {
-      if (changes.some((change) => change.path === path && change.kind === 'upsert')) {
-        sessionRef.current?.externalChanged()
+      const session = binding.session()
+      if (session === null) {
+        return
+      }
+      if (changes.some((change) => change.path === session.path && change.kind === 'upsert')) {
+        session.externalChanged()
       }
     },
-    [path],
+    [binding],
   )
   useFileChanges(path ? onFileChanges : null)
 
@@ -180,12 +170,12 @@ export function useNoteDocument(
       return
     }
     const flush = (): void => {
-      // Capture the pair at event time: reading the refs again after the
+      // Capture the pair at event time: reading the binding again after the
       // flush promise resolves could observe a *different* note's session/
       // coordinator if navigation switched panes mid-flush — settling that
       // one early would fire its renames without quiet period or blur.
-      const session = sessionRef.current
-      const coordinator = coordinatorRef.current
+      const session = binding.session()
+      const coordinator = binding.coordinator()
       // Blur is a settle point for title renames — but only after the flushed
       // save lands, so the tracker has seen the final title. (Quit-time flush
       // + settle is the open-documents service's job, not this listener's.)
@@ -195,23 +185,33 @@ export function useNoteDocument(
     return () => {
       window.removeEventListener('blur', flush)
     }
-  }, [path])
+  }, [binding, path])
 
-  const onEditorChange = useCallback((markdown: string) => {
-    sessionRef.current?.editorChanged(markdown)
-  }, [])
+  const onEditorChange = useCallback(
+    (markdown: string) => {
+      binding.session()?.editorChanged(markdown)
+    },
+    [binding],
+  )
 
   const bindEditor = useCallback((handle: NoteEditorHandle | null) => {
     editorRef.current = handle
   }, [])
 
   const keepMine = useCallback(() => {
-    sessionRef.current?.keepMine()
-  }, [])
+    binding.session()?.keepMine()
+  }, [binding])
 
   const loadTheirs = useCallback(() => {
-    sessionRef.current?.loadTheirs()
-  }, [])
+    binding.session()?.loadTheirs()
+  }, [binding])
 
-  return { ...snapshot, onEditorChange, bindEditor, keepMine, loadTheirs }
+  return {
+    ...snapshot,
+    onEditorChange,
+    bindEditor,
+    keepMine,
+    loadTheirs,
+    sessionEpoch: binding.epoch(),
+  }
 }

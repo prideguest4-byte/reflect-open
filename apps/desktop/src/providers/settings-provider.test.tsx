@@ -384,7 +384,7 @@ describe('SettingsProvider', () => {
     })
     await waitFor(() =>
       expect(result.current.operations).toMatchObject([
-        { label: 'Saving settings', status: 'failed', error: 'disk full' },
+        { label: 'Saving settings', status: 'failed', message: 'disk full' },
       ]),
     )
     expect(result.current.settings.editorMarkdownSyntax).toBe('show')
@@ -472,7 +472,7 @@ describe('SettingsProvider', () => {
     )
     await waitFor(() =>
       expect(result.current.operations).toMatchObject([
-        { label: 'Loading settings', status: 'failed', error: 'corrupt store' },
+        { label: 'Loading settings', status: 'failed', message: 'corrupt store' },
       ]),
     )
 

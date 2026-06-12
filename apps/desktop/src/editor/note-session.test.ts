@@ -594,3 +594,42 @@ describe('missing-note seed (new ordinary notes)', () => {
     }
   })
 })
+
+describe('retarget (Plan 17)', () => {
+  it('rebinds reads and writes to the new path without touching document state', async () => {
+    const h = harness()
+    h.session.load()
+    await vi.waitFor(() => expect(h.snapshots.at(-1)?.status).toBe('ready'))
+
+    h.session.editorChanged('# Hello\n\nfirst edit\n')
+    await h.session.flush()
+    expect(h.writes.at(-1)?.path).toBe('notes/a.md')
+
+    h.session.retarget('notes/hello.md')
+    expect(h.session.path).toBe('notes/hello.md')
+    // The buffer carried over: not dirty, nothing rewritten on retarget alone.
+    expect(h.snapshots.at(-1)?.dirty).toBe(false)
+
+    h.session.editorChanged('# Hello\n\nsecond edit\n')
+    await h.session.flush()
+    expect(h.writes.at(-1)).toEqual({
+      path: 'notes/hello.md',
+      contents: '# Hello\n\nsecond edit\n',
+    })
+  })
+
+  it('keeps frontmatter ownership across a retarget', async () => {
+    const h = harness({ disk: '---\nid: 01abc\n---\n# Hello\n' })
+    h.session.load()
+    await vi.waitFor(() => expect(h.snapshots.at(-1)?.status).toBe('ready'))
+
+    h.session.retarget('notes/hello.md')
+    h.session.editorChanged('# Hello\n\nbody\n')
+    await h.session.flush()
+    // The exact header bytes ride along to the new path.
+    expect(h.writes.at(-1)).toEqual({
+      path: 'notes/hello.md',
+      contents: '---\nid: 01abc\n---\n# Hello\n\nbody\n',
+    })
+  })
+})

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { upsertFrontmatter } from '@reflect/core'
+import { onNoteMoved } from '@/lib/note-moves'
 import type { NoteSession } from './note-session'
-import { registerOpenDocument } from './open-documents'
+import { openSession, registerOpenDocument, retargetOpenDocument } from './open-documents'
 
 /**
  * The rename coordinator owns the riskiest background work in the app: a
@@ -20,6 +21,8 @@ const io = vi.hoisted(() => ({
   readNote: vi.fn(),
   writeNote: vi.fn(),
   resolveWikiTarget: vi.fn(),
+  slugPathForTitle: vi.fn(),
+  moveNoteIndexed: vi.fn(),
 }))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
@@ -28,6 +31,8 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   readNote: io.readNote,
   writeNote: io.writeNote,
   resolveWikiTarget: io.resolveWikiTarget,
+  slugPathForTitle: io.slugPathForTitle,
+  moveNoteIndexed: io.moveNoteIndexed,
 }))
 
 interface RecordedOperation {
@@ -83,9 +88,16 @@ async function renameOnce(
 function fakeSession(content: string): NoteSession & {
   updateFrontmatter: ReturnType<typeof vi.fn>
   flush: ReturnType<typeof vi.fn>
+  retarget: ReturnType<typeof vi.fn>
 } {
+  let path = PATH
   return {
-    path: PATH,
+    get path() {
+      return path
+    },
+    retarget: vi.fn((to: string) => {
+      path = to
+    }),
     load: () => {},
     editorChanged: () => {},
     externalChanged: () => {},
@@ -105,6 +117,12 @@ beforeEach(() => {
   io.readNote.mockReset()
   io.writeNote.mockReset()
   io.writeNote.mockResolvedValue(undefined)
+  // Default: the filename already matches the title — no move. Move-specific
+  // tests override with a diverging target.
+  io.slugPathForTitle.mockReset()
+  io.slugPathForTitle.mockImplementation(async (path: string) => path)
+  io.moveNoteIndexed.mockReset()
+  io.moveNoteIndexed.mockResolvedValue(undefined)
   operationLog.records.length = 0
 })
 
@@ -257,6 +275,101 @@ describe('rename coordinator', () => {
     coordinator.settle()
     await coordinator.settled()
     expect(io.rewriteLinksForTitleChange).not.toHaveBeenCalled()
+  })
+
+  it('moves the file onto the new slug: flush, retarget, registry re-key, then the move', async () => {
+    const session = fakeSession('# New Title\n')
+    const unregister = registerOpenDocument({ session })
+    io.slugPathForTitle.mockResolvedValue('notes/new-title.md')
+    const moves: Array<[string, string]> = []
+    const unsubscribe = onNoteMoved((from, to) => moves.push([from, to]))
+    try {
+      const coordinator = makeCoordinator()
+      await renameOnce(coordinator, 'Old Title', 'New Title')
+
+      expect(session.flush).toHaveBeenCalled()
+      expect(session.retarget).toHaveBeenCalledWith('notes/new-title.md')
+      expect(io.moveNoteIndexed).toHaveBeenCalledWith(PATH, 'notes/new-title.md', 7)
+      // The registry follows: lookups under the new path find the live session.
+      expect(openSession('notes/new-title.md')).toBe(session)
+      expect(openSession(PATH)).toBeNull()
+      expect(moves).toEqual([[PATH, 'notes/new-title.md']])
+      expect(operationLog.records[0].outcome).toBe('done')
+    } finally {
+      unsubscribe()
+      retargetOpenDocument('notes/new-title.md', PATH, session) // restore for other tests
+      unregister()
+    }
+  })
+
+  it('a birth (first authored title) moves the file without rewrite or alias', async () => {
+    io.slugPathForTitle.mockResolvedValue('notes/fresh-note.md')
+    const coordinator = makeCoordinator()
+    coordinator.content('', 'load') // untitled lazy note
+    coordinator.content('# Fresh Note\n', 'saved')
+    coordinator.settle()
+    await coordinator.settled()
+
+    expect(io.rewriteLinksForTitleChange).not.toHaveBeenCalled()
+    expect(io.writeNote).not.toHaveBeenCalled() // no alias for a birth
+    expect(io.moveNoteIndexed).toHaveBeenCalledWith(PATH, 'notes/fresh-note.md', 7)
+    expect(operationLog.records).toEqual([
+      { label: 'Naming "Fresh Note"', outcome: 'done', message: null },
+    ])
+  })
+
+  it('a failed move retargets the session back and reports filename drift', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const session = fakeSession('# New Title\n')
+    const unregister = registerOpenDocument({ session })
+    io.readNote.mockResolvedValue('# New Title\n')
+    io.slugPathForTitle.mockResolvedValue('notes/new-title.md')
+    io.moveNoteIndexed.mockRejectedValue(new Error('disk full'))
+    try {
+      const coordinator = makeCoordinator()
+      await renameOnce(coordinator, 'Old Title', 'New Title')
+
+      // Retargeted out and back: the session ends bound to its original path.
+      expect(session.retarget).toHaveBeenNthCalledWith(1, 'notes/new-title.md')
+      expect(session.retarget).toHaveBeenNthCalledWith(2, PATH)
+      expect(openSession(PATH)).toBe(session)
+      expect(operationLog.records[0].outcome).toBe('failed')
+      expect(operationLog.records[0].message).toContain('keeps its old name')
+      expect(operationLog.records[0].message).toContain('disk full')
+    } finally {
+      unregister()
+    }
+  })
+
+  it('the rewrite collision guard does not block the move (filename follows the NEW title)', async () => {
+    io.rewriteLinksForTitleChange.mockResolvedValue({ rewritten: 0, failed: 0, collision: true })
+    io.slugPathForTitle.mockResolvedValue('notes/new-title.md')
+    const coordinator = makeCoordinator()
+    await renameOnce(coordinator, 'Old Title', 'New Title')
+
+    expect(io.writeNote).not.toHaveBeenCalled() // collision: no alias claimed
+    expect(io.moveNoteIndexed).toHaveBeenCalledWith(PATH, 'notes/new-title.md', 7)
+  })
+
+  it('a follow-up rename works against the moved path', async () => {
+    io.readNote.mockResolvedValue('# B\n')
+    io.slugPathForTitle.mockResolvedValueOnce('notes/b.md')
+    const coordinator = makeCoordinator()
+    await renameOnce(coordinator, 'A', 'B')
+    expect(io.moveNoteIndexed).toHaveBeenCalledWith(PATH, 'notes/b.md', 7)
+
+    io.readNote.mockResolvedValue('# C\n')
+    io.slugPathForTitle.mockResolvedValueOnce('notes/c.md')
+    coordinator.content('# C\n', 'saved')
+    coordinator.settle()
+    await coordinator.settled()
+
+    // Both the rewrite and the second move key off the note's current path.
+    expect(io.rewriteLinksForTitleChange.mock.calls[1][0]).toMatchObject({
+      path: 'notes/b.md',
+    })
+    expect(io.slugPathForTitle).toHaveBeenLastCalledWith('notes/b.md', 'C')
+    expect(io.moveNoteIndexed).toHaveBeenLastCalledWith('notes/b.md', 'notes/c.md', 7)
   })
 
   it('chained renames serialize and prune the previous auto-alias', async () => {

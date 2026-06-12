@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '@reflect/core'
+import { onNoteMoved } from '@/lib/note-moves'
 import { flushOpenDocuments } from './open-documents'
 import type { NoteEditorHandle } from './note-editor'
 import { useNoteDocument } from './use-note-document'
@@ -93,6 +94,19 @@ function installGraphFake({ files, linkSources, resolveTitleTo }: GraphFakeOptio
       }
       return []
     }
+    if (command === 'note_exists') {
+      return files[(args as { path: string }).path] !== undefined
+    }
+    if (command === 'note_move_indexed') {
+      const { from, to } = args as { from: string; to: string }
+      // Mirrors the Rust command for the paths these tests exercise: a free
+      // destination renames (occupied ones refuse, but no test stages that).
+      if (files[to] === undefined && files[from] !== undefined) {
+        files[to] = files[from]
+      }
+      delete files[from]
+      return null
+    }
     return null
   })
   return files
@@ -179,9 +193,11 @@ describe('useNoteDocument', () => {
       await act(() => vi.runAllTimersAsync())
 
       expect(files['notes/src.md']).toBe('see [[New Title]]\n')
-      expect(files['notes/a.md']).toContain('aliases:')
-      expect(files['notes/a.md']).toContain('Old Title')
-      expect(files['notes/a.md'].endsWith('# New Title\n')).toBe(true)
+      // The file followed its title (Plan 17): alias and content move along.
+      expect(files['notes/a.md']).toBeUndefined()
+      expect(files['notes/new-title.md']).toContain('aliases:')
+      expect(files['notes/new-title.md']).toContain('Old Title')
+      expect(files['notes/new-title.md'].endsWith('# New Title\n')).toBe(true)
     } finally {
       vi.useRealTimers()
     }
@@ -205,9 +221,11 @@ describe('useNoteDocument', () => {
       await act(() => vi.runAllTimersAsync())
 
       expect(files['notes/src.md']).toBe('see [[New Title]]\n')
-      // The alias can't go through the disposed session — it lands on disk.
-      expect(files['notes/a.md']).toContain('aliases:')
-      expect(files['notes/a.md']).toContain('Old Title')
+      // The alias can't go through the disposed session — it lands on disk,
+      // and the move then carries it to the slug path.
+      expect(files['notes/new-title.md']).toContain('aliases:')
+      expect(files['notes/new-title.md']).toContain('Old Title')
+      expect(files['notes/a.md']).toBeUndefined()
     } finally {
       vi.useRealTimers()
     }
@@ -235,7 +253,7 @@ describe('useNoteDocument', () => {
       await act(() => vi.runAllTimersAsync())
 
       expect(files['notes/src.md']).toBe('see [[New Title]]\n')
-      expect(files['notes/a.md']).toContain('aliases:') // alias on A, via disk
+      expect(files['notes/new-title.md']).toContain('aliases:') // alias on A, via disk
       expect(files['notes/b.md']).toBe('# Note B\n') // B untouched
       paneB.unmount()
     } finally {
@@ -266,8 +284,11 @@ describe('useNoteDocument', () => {
       await act(() => vi.runAllTimersAsync())
 
       // Links keep resolving to their deliberate target; no competing alias.
+      // The file still follows the NEW title — the guard is about the old
+      // title's links, not the filename.
       expect(files['notes/src.md']).toBe('see [[Old Title]]\n')
-      expect(files['notes/a.md']).toBe('# New Title\n')
+      expect(files['notes/new-title.md']).toBe('# New Title\n')
+      expect(files['notes/a.md']).toBeUndefined()
       hook.unmount()
     } finally {
       vi.useRealTimers()
@@ -301,8 +322,8 @@ describe('useNoteDocument', () => {
       // The rewrite failed, the baseline has advanced — the alias is what
       // keeps [[Old Title]] resolving here, so it must land regardless.
       expect(files['notes/src.md']).toBe('see [[Old Title]]\n')
-      expect(files['notes/a.md']).toContain('aliases:')
-      expect(files['notes/a.md']).toContain('Old Title')
+      expect(files['notes/new-title.md']).toContain('aliases:')
+      expect(files['notes/new-title.md']).toContain('Old Title')
       hook.unmount()
     } finally {
       errorSpy.mockRestore()
@@ -341,10 +362,111 @@ describe('useNoteDocument', () => {
       })
       await act(() => vi.runAllTimersAsync())
 
-      // Titling an untitled note is a birth: no rewrite ran, no alias landed.
+      // Titling an untitled note is a birth: no rewrite ran, no alias landed —
+      // but the file shed its placeholder name for the title's slug (Plan 17).
       expect(linkQueries).toEqual([])
-      expect(files['notes/01arz3ndekt.md']).toBe('# Brand New Note\n')
+      expect(files['notes/brand-new-note.md']).toBe('# Brand New Note\n')
+      expect(files['notes/01arz3ndekt.md']).toBeUndefined()
       hook.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('the pane adopts its retargeted session when the route follows a move (Plan 17)', async () => {
+    vi.useFakeTimers()
+    const moves: Array<[string, string]> = []
+    const unsubscribe = onNoteMoved((from, to) => moves.push([from, to]))
+    try {
+      const files: Record<string, string> = { 'notes/a.md': '# Old Title\n' }
+      installGraphFake({ files })
+
+      const hook = renderHook(
+        ({ path }: { path: string }) => useNoteDocument(path, 1, { trackRenames: true }),
+        { initialProps: { path: 'notes/a.md' } },
+      )
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(hook.result.current.status).toBe('ready')
+      const epochBefore = hook.result.current.sessionEpoch
+
+      act(() => hook.result.current.onEditorChange('# New Title\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000)) // save lands
+      await act(() => vi.runAllTimersAsync()) // quiet period → rename + move
+
+      expect(moves).toEqual([['notes/a.md', 'notes/new-title.md']])
+      // Alias frontmatter (the rename's breadcrumb) + content, at the slug path.
+      expect(files['notes/new-title.md']).toContain('Old Title')
+      expect(files['notes/new-title.md']).toContain('# New Title\n')
+      expect(files['notes/a.md']).toBeUndefined()
+
+      // The router (subscribed to onNoteMoved) re-renders the pane with the
+      // new path; the hook adopts the retargeted session — no reload, no new
+      // epoch, so the live editor (and its cursor) survives.
+      hook.rerender({ path: 'notes/new-title.md' })
+      await act(async () => {})
+      expect(hook.result.current.status).toBe('ready')
+      expect(hook.result.current.sessionEpoch).toBe(epochBefore)
+
+      // Subsequent edits land on the new path only — nothing resurrects a.md.
+      act(() => hook.result.current.onEditorChange('# New Title\n\nmore\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      expect(files['notes/new-title.md']).toContain('# New Title\n\nmore\n')
+      expect(files['notes/a.md']).toBeUndefined()
+      hook.unmount()
+    } finally {
+      unsubscribe()
+      vi.useRealTimers()
+    }
+  })
+
+  it('watcher upserts at the retargeted path reconcile before React catches up (Plan 17)', async () => {
+    vi.useFakeTimers()
+    try {
+      const files: Record<string, string> = { 'notes/a.md': '# Old Title\n' }
+      installGraphFake({ files })
+      const hook = renderHook(() => useNoteDocument('notes/a.md', 1, { trackRenames: true }))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      act(() => hook.result.current.onEditorChange('# New Title\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      await act(() => vi.runAllTimersAsync()) // rename + move settle; session retargeted
+
+      // An external edit lands at the NEW path while the pane still renders
+      // the old route path (no rerender yet) — it must reconcile against the
+      // session's current path, not the stale prop.
+      files['notes/new-title.md'] = '# New Title\n\nedited elsewhere\n'
+      act(() => {
+        emitChange?.([{ path: 'notes/new-title.md', kind: 'upsert' }])
+      })
+      await act(() => vi.runAllTimersAsync())
+
+      expect(hook.result.current.initialContent).toContain('edited elsewhere')
+      hook.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('an unadopted retargeted session still tears down on unmount (no orphan flush)', async () => {
+    vi.useFakeTimers()
+    try {
+      const files: Record<string, string> = { 'notes/a.md': '# Old Title\n' }
+      installGraphFake({ files })
+
+      const hook = renderHook(() => useNoteDocument('notes/a.md', 1, { trackRenames: true }))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      act(() => hook.result.current.onEditorChange('# New Title\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      await act(() => vi.runAllTimersAsync()) // move lands; session retargeted
+
+      // Unmount without any rerender (nothing adopted the session): the
+      // deferred teardown must still dispose it and flush nothing stale.
+      hook.unmount()
+      await act(async () => {})
+      const after = { ...files }
+
+      await flushOpenDocuments() // an orphan would flush here and resurrect a.md
+      expect(files).toEqual(after)
+      expect(files['notes/a.md']).toBeUndefined()
     } finally {
       vi.useRealTimers()
     }
@@ -370,8 +492,8 @@ describe('useNoteDocument', () => {
       files['notes/a.md'] = '---\naliases:\n  - Keeper\n---\n# New Title\n'
       await act(() => vi.runAllTimersAsync())
 
-      expect(files['notes/a.md']).toContain('Keeper') // concurrently-gained, kept
-      expect(files['notes/a.md']).toContain('Old Title') // the rename's alias
+      expect(files['notes/new-title.md']).toContain('Keeper') // concurrently-gained, kept
+      expect(files['notes/new-title.md']).toContain('Old Title') // the rename's alias
     } finally {
       vi.useRealTimers()
     }
@@ -400,11 +522,12 @@ describe('useNoteDocument', () => {
       await act(() => vi.runAllTimersAsync())
 
       // The alias went through the live session — no conflict from our own
-      // background write, and the user's edit and the alias both persist.
+      // background write, and the user's edit and the alias both persist
+      // (carried to the slug path by the move).
       expect(paneA2.result.current.conflict).toBeNull()
-      expect(files['notes/a.md']).toContain('aliases:')
-      expect(files['notes/a.md']).toContain('Old Title')
-      expect(files['notes/a.md']).toContain('fresh edit')
+      expect(files['notes/new-title.md']).toContain('aliases:')
+      expect(files['notes/new-title.md']).toContain('Old Title')
+      expect(files['notes/new-title.md']).toContain('fresh edit')
       paneA2.unmount()
     } finally {
       vi.useRealTimers()
@@ -429,7 +552,7 @@ describe('useNoteDocument', () => {
       await act(() => flushOpenDocuments())
 
       expect(files['notes/src.md']).toBe('see [[New Title]]\n')
-      expect(files['notes/a.md']).toContain('aliases:')
+      expect(files['notes/new-title.md']).toContain('aliases:')
       hook.unmount()
     } finally {
       vi.useRealTimers()

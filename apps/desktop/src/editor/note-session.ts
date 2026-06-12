@@ -7,9 +7,13 @@ import type { RoundTripFidelity } from './roundtrip'
  * `useNoteDocument` adapts it to React; tests drive it directly.
  *
  * A session is created for one `path` and lives until {@link NoteSession.dispose}.
- * Binding the path at construction is what keeps the machine simple: a note
- * switch is "dispose the old session (which flushes its buffer to *its* path),
- * create a new one" — there is no cross-note state to guard.
+ * Binding the path at construction keeps the machine simple: a note switch is
+ * "dispose the old session (which flushes its buffer to *its* path), create a
+ * new one" — there is no cross-note state to guard. The one sanctioned path
+ * mutation is {@link NoteSession.retarget} (Plan 17): a rename moves the
+ * *file*, not the document, so the same session continues under the new path
+ * — content, dirtiness, and conflict state untouched. Lifecycle policy around
+ * that (adopt vs teardown) lives in `document-binding.ts`, not here.
  *
  * Saves are debounced atomic writes (Plan 02); indexing is **not** triggered
  * here — the watcher is the sole incremental-reindex path (Plan 04b), so our own
@@ -167,8 +171,16 @@ function yamlPatch(patch: FrontmatterPatch): Record<string, unknown> {
 
 /** One open note's document lifecycle. Create via {@link createNoteSession}. */
 export interface NoteSession {
-  /** The graph-relative path this session is bound to. */
+  /** The graph-relative path this session is bound to (mutable via {@link NoteSession.retarget}). */
   readonly path: string
+  /**
+   * Rebind the session to a renamed path (Plan 17). The *file* moved; the
+   * document didn't — buffer, header, dirtiness, and conflict state are all
+   * untouched, and every subsequent read/write uses `to`. Call after flushing,
+   * right before the file move lands, so a racing save can never resurrect
+   * the old path.
+   */
+  retarget: (to: string) => void
   /** Read the note and emit `ready` (or `error`). Call once after creation. */
   load: () => void
   /** Every editor document change enters the pipeline here. */
@@ -220,7 +232,9 @@ function splitDoc(content: string): { header: string; body: string } {
 
 /** Create the document session for one note. See the module doc for semantics. */
 export function createNoteSession(options: NoteSessionOptions): NoteSession {
-  const { path, io, classify, onSnapshot, applyContent, onContent } = options
+  const { io, classify, onSnapshot, applyContent, onContent } = options
+  /** Mutable: a rename retargets the session in place (Plan 17). */
+  let path = options.path
   const createIfMissing = options.createIfMissing ?? false
   const missingSeed = options.missingSeed
   const saveDebounceMs = options.saveDebounceMs ?? DEFAULT_SAVE_DEBOUNCE_MS
@@ -591,7 +605,12 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
   }
 
   return {
-    path,
+    get path() {
+      return path
+    },
+    retarget: (to: string) => {
+      path = to
+    },
     load,
     editorChanged,
     externalChanged,

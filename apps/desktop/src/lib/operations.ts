@@ -14,7 +14,8 @@ export interface Operation {
   label: string
   progress: { done: number; total: number } | null
   status: 'running' | 'failed'
-  error: string | null
+  /** The lingering line under the label when the operation failed. */
+  message: string | null
 }
 
 export interface OperationHandle {
@@ -25,7 +26,7 @@ export interface OperationHandle {
   fail: (message: string) => void
 }
 
-const FAILED_LINGER_MS = 8000
+const LINGER_MS = 8000
 /**
  * Once shown, an entry stays visible at least this long — a fast operation
  * (a one-source rename) otherwise flashes for a frame and reads as a glitch.
@@ -68,7 +69,7 @@ function remove(id: number): void {
 export function startOperation(label: string): OperationHandle {
   const id = nextId++
   const shownAt = Date.now()
-  operations = [...operations, { id, label, progress: null, status: 'running', error: null }]
+  operations = [...operations, { id, label, progress: null, status: 'running', message: null }]
   emit()
   const removeAfterMinimum = (extra: number): void => {
     const visibleFor = Date.now() - shownAt
@@ -83,8 +84,8 @@ export function startOperation(label: string): OperationHandle {
     progress: (done, total) => patch(id, { progress: { done, total } }),
     done: () => removeAfterMinimum(0),
     fail: (message) => {
-      patch(id, { status: 'failed', error: message })
-      removeAfterMinimum(FAILED_LINGER_MS)
+      patch(id, { status: 'failed', message })
+      removeAfterMinimum(LINGER_MS)
     },
   }
 }

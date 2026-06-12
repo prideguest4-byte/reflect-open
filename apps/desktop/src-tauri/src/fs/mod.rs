@@ -237,20 +237,34 @@ pub fn dir_list(dir: String, state: State<GraphState>) -> AppResult<Vec<FileMeta
     Ok(out)
 }
 
-/// Move/rename a note within the graph (pinned to `generation`).
+/// Does a graph-relative path currently exist as a file? The collision picker
+/// (Plan 17) probes disk as well as the index — the index lags the watcher by
+/// a debounce, and an unindexed file must never be clobbered by a new note.
 #[tauri::command]
-pub fn note_move(
-    from: String,
-    to: String,
-    generation: u64,
-    state: State<GraphState>,
-) -> AppResult<()> {
-    let root = root_for_generation(&state, generation)?;
-    let to_abs = resolve(&root, &to)?;
+pub fn note_exists(path: String, state: State<GraphState>) -> AppResult<bool> {
+    let root = current_root(&state)?;
+    Ok(resolve(&root, &path)?.is_file())
+}
+
+/// Rename `from` → `to` on disk (both graph-relative, traversal-guarded).
+///
+/// An occupied destination refuses (loudly), matching the projection half
+/// (`db::write::move_note`): the collision probe raced something — nothing is
+/// deleted or overwritten, the caller compensates, and the rename simply
+/// reports failed. One rule, no adoption heuristics; the filename drifts
+/// until the next settled rename retries.
+pub(crate) fn move_note_file(root: &Path, from: &str, to: &str) -> AppResult<()> {
+    let from_abs = resolve(root, from)?;
+    let to_abs = resolve(root, to)?;
+    if to_abs.is_file() {
+        return Err(AppError::io(format!(
+            "cannot move note: {to} already exists on disk"
+        )));
+    }
     if let Some(parent) = to_abs.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::rename(resolve(&root, &from)?, to_abs)?;
+    fs::rename(from_abs, to_abs)?;
     Ok(())
 }
 
@@ -272,4 +286,46 @@ pub fn list_files(state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
         collect_files(&root, dir, Some("md"), &mut out)?;
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod move_tests {
+    use super::move_note_file;
+    use std::fs;
+
+    fn graph() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("notes")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn renames_when_the_destination_is_free() {
+        let root = graph();
+        fs::write(root.path().join("notes/a.md"), "# A\n").unwrap();
+        move_note_file(root.path(), "notes/a.md", "notes/b.md").unwrap();
+        assert!(!root.path().join("notes/a.md").exists());
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/b.md")).unwrap(),
+            "# A\n"
+        );
+    }
+
+    #[test]
+    fn an_occupied_destination_refuses_with_both_files_intact() {
+        // Whatever appeared at the destination after the collision probe,
+        // nothing is deleted or overwritten — the rename just fails.
+        let root = graph();
+        fs::write(root.path().join("notes/a.md"), "# Mine\n").unwrap();
+        fs::write(root.path().join("notes/b.md"), "# Theirs\n").unwrap();
+        assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/a.md")).unwrap(),
+            "# Mine\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/b.md")).unwrap(),
+            "# Theirs\n"
+        );
+    }
 }

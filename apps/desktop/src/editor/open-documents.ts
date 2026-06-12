@@ -27,13 +27,20 @@ export interface OpenDocument {
 
 const documents = new Map<string, OpenDocument>()
 
-/** Register an open document (keyed by its session's path); returns the unregister. */
+/**
+ * Register an open document (keyed by its session's path); returns the
+ * unregister. Unregistration is by **identity**, not key — a rename can
+ * re-key the entry ({@link retargetOpenDocument}) between registration and
+ * teardown, and the unregister must still find it.
+ */
 export function registerOpenDocument(document: OpenDocument): () => void {
-  const path = document.session.path
-  documents.set(path, document)
+  documents.set(document.session.path, document)
   return () => {
-    if (documents.get(path) === document) {
-      documents.delete(path)
+    for (const [key, registered] of documents) {
+      if (registered === document) {
+        documents.delete(key)
+        return
+      }
     }
   }
 }
@@ -41,6 +48,24 @@ export function registerOpenDocument(document: OpenDocument): () => void {
 /** The live session for `path`, if that note is open in some pane. */
 export function openSession(path: string): NoteSession | null {
   return documents.get(path)?.session ?? null
+}
+
+/**
+ * Re-key an open document after its note file moved (Plan 17), so
+ * {@link openSession} lookups under the new path find the live session. The
+ * entry moves only when it actually holds `session` — a failed move's
+ * compensating re-key must never grab a *different* pane's document that
+ * legitimately sits at `from` (then quit-time flush and `openSession` would
+ * target the wrong path). The old registration's unregister closure stays
+ * correct either way (it checks identity, not keys), and the adopting pane
+ * re-registers under the new path.
+ */
+export function retargetOpenDocument(from: string, to: string, session: NoteSession): void {
+  const document = documents.get(from)
+  if (document !== undefined && document.session === session) {
+    documents.delete(from)
+    documents.set(to, document)
+  }
 }
 
 /**

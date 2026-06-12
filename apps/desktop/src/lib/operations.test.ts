@@ -43,7 +43,7 @@ describe('operations store', () => {
     })
     act(() => handle.fail('disk full'))
     expect(result.current[0].status).toBe('failed')
-    expect(result.current[0].error).toBe('disk full')
+    expect(result.current[0].message).toBe('disk full')
 
     act(() => vi.advanceTimersByTime(8000 + 1200))
     expect(result.current).toEqual([])

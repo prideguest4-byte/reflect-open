@@ -1,9 +1,10 @@
 import { useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getConflictedNotes, hasBridge } from '@reflect/core'
+import { getConflictedNotes, getDuplicateNoteIds, hasBridge } from '@reflect/core'
 import { ConnectGithubDialog } from '@/components/settings/connect-github-dialog'
 import { SettingsField } from '@/components/settings/field'
 import { SettingsSection } from '@/components/settings/section'
+import { SyncForkNotice } from '@/components/settings/sync-fork-notice'
 import { Button } from '@/components/ui/button'
 import { useAsyncAction } from '@/hooks/use-async-action'
 import { suggestRepoName } from '@/lib/github-repos'
@@ -47,6 +48,16 @@ export function BackupSection(): ReactElement {
     enabled: hasBridge() && graph !== null,
   })
   const conflictCount = conflicted.data?.length ?? 0
+
+  // A sync fork (Plan 17): two files claiming one frontmatter id — the same
+  // note retitled differently on two devices. Surfaced for review beside the
+  // marker conflicts; repair is the user's call, never automatic.
+  const duplicateIds = useQuery({
+    queryKey: [INDEX_QUERY_SCOPE, 'duplicate-note-ids', graph?.root],
+    queryFn: () => getDuplicateNoteIds(),
+    enabled: hasBridge() && graph !== null,
+  })
+  const forkGroups = duplicateIds.data ?? []
 
   const repoLabel =
     backup.phase === 'connected'
@@ -92,6 +103,7 @@ export function BackupSection(): ReactElement {
                   — open it to keep the version you want.
                 </p>
               ) : null}
+              <SyncForkNotice groups={forkGroups} />
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"

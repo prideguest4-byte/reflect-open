@@ -5,11 +5,13 @@ import {
   applyIndexedNote,
   applyIndexedNotes,
   clearIndex,
+  moveIndexedRows,
   removeFromIndex,
   setIndexMeta,
 } from './commands'
 import { hashContent } from './hash'
 import { buildIndexedNote, PROJECTION_VERSION, type IndexedNote } from './indexed-note'
+import { detectExternalMoves } from './move-healing'
 import { getIndexedHashes, getIndexMeta } from './queries'
 
 /**
@@ -64,6 +66,13 @@ export interface IndexPassOptions {
   generation: number
   /** Aborts the pass early when the active graph changes. */
   signal?: AbortSignal
+  /**
+   * Called after id-based move healing relocates a note's rows (Plan 17): an
+   * external rename observed after the fact. The desktop layer uses it to
+   * carry live sessions and rewrite routes, exactly as for an in-app rename
+   * — without it, history entries keep pointing at the dead path.
+   */
+  onMoved?: (from: string, to: string) => void
 }
 
 /**
@@ -123,7 +132,7 @@ export async function syncIndex(options: IndexPassOptions): Promise<void> {
  * the newly-opened index — Rust drops its stale writes.
  */
 export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
-  const { generation, signal } = options
+  const { generation, signal, onMoved } = options
   const files = await listFiles()
   if (signal?.aborted) {
     return
@@ -131,21 +140,65 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
   const onDisk = new Set(files.map((file) => file.path))
   const stored = await getIndexedHashes()
 
+  // Id-based move healing (Plan 17): a row whose file vanished plus a new
+  // file carrying the same frontmatter id is a rename observed after the
+  // fact — an external tool or a sync pull moved it while Reflect wasn't
+  // looking. Move the rows instead of delete+create, so embedding vectors
+  // survive. Best-effort throughout: any failure degrades to the plain pass
+  // below (the arrival is indexed fresh, the cleanup loop drops the orphan).
+  const orphanPaths = [...stored.keys()].filter((path) => !onDisk.has(path))
+  const arrivalPaths = files.filter((file) => !stored.has(file.path)).map((file) => file.path)
+  /** Arrival content read for pairing — the main pass below reuses it. */
+  let arrivalContent = new Map<string, string>()
+  try {
+    const scan = await detectExternalMoves(orphanPaths, arrivalPaths, { signal })
+    arrivalContent = scan.content
+    for (const move of scan.moves) {
+      if (signal?.aborted) {
+        return
+      }
+      try {
+        await moveIndexedRows(move.from, move.to, generation)
+      } catch (err) {
+        // A refused/failed move (e.g. a row appeared at the destination in a
+        // race) degrades to today's delete+create.
+        console.error(`id-based move failed (${move.from} → ${move.to}):`, err)
+        continue
+      }
+      // The moved row carries the old path's hash: the main pass re-indexes
+      // at the new path only if the content actually changed in transit.
+      const hash = stored.get(move.from)
+      stored.delete(move.from)
+      if (hash !== undefined) {
+        stored.set(move.to, hash)
+      }
+      onMoved?.(move.from, move.to)
+    }
+  } catch (err) {
+    // A failed detection (e.g. the id lookup) must not cost the reconcile.
+    console.error('id-based move healing failed; reconciling plainly:', err)
+  }
+  if (signal?.aborted) {
+    return
+  }
+
   for (const file of files) {
     if (signal?.aborted) {
       return
     }
-    let content: string
-    try {
-      content = await readNote(file.path)
-    } catch (err) {
-      // The file moved/was deleted/locked between listFiles() and here (TOCTOU).
-      // If it's gone, drop it from `onDisk` so the cleanup loop removes its
-      // now-ghost row this pass; for a transient error keep the row and retry.
-      if (isAppError(err) && err.kind === 'notFound') {
-        onDisk.delete(file.path)
+    let content = arrivalContent.get(file.path)
+    if (content === undefined) {
+      try {
+        content = await readNote(file.path)
+      } catch (err) {
+        // The file moved/was deleted/locked between listFiles() and here (TOCTOU).
+        // If it's gone, drop it from `onDisk` so the cleanup loop removes its
+        // now-ghost row this pass; for a transient error keep the row and retry.
+        if (isAppError(err) && err.kind === 'notFound') {
+          onDisk.delete(file.path)
+        }
+        continue
       }
-      continue
     }
     const fileHash = await hashContent(content)
     if (stored.get(file.path) === fileHash) {

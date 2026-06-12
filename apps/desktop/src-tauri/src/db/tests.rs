@@ -8,7 +8,7 @@ use serde_json::Value;
 use super::embed_write::{apply_chunks, remove_chunks, EmbeddedChunk};
 use super::migrations::{migrate, migrate_to, open_in_memory, open_index_at, validate_migrations};
 use super::query::run_query;
-use super::write::{apply_note, clear_index, IndexedLink, IndexedNote, IndexedTag};
+use super::write::{apply_note, clear_index, move_note, IndexedLink, IndexedNote, IndexedTag};
 
 fn migrated() -> Connection {
     // Registers sqlite-vec before migrating — the 0002 migration creates a
@@ -60,7 +60,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 6); // applied migrations (0001 through 0006)
+    assert_eq!(version, 7); // applied migrations (0001 through 0007)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -264,7 +264,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 6);
+    assert_eq!(version, 7);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
@@ -701,4 +701,159 @@ fn apply_chunks_for_an_unindexed_path_is_a_cleaning_no_op() {
     assert!(result.is_ok());
     assert_eq!(chunk_rows(&conn), vec![]);
     assert_eq!(vector_count(&conn), 0);
+}
+
+// ---- note_move (Plan 17) ----------------------------------------------------
+
+fn move_in_txn(conn: &mut Connection, from: &str, to: &str) -> crate::error::AppResult<()> {
+    let tx = conn.transaction()?;
+    tx.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
+    move_note(&tx, from, to)?;
+    tx.commit()?;
+    Ok(())
+}
+
+#[test]
+fn move_note_migrates_every_row_and_preserves_derived_state() {
+    let mut conn = migrated();
+    let mut moved = note("notes/old.md", "Kept Title", vec![wiki("Elsewhere")]);
+    moved.is_pinned = true;
+    moved.pinned_order = Some(2.5);
+    moved.has_conflict = true;
+    apply_note(&conn, &moved).unwrap();
+    apply_note(
+        &conn,
+        &note("notes/src.md", "Src", vec![wiki("Kept Title")]),
+    )
+    .unwrap();
+    apply_chunks(&conn, "notes/old.md", &[chunk("m1", Some(vec384(0.5)))]).unwrap();
+    let vectors_before = vector_count(&conn);
+
+    move_in_txn(&mut conn, "notes/old.md", "notes/kept-title.md").unwrap();
+
+    // The notes row moved — same derived state, nothing re-created.
+    let row = run_query(
+        &conn,
+        "SELECT path, is_pinned, pinned_order, has_conflict FROM notes WHERE path = ?1",
+        &[Value::String("notes/kept-title.md".to_string())],
+    )
+    .unwrap();
+    assert_eq!(row.len(), 1);
+    assert_eq!(row[0].get("is_pinned").unwrap().as_i64().unwrap(), 1);
+    assert_eq!(row[0].get("has_conflict").unwrap().as_i64().unwrap(), 1);
+    let gone = run_query(
+        &conn,
+        "SELECT path FROM notes WHERE path = ?1",
+        &[Value::String("notes/old.md".to_string())],
+    )
+    .unwrap();
+    assert!(gone.is_empty());
+
+    // Children followed: text, outgoing links, FTS, embedding chunks (vectors kept).
+    for (sql, expected) in [
+        (
+            "SELECT count(*) AS n FROM note_text WHERE note_path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM links WHERE source_path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM search_fts WHERE path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM embedding_chunks WHERE note_path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM embedding_chunks WHERE note_path = 'notes/old.md'",
+            0,
+        ),
+    ] {
+        let rows = run_query(&conn, sql, &[]).unwrap();
+        assert_eq!(
+            rows[0].get("n").unwrap().as_i64().unwrap(),
+            expected,
+            "{sql}"
+        );
+    }
+    assert_eq!(vector_count(&conn), vectors_before);
+
+    // Inbound links resolve by title key, so the backlink follows the move.
+    let backlinks = run_query(
+        &conn,
+        "SELECT source_path FROM backlinks WHERE target_path = 'notes/kept-title.md'",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        backlinks[0].get("source_path").unwrap().as_str().unwrap(),
+        "notes/src.md"
+    );
+}
+
+#[test]
+fn move_note_refuses_an_occupied_destination() {
+    let mut conn = migrated();
+    apply_note(&conn, &note("notes/a.md", "A", vec![])).unwrap();
+    apply_note(&conn, &note("notes/b.md", "B", vec![])).unwrap();
+
+    let result = move_in_txn(&mut conn, "notes/a.md", "notes/b.md");
+    assert!(result.is_err());
+
+    // Nothing changed: both rows intact (the transaction rolled back).
+    for path in ["notes/a.md", "notes/b.md"] {
+        let rows = run_query(
+            &conn,
+            "SELECT title FROM notes WHERE path = ?1",
+            &[Value::String(path.to_string())],
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1, "{path}");
+    }
+}
+
+#[test]
+fn move_note_without_a_source_row_is_a_no_op_success() {
+    // An unindexed file can still be renamed; the watcher indexes it at `to`.
+    let mut conn = migrated();
+    move_in_txn(&mut conn, "notes/ghost.md", "notes/ghost-2.md").unwrap();
+    let rows = run_query(&conn, "SELECT count(*) AS n FROM notes", &[]).unwrap();
+    assert_eq!(rows[0].get("n").unwrap().as_i64().unwrap(), 0);
+}
+
+#[test]
+fn watcher_echo_after_a_move_is_benign_and_vectors_survive() {
+    // The fs rename echoes back as remove(old) + upsert(new). Because the DB
+    // moved first, the remove finds no rows and the upsert re-applies an
+    // identical projection — and embedding chunks (which live outside
+    // apply_note) keep their vectors. A rename must never trigger a re-embed.
+    let mut conn = migrated();
+    let mut moved = note("notes/old.md", "Kept Title", vec![]);
+    moved.is_pinned = true;
+    apply_note(&conn, &moved).unwrap();
+    apply_chunks(&conn, "notes/old.md", &[chunk("e1", Some(vec384(0.25)))]).unwrap();
+    move_in_txn(&mut conn, "notes/old.md", "notes/kept-title.md").unwrap();
+
+    // Echo: remove(old) — no rows — then upsert(new) — identical projection.
+    use super::write::remove_note;
+    remove_note(&conn, "notes/old.md").unwrap();
+    let mut echoed = note("notes/kept-title.md", "Kept Title", vec![]);
+    echoed.is_pinned = true;
+    apply_note(&conn, &echoed).unwrap();
+
+    let rows = run_query(
+        &conn,
+        "SELECT is_pinned FROM notes WHERE path = 'notes/kept-title.md'",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(rows[0].get("is_pinned").unwrap().as_i64().unwrap(), 1);
+    assert_eq!(
+        chunk_rows(&conn),
+        vec![("notes/kept-title.md".to_string(), "e1".to_string())]
+    );
+    assert_eq!(vector_count(&conn), 1);
 }
