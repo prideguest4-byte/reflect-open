@@ -11,11 +11,15 @@ import { useUpdate } from '@/providers/update-provider'
 export function UpdateNotice(): ReactElement | null {
   const { state, install, restart } = useUpdate()
 
+  // Check failures stay out of the sidebar: they only arise from the About
+  // section's manual check (auto-checks fail silently), surface there, and
+  // "try again" here would re-install, not re-check. An install failure is
+  // this row's own action, so it owns the retry.
   if (
     state.phase !== 'available' &&
     state.phase !== 'downloading' &&
     state.phase !== 'ready' &&
-    state.phase !== 'error'
+    !(state.phase === 'error' && state.during === 'install')
   ) {
     return null
   }

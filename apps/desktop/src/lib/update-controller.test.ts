@@ -80,7 +80,11 @@ describe('createUpdateController', () => {
 
     checkMock.mockRejectedValue(new Error('release endpoint unreachable'))
     await controller.checkNow()
-    expect(controller.getState()).toEqual({ phase: 'error', message: 'release endpoint unreachable' })
+    expect(controller.getState()).toEqual({
+      phase: 'error',
+      message: 'release endpoint unreachable',
+      during: 'check',
+    })
   })
 
   it('install reports progress and lands on ready', async () => {
@@ -116,7 +120,48 @@ describe('createUpdateController', () => {
     controller = createUpdateController({ autoCheck: false })
     await controller.checkNow()
     await controller.install()
-    expect(controller.getState()).toEqual({ phase: 'error', message: 'signature verification failed' })
+    expect(controller.getState()).toEqual({
+      phase: 'error',
+      message: 'signature verification failed',
+      during: 'install',
+    })
+  })
+
+  it('a check resolving after an install starts cannot clobber the download', async () => {
+    checkMock.mockResolvedValueOnce(fakeUpdate({ version: '0.3.0' }))
+    controller = createUpdateController({ autoCheck: false })
+    await controller.checkNow()
+
+    // A second check hangs in flight while the found update gets installed.
+    let resolveSecond: (value: null) => void = () => {}
+    checkMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSecond = resolve
+        }),
+    )
+    const second = controller.checkNow()
+    await controller.install()
+    expect(controller.getState()).toEqual({ phase: 'ready', version: '0.3.0' })
+
+    resolveSecond(null)
+    await second
+    expect(controller.getState()).toEqual({ phase: 'ready', version: '0.3.0' })
+  })
+
+  it('a failed re-check keeps an already-found update available', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    checkMock.mockResolvedValueOnce(fakeUpdate({ version: '0.3.0' }))
+    controller = createUpdateController({ autoCheck: true, autoCheckIntervalMs: 1000 })
+    controller.start()
+    await vi.waitFor(() => {
+      expect(controller?.getState()).toEqual({ phase: 'available', version: '0.3.0' })
+    })
+
+    checkMock.mockRejectedValue(new Error('offline'))
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(controller.getState()).toEqual({ phase: 'available', version: '0.3.0' })
+    warn.mockRestore()
   })
 
   it('install without a found update is a no-op', async () => {

@@ -14,7 +14,9 @@ export type UpdateState =
   | { phase: 'available'; version: string }
   | { phase: 'downloading'; version: string; percent: number | null }
   | { phase: 'ready'; version: string }
-  | { phase: 'error'; message: string }
+  /** `during` tells surfaces what failed: a check retries by re-checking, a
+      failed install still has its found update and retries by installing. */
+  | { phase: 'error'; message: string; during: 'check' | 'install' }
 
 export interface UpdateController {
   getState: () => UpdateState
@@ -66,25 +68,40 @@ export function createUpdateController(options: UpdateControllerOptions): Update
     }
   }
 
+  // Read through a call so post-await guards see the live phase — TypeScript
+  // would otherwise keep the pre-await narrowing of the closed-over `state`.
+  function currentPhase(): UpdateState['phase'] {
+    return state.phase
+  }
+
   async function runCheck(silent: boolean): Promise<void> {
     if (state.phase === 'checking' || state.phase === 'downloading' || state.phase === 'ready') {
       return
     }
+    const before = state
     setState({ phase: 'checking' })
     try {
       const update = await check()
+      if (currentPhase() !== 'checking') {
+        return // an install of the previously-found update raced us; its state wins
+      }
+      pendingUpdate = update
       if (update) {
-        pendingUpdate = update
         setState({ phase: 'available', version: update.version })
       } else {
         setState(silent ? { phase: 'idle' } : { phase: 'upToDate' })
       }
     } catch (error) {
+      if (currentPhase() !== 'checking') {
+        return
+      }
       if (silent) {
         console.warn('update check failed (ignored):', error)
-        setState({ phase: 'idle' })
+        // A re-check failing (e.g. offline) must not forget an update that an
+        // earlier check already found.
+        setState(before.phase === 'available' ? before : { phase: 'idle' })
       } else {
-        setState({ phase: 'error', message: errorMessage(error) })
+        setState({ phase: 'error', message: errorMessage(error), during: 'check' })
       }
     }
   }
@@ -118,7 +135,7 @@ export function createUpdateController(options: UpdateControllerOptions): Update
       })
       setState({ phase: 'ready', version: update.version })
     } catch (error) {
-      setState({ phase: 'error', message: errorMessage(error) })
+      setState({ phase: 'error', message: errorMessage(error), during: 'install' })
     }
   }
 

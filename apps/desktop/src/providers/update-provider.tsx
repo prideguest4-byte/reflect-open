@@ -17,11 +17,26 @@ import {
 
 interface UpdateContextValue {
   state: UpdateState
-  /** False outside the native shell (browser dev) — hide update UI entirely. */
+  /**
+   * False outside a desktop native shell (browser dev, iOS/Android) — hide
+   * update UI entirely. Mobile ships through the app stores, and the updater
+   * plugins are only registered under `#[cfg(desktop)]`.
+   */
   supported: boolean
   checkNow: () => Promise<void>
   install: () => Promise<void>
   restart: () => Promise<void>
+}
+
+const DESKTOP_PLATFORMS = new Set(['darwin', 'windows', 'linux'])
+
+/**
+ * True when this bundle was built by the Tauri CLI for a desktop target.
+ * `TAURI_ENV_PLATFORM` is the CLI's build-time platform (absent in plain Vite
+ * builds and tests), so mobile bundles compile the update UI away from day one.
+ */
+function isDesktopBuild(): boolean {
+  return DESKTOP_PLATFORMS.has(import.meta.env.TAURI_ENV_PLATFORM ?? '')
 }
 
 const UpdateContext = createContext<UpdateContextValue | null>(null)
@@ -45,7 +60,7 @@ interface UpdateProviderProps {
  * any graph is open.
  */
 export function UpdateProvider({ children, autoCheck }: UpdateProviderProps): ReactElement {
-  const supported = hasBridge()
+  const supported = hasBridge() && isDesktopBuild()
   const resolvedAutoCheck = autoCheck ?? (supported && !import.meta.env.DEV)
   const [controller, setController] = useState<UpdateController | null>(null)
 
