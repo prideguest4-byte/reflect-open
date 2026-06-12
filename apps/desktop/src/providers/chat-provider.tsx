@@ -69,11 +69,16 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
   // that created it.
   const turnsRef = useRef(turns)
   turnsRef.current = turns
-  const statusRef = useRef(status)
-  statusRef.current = status
   const activeModelRef = useRef<AiModelConfig | null>(activeModel)
   activeModelRef.current = activeModel
-  const abortRef = useRef<AbortController | null>(null)
+
+  // The in-flight send, tracked synchronously — the no-concurrent-sends
+  // guard can't ride on rendered state, which only reflects a send after
+  // the next render. `session` ties a send to its conversation: New chat
+  // bumps the counter, so a detached send winding down no longer counts as
+  // "this conversation is busy" and never clears a successor's slot.
+  const sessionRef = useRef(0)
+  const activeSendRef = useRef<{ controller: AbortController; session: number } | null>(null)
 
   // The workspace tree is keyed by graph root, so switching graphs unmounts
   // this provider — an in-flight turn must die with it, or its tools would
@@ -81,14 +86,18 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
   // to the provider under the old conversation.
   useEffect(() => {
     return () => {
-      abortRef.current?.abort()
+      activeSendRef.current?.controller.abort()
     }
   }, [])
 
   const send = useCallback(async (text: string): Promise<void> => {
     const trimmed = text.trim()
     const model = activeModelRef.current
-    if (trimmed === '' || statusRef.current === 'streaming' || model === null) {
+    if (
+      trimmed === '' ||
+      model === null ||
+      activeSendRef.current?.session === sessionRef.current
+    ) {
       return
     }
 
@@ -111,7 +120,8 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
       { id: turnId, userText: trimmed, parts: [], responseMessages: [], status: 'streaming' },
     ])
     const controller = new AbortController()
-    abortRef.current = controller
+    const activeSend = { controller, session: sessionRef.current }
+    activeSendRef.current = activeSend
 
     try {
       const apiKey = await getSecret(aiKeySecretName(model.id))
@@ -152,18 +162,19 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
       // chat must not, while winding down, unhook the controller a newer
       // turn has since registered — Stop and the unmount abort always have
       // to target the live stream.
-      if (abortRef.current === controller) {
-        abortRef.current = null
+      if (activeSendRef.current === activeSend) {
+        activeSendRef.current = null
       }
     }
   }, [])
 
   const stop = useCallback(() => {
-    abortRef.current?.abort()
+    activeSendRef.current?.controller.abort()
   }, [])
 
   const newChat = useCallback(() => {
-    abortRef.current?.abort()
+    activeSendRef.current?.controller.abort()
+    sessionRef.current += 1
     setTurns([])
   }, [])
 

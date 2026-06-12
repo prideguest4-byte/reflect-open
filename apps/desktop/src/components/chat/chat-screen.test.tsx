@@ -1,8 +1,9 @@
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { act, cleanup, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ReactElement } from 'react'
 import type { AiModelConfig, ChatStreamEvent, StreamChatOptions } from '@reflect/core'
-import { ChatProvider } from '@/providers/chat-provider'
+import { ChatProvider, useChatSession } from '@/providers/chat-provider'
 import { RouterProvider } from '@/routing/router'
 
 /**
@@ -68,11 +69,20 @@ function scriptTurn(events: ChatStreamEvent[]) {
   })
 }
 
+let probedSend: ((text: string) => Promise<void>) | null = null
+
+function SendProbe(): ReactElement | null {
+  probedSend = useChatSession().send
+  return null
+}
+
 function renderChat() {
+  probedSend = null
   return render(
     <RouterProvider>
       <ChatProvider>
         <ChatScreen />
+        <SendProbe />
       </ChatProvider>
     </RouterProvider>,
   )
@@ -134,6 +144,29 @@ describe('ChatScreen', () => {
     // Visible immediately as plain text — never re-parsed per delta.
     await view.findByText('Streaming **markdown**')
     expect(view.queryByTestId('markdown-preview')).toBeNull()
+  })
+
+  it('rejects a second send fired before the first one has rendered', async () => {
+    configureModel()
+    scriptTurn([
+      { type: 'text-delta', text: 'One.' },
+      { type: 'complete', messages: [{ role: 'assistant', content: 'One.' }] },
+    ])
+    const view = renderChat()
+    if (!probedSend) {
+      expect.unreachable('probe did not capture send')
+    }
+    const send = probedSend
+
+    // Two sends in one tick — rendered state (and refs synced to it) still
+    // says idle for both, so the guard must be synchronous.
+    await act(async () => {
+      await Promise.all([send('one'), send('two')])
+    })
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    expect(view.getByText('one')).toBeDefined()
+    expect(view.queryByText('two')).toBeNull()
   })
 
   it('surfaces a missing keychain entry as an in-transcript error', async () => {

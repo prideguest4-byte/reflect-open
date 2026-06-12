@@ -45,11 +45,11 @@ function sequence(results: LanguageModelV3StreamResult[]): () => Promise<Languag
   }
 }
 
-function toolCallTurn(query: string) {
+function toolCallTurn(query: string, toolCallId = 'call-1') {
   return stream([
     {
       type: 'tool-call',
-      toolCallId: 'call-1',
+      toolCallId,
       toolName: 'search_notes',
       input: JSON.stringify({ query }),
     },
@@ -198,5 +198,47 @@ describe('streamChatTurn', () => {
     // plus the interrupted step's partial text — never a dangling tool call.
     expect(last.messages.map((message) => message.role)).toEqual(['assistant', 'tool', 'assistant'])
     expect(JSON.stringify(last.messages.at(-1))).toContain('So far')
+  })
+
+  it('keeps every completed step when cut short after multiple tool rounds', async () => {
+    // Pins the SDK semantic the engine relies on: each onStepFinish's
+    // `response.messages` is *cumulative* across steps, so assigning (not
+    // appending) yields the full paired history. If an `ai` upgrade ever
+    // makes it per-step, this starts failing instead of silently dropping
+    // earlier rounds.
+    const model = new MockLanguageModelV3({
+      doStream: sequence([
+        toolCallTurn('atlas', 'call-1'),
+        toolCallTurn('budget', 'call-2'),
+        stream([
+          { type: 'text-start', id: 'text-1' },
+          { type: 'text-delta', id: 'text-1', delta: 'So far' },
+          { type: 'error', error: new Error('connection lost') },
+          { type: 'finish', finishReason: { unified: 'error', raw: undefined }, usage: USAGE },
+        ]),
+      ]),
+    })
+    const events = await collect(
+      streamChatTurn(model, {
+        messages: [{ role: 'user', content: 'plan and budget?' }],
+        today: '2026-06-11',
+        toolDeps: { retrieveFn: async () => [PUBLIC_HIT] },
+      }),
+    )
+
+    const last = events.at(-1)
+    if (last?.type !== 'error') {
+      expect.unreachable('expected a terminal error event')
+    }
+    expect(last.messages.map((message) => message.role)).toEqual([
+      'assistant',
+      'tool',
+      'assistant',
+      'tool',
+      'assistant',
+    ])
+    const outbound = JSON.stringify(last.messages)
+    expect(outbound).toContain('call-1')
+    expect(outbound).toContain('call-2')
   })
 })
