@@ -4,7 +4,7 @@
 shortcut: regular notes get **title-derived filenames** (`notes/meeting-notes.md`,
 not `notes/01kts4w0cb3n39zb99ycs48fj1.md`), a **frontmatter `id`** (ULID) written at
 creation as the durable identity, and **file renames that follow settled title
-changes**. Existing ULID-named graphs migrate in one checkpointed pass.
+changes**.
 
 **Depends on:** Plan 02 (`note_move`, atomic fs IO, path-traversal guard), Plan 03
 (frontmatter model — `id` is already in the schema), Plan 04 (index, watcher,
@@ -42,7 +42,7 @@ Two properties of the shipped architecture make it cheap now:
 **In:** slug derivation (one TS source of truth), slug filenames at creation,
 frontmatter `id` written at creation, rename-on-settled-title file moves, a
 transactional index move (Rust) that preserves pinned state/conflict flags/
-embeddings, live editor+route retarget, the ULID→slug migration pass, sync-matrix
+embeddings, live editor+route retarget, sync-matrix
 tests (rename+edit, rename+rename, add/add, case-only retitle).
 
 **Out:** user-editable filenames decoupled from titles (the filename is always
@@ -64,8 +64,10 @@ later surface), daily notes (untouched in every respect — `daily/YYYY-MM-DD.md
 - **17b — filenames follow titles** (steps 4–7): the transactional move, watcher
   reconciliation-by-construction, editor/route retarget, tracker integration
   (births *and* renames move the file). The bulk of the work.
-- **17c — migration** (step 8): one prompted, checkpointed, resumable pass over
-  existing ULID files.
+- ~~**17c — migration**~~ — *removed 2026-06-11 (Alex: pre-launch, no
+  backwards compatibility). A ULID→slug migration only converts pre-Plan-17
+  graphs, which won't exist at launch; dev graphs heal note-by-note through
+  the birth/rename path the next time a note is titled.*
 
 ## Steps
 
@@ -143,23 +145,16 @@ later surface), daily notes (untouched in every respect — `daily/YYYY-MM-DD.md
    with an explicit frontmatter `title:` keep 07b's recorded edge (no editor
    rename surface yet) and therefore never move from the editor.
 
-8. **Migration** (17c). On graph open, if ULID-named notes exist: one prompt
-   ("Use readable filenames? Renames N files; a checkpoint is created first").
-   Accepted → Plan 12 checkpoint commit, then per file: write `id:` via the
-   frontmatter channel (preserving header bytes), derive the slug from the
-   *indexed* title, `note_move_indexed`. Skip files whose title is the ULID
-   fallback (untitled — nothing readable to say; they convert when first
-   titled, via step 7's birth path). Idempotent and resumable (each file is
-   independently done-or-not); progress UI for large graphs; declining records
-   the choice in settings and never re-prompts (new notes still get slugs —
-   17a is unconditional).
+8. ~~**Migration** (17c)~~ — removed; see the delivery split note. Notes
+   born before slugs landed convert through step 7's birth/rename path the
+   next time they're titled.
 
 9. **Tests.** Slugger properties (idempotence, emptiness, reserved names, byte
    caps, CJK passthrough, case folding); collision picker (index+disk, suffix
    sequence); transactional move preserves pinned/conflict/embeddings and FTS;
    watcher echo is a no-op; birth rename on first title; settled rename moves +
    rewrites + aliases in one flow; editor survives a move mid-session; the sync
-   matrix (below); migration idempotence + decline path.
+   matrix (below).
 
 ## Key decisions / contracts
 
@@ -175,7 +170,7 @@ later surface), daily notes (untouched in every respect — `daily/YYYY-MM-DD.md
   case-insensitivity, git case-sensitivity, NFC normalization for macOS/Linux
   agreement). The slugger is the *only* author of note filenames in-app.
 - **`id:` frontmatter becomes real** (Plan 02's original contract): written at
-  creation and during migration, lowercase ULID, indexed into the existing
+  creation, lowercase ULID, indexed into the existing
   `notes.id` column. Identity for *reconciliation and repair*; **path remains
   the index PK and the route key** — no id-based routing in this plan.
 - **Only settled in-app title changes move files.** Sync pulls, external edits,
@@ -204,8 +199,6 @@ later surface), daily notes (untouched in every respect — `daily/YYYY-MM-DD.md
 - The watcher echo of a move causes zero index churn (hash-skip observed).
 - An open editor survives its own note's rename without reload or content loss;
   the route and backlinks panel follow.
-- Migration converts a seeded ULID graph (titled + untitled + pinned + linked
-  notes) idempotently behind a checkpoint; declining is sticky.
 - Sync matrix passes: rename+edit merges clean; add/add and rename/rename
   surface as review states, nothing wedges, no data loss.
 - `pnpm check` + targeted vitest/cargo tests pass.
@@ -226,11 +219,8 @@ later surface), daily notes (untouched in every respect — `daily/YYYY-MM-DD.md
   notes. Accepted: rare, surfaced by the existing conflict UI, recoverable from
   git history; `id:` divergence makes a future auto-split tractable. Recorded
   trade-off, not an oversight.
-- **Old app versions on other devices** see a pulled rename as delete+create:
-  links survive (title-based) but pinned state on that row and embeddings
-  re-derive on the old device. Acceptable for a pre-1.0 fleet; release-note it.
 - **Filename drift** remains possible where renames can't fire (explicit
-  `title:` frontmatter notes, declined migrations, external retitles). Drift is
+  `title:` frontmatter notes, refused moves, external retitles). Drift is
   cosmetic by design — resolution never reads filenames — but ⌘K's title
   display must never fall back to the basename for a drifted note (it shows the
   indexed title; the ULID-garbage failure mode from the non-daily-notes review
