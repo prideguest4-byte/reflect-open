@@ -13,6 +13,7 @@ class FakeMediaRecorder {
   ondataavailable: ((event: { data: Blob }) => void) | null = null
   onstop: (() => void) | null = null
   state: RecordingState = 'inactive'
+  stopCalls = 0
   readonly mimeType: string
 
   constructor(_stream: MediaStream, options?: { mimeType?: string }) {
@@ -25,6 +26,7 @@ class FakeMediaRecorder {
   }
 
   stop(): void {
+    this.stopCalls += 1
     this.state = 'inactive'
     this.ondataavailable?.({ data: new Blob(['audio-bytes']) })
     this.onstop?.()
@@ -165,6 +167,28 @@ describe('useAudioRecorder', () => {
     expect(track.stop).toHaveBeenCalled()
     expect(result.current.status).toBe('idle')
     expect(FakeMediaRecorder.instances).toHaveLength(0)
+  })
+
+  it('concurrent stops share one in-flight result and stop the recorder once', async () => {
+    getUserMedia.mockResolvedValue(fakeStream([{ stop: vi.fn() }]))
+    const { result } = renderHook(() => useAudioRecorder())
+
+    await act(async () => {
+      await result.current.start()
+    })
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+
+    const [first, second] = await act(async () => {
+      const racingStop = result.current.stop()
+      const racingStopTwin = result.current.stop()
+      return Promise.all([racingStop, racingStopTwin])
+    })
+
+    expect(FakeMediaRecorder.instances[0].stopCalls).toBe(1)
+    expect(first).not.toBeNull()
+    expect(second).toBe(first)
   })
 
   it('fires onMaxDuration once when the cap is reached', async () => {

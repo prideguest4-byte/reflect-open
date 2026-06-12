@@ -150,24 +150,38 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
     setStatus('recording')
   }, [])
 
-  const stop = useCallback(async (): Promise<RecorderResult | null> => {
+  const stopPromiseRef = useRef<Promise<RecorderResult | null> | null>(null)
+
+  const stop = useCallback((): Promise<RecorderResult | null> => {
+    // Concurrent stops (a click racing the collapse handler or the duration
+    // cap) share one in-flight promise: a second MediaRecorder.stop() would
+    // throw and replace the first caller's onstop resolver, stranding it.
+    if (stopPromiseRef.current !== null) {
+      return stopPromiseRef.current
+    }
     const recorder = recorderRef.current
     if (recorder === null) {
       teardown()
-      return null
+      return Promise.resolve(null)
     }
-    const durationMs = Date.now() - startedAtRef.current
-    await new Promise<void>((resolve) => {
-      recorder.onstop = () => resolve()
-      recorder.stop()
+    const stopped = (async (): Promise<RecorderResult | null> => {
+      const durationMs = Date.now() - startedAtRef.current
+      await new Promise<void>((resolve) => {
+        recorder.onstop = () => resolve()
+        recorder.stop()
+      })
+      const mimeType = recorder.mimeType || pickMimeType() || FALLBACK_MIME_TYPE
+      const blob = new Blob(chunksRef.current, { type: mimeType })
+      teardown()
+      if (durationMs < MIN_DURATION_MS || blob.size === 0) {
+        return null
+      }
+      return { blob, mimeType, durationMs }
+    })().finally(() => {
+      stopPromiseRef.current = null
     })
-    const mimeType = recorder.mimeType || pickMimeType() || FALLBACK_MIME_TYPE
-    const blob = new Blob(chunksRef.current, { type: mimeType })
-    teardown()
-    if (durationMs < MIN_DURATION_MS || blob.size === 0) {
-      return null
-    }
-    return { blob, mimeType, durationMs }
+    stopPromiseRef.current = stopped
+    return stopped
   }, [teardown])
 
   const cancel = useCallback((): void => {

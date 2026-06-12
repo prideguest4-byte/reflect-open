@@ -84,6 +84,12 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     maxDurationMs: MAX_DURATION_MS,
     onMaxDuration: () => stopAndSaveRef.current(),
   })
+  // The hook's functions are stable; the wrapper object is not (elapsed ticks
+  // remint it every render). Callbacks and effects must hang off the
+  // functions, or the collapse effect re-fires on every recording tick.
+  const startRecorder = recorder.start
+  const stopRecorder = recorder.stop
+  const cancelRecorder = recorder.cancel
 
   const supported = isRecordingSupported()
   const transcriptionConfig = useMemo(
@@ -148,7 +154,7 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       toggleSidebar()
     }
     try {
-      await recorder.start()
+      await startRecorder()
     } catch (cause) {
       setError(
         cause instanceof DOMException && cause.name === 'NotAllowedError'
@@ -156,15 +162,15 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
           : errorMessage(cause),
       )
     }
-  }, [supported, transcriptionConfig, toggleSidebar, recorder])
+  }, [supported, transcriptionConfig, toggleSidebar, startRecorder])
 
   const stopAndSave = useCallback(async (): Promise<void> => {
-    const recording = await recorder.stop()
+    const recording = await stopRecorder()
     if (recording === null) {
       return
     }
     await runSave({ kind: 'transcribe', audio: recording.blob, mimeType: recording.mimeType })
-  }, [recorder, runSave])
+  }, [stopRecorder, runSave])
   stopAndSaveRef.current = () => void stopAndSave()
 
   const toggle = useCallback((): void => {
@@ -176,10 +182,10 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   }, [recorder.status, saving, error, stopAndSave, start])
 
   const cancel = useCallback((): void => {
-    recorder.cancel()
+    cancelRecorder()
     setError(null)
     setResume(null)
-  }, [recorder])
+  }, [cancelRecorder])
 
   const retry = useCallback((): void => {
     if (resume !== null) {
@@ -195,7 +201,6 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   // Collapsing the sidebar mid-flow: stop-and-save a live recording, and
   // abandon a pending permission request — a grant arriving after the
   // collapse would otherwise start a recording with no UI mounted.
-  const cancelRecorder = recorder.cancel
   useEffect(() => {
     if (!collapsed) {
       return
