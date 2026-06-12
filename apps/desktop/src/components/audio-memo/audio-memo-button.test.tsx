@@ -64,6 +64,15 @@ describe('AudioMemoButton', () => {
     expect(memo.toggle).not.toHaveBeenCalled()
   })
 
+  it('escape is inert while transcribing — stopping committed the save', async () => {
+    memo.phase = 'transcribing'
+    renderButton()
+
+    await userEvent.keyboard('{Escape}')
+    expect(memo.cancel).not.toHaveBeenCalled()
+    expect(memo.discard).not.toHaveBeenCalled()
+  })
+
   it('transcribing disables the control and shows progress', () => {
     memo.phase = 'transcribing'
     const view = renderButton()

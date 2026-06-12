@@ -98,8 +98,16 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   const collapsedRef = useRef(collapsed)
   collapsedRef.current = collapsed
 
+  // Re-entry guard: state-based `saving` flips a render too late to stop a
+  // rapid second Retry, and two pipelines would append the transcript twice.
+  const savingRef = useRef(false)
+
   const runSave = useCallback(
     async (payload: AudioMemoResume): Promise<void> => {
+      if (savingRef.current) {
+        return
+      }
+      savingRef.current = true
       setSaving(true)
       setError(null)
       try {
@@ -122,6 +130,7 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
           }
         }
       } finally {
+        savingRef.current = false
         setSaving(false)
       }
     },
@@ -183,13 +192,20 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     setResume(null)
   }, [])
 
-  // Collapsing the sidebar mid-recording: stop and save rather than keep a
-  // hot microphone with no indicator on screen.
+  // Collapsing the sidebar mid-flow: stop-and-save a live recording, and
+  // abandon a pending permission request — a grant arriving after the
+  // collapse would otherwise start a recording with no UI mounted.
+  const cancelRecorder = recorder.cancel
   useEffect(() => {
-    if (collapsed && recorder.status === 'recording') {
-      void stopAndSave()
+    if (!collapsed) {
+      return
     }
-  }, [collapsed, recorder.status, stopAndSave])
+    if (recorder.status === 'recording') {
+      void stopAndSave()
+    } else if (recorder.status === 'requesting') {
+      cancelRecorder()
+    }
+  }, [collapsed, recorder.status, cancelRecorder, stopAndSave])
 
   const phase: AudioMemoPhase =
     error !== null

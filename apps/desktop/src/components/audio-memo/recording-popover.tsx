@@ -8,9 +8,11 @@ import { useAudioMemo } from '@/providers/audio-memo-provider'
 /**
  * The floating panel beside the mic while a memo is in flight: waveform +
  * elapsed time during recording, a spinner while transcribing, and the
- * failure state with Retry/Discard. Esc discards (a recording is cancelled
- * without transcribing); clicks elsewhere deliberately don't dismiss — the
- * recording owns its lifecycle.
+ * failure state with Retry/Discard. Esc cancels a live recording and
+ * dismisses an error, but is deliberately inert while transcribing — the
+ * user already committed the memo by stopping, and "cancelling" a save
+ * that may have reached the provider would only feign control. Clicks
+ * elsewhere don't dismiss; the recording owns its lifecycle.
  */
 export function RecordingPopover(): ReactElement {
   const memo = useAudioMemo()
@@ -22,7 +24,13 @@ export function RecordingPopover(): ReactElement {
       sideOffset={10}
       className="w-auto px-3 py-2"
       onOpenAutoFocus={(event) => event.preventDefault()}
-      onEscapeKeyDown={() => (memo.phase === 'error' ? memo.discard() : memo.cancel())}
+      onEscapeKeyDown={() => {
+        if (memo.phase === 'recording') {
+          memo.cancel()
+        } else if (memo.phase === 'error') {
+          memo.discard()
+        }
+      }}
       onInteractOutside={(event) => event.preventDefault()}
     >
       {memo.phase === 'error' ? (

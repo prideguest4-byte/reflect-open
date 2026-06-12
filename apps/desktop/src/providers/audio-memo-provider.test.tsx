@@ -15,6 +15,8 @@ const recorderControls = vi.hoisted(() => ({
   cancelSpy: vi.fn(),
   stopResult: null as { blob: Blob; mimeType: string; durationMs: number } | null,
   supported: true,
+  /** Park start() at 'requesting', simulating an open OS permission prompt. */
+  holdStart: false,
   options: null as { maxDurationMs?: number; onMaxDuration?: () => void } | null,
 }))
 
@@ -36,7 +38,7 @@ vi.mock('@/hooks/use-audio-recorder', () => ({
       stream: null,
       start: async () => {
         recorderControls.startSpy()
-        setStatus('recording')
+        setStatus(recorderControls.holdStart ? 'requesting' : 'recording')
       },
       stop: async () => {
         recorderControls.stopSpy()
@@ -89,6 +91,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   recorderControls.stopResult = RECORDING
   recorderControls.supported = true
+  recorderControls.holdStart = false
   recorderControls.options = null
   sidebarState.collapsed = false
   SETTINGS.current = {
@@ -214,6 +217,61 @@ describe('AudioMemoProvider', () => {
     })
 
     await waitFor(() => expect(saveAudioMemo).toHaveBeenCalled())
+  })
+
+  it('collapsing the sidebar during the permission prompt abandons the request', async () => {
+    recorderControls.holdStart = true
+    const { result, rerender } = renderHook(() => useAudioMemo(), { wrapper })
+
+    await act(async () => {
+      result.current.toggle()
+    })
+    expect(result.current.phase).toBe('requesting')
+
+    sidebarState.collapsed = true
+    await act(async () => {
+      rerender()
+    })
+
+    expect(recorderControls.cancelSpy).toHaveBeenCalled()
+    expect(saveAudioMemo).not.toHaveBeenCalled()
+  })
+
+  it('a second save cannot start while one is in flight', async () => {
+    let release: (outcome: SaveAudioMemoOutcome) => void = () => {}
+    saveAudioMemo
+      .mockResolvedValueOnce({
+        ok: false,
+        message: 'disk full',
+        resume: { kind: 'append', text: 'memo transcript' },
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise<SaveAudioMemoOutcome>((resolve) => {
+            release = resolve
+          }),
+      )
+    const { result } = renderHook(() => useAudioMemo(), { wrapper })
+
+    await act(async () => {
+      result.current.toggle()
+    })
+    await act(async () => {
+      result.current.toggle()
+    })
+    await waitFor(() => expect(result.current.phase).toBe('error'))
+
+    // Two rapid retries: only one pipeline may run, or the note gets the
+    // transcript twice.
+    await act(async () => {
+      result.current.retry()
+      result.current.retry()
+    })
+    await act(async () => {
+      release({ ok: true, text: 'memo transcript' })
+    })
+    await waitFor(() => expect(result.current.phase).toBe('idle'))
+    expect(saveAudioMemo).toHaveBeenCalledTimes(2)
   })
 
   it('a failure while the sidebar is collapsed surfaces through operations', async () => {
