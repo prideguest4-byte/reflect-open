@@ -5,10 +5,33 @@
 //! but never write it — writes go through the transactional path in
 //! [`super::write`].
 
+use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use rusqlite::{params_from_iter, Connection};
 use serde_json::{Map, Value};
 
 use crate::error::{AppError, AppResult};
+
+/// Authorize only pure reads of our own projection. `Statement::readonly()`
+/// (checked in [`run_query`]) already rejects writes, but SQLite still considers
+/// `ATTACH`/`DETACH` and connection-state `PRAGMA`s "read only" even though none
+/// of them read our tables:
+///
+/// - an `ATTACH DATABASE '<path>'` would let a caller open and then `SELECT`
+///   from an **arbitrary SQLite file elsewhere on disk** — turning the read
+///   bridge into a file-exfiltration primitive;
+/// - a `PRAGMA foreign_keys = OFF` would quietly disable the `ON DELETE CASCADE`
+///   relationships the write path's `apply_note`/`remove_note` rely on.
+///
+/// Both are denied at prepare time. Everything else a read needs — `SELECT`,
+/// table/column reads, function calls, FTS5/vec0 `MATCH` — is allowed.
+fn read_only_authorization(context: AuthContext<'_>) -> Authorization {
+    match context.action {
+        AuthAction::Attach { .. } | AuthAction::Detach { .. } | AuthAction::Pragma { .. } => {
+            Authorization::Deny
+        }
+        _ => Authorization::Allow,
+    }
+}
 
 fn json_to_sql(value: &Value) -> rusqlite::types::Value {
     use rusqlite::types::Value as Sql;
@@ -43,9 +66,18 @@ pub(super) fn run_query(
     sql: &str,
     params: &[Value],
 ) -> AppResult<Vec<Map<String, Value>>> {
-    let mut stmt = conn.prepare(sql)?;
-    // `db_query` is a read-only bridge — writes go through the `index_*` commands.
-    // Reject any mutating statement so a compromised/buggy caller can't write.
+    // This bridge is reachable from the (untrusted) webview, so it must run only
+    // reads of our projection. Install the authorizer (denies ATTACH/DETACH/
+    // PRAGMA — see `read_only_authorization`) around `prepare`, where SQLite
+    // evaluates it, then clear it. The guard is scoped to this call: the write
+    // path doesn't prepare here, so its legitimate `PRAGMA defer_foreign_keys`
+    // is never affected. `prepare` returns `SQLITE_AUTH` for a denied statement.
+    conn.authorizer(Some(read_only_authorization))?;
+    let prepared = conn.prepare(sql);
+    conn.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
+    let mut stmt = prepared?;
+    // `Statement::readonly()` rejects any remaining mutating statement so a
+    // compromised/buggy caller can't write through the read bridge.
     if !stmt.readonly() {
         return Err(AppError::io("db_query only executes read-only statements"));
     }

@@ -210,6 +210,45 @@ fn db_query_rejects_mutating_statements() {
 }
 
 #[test]
+fn read_bridge_refuses_attach_and_pragma() {
+    // `Statement::readonly()` alone treats ATTACH/DETACH and connection-state
+    // PRAGMAs as "read only", but neither reads *our* projection: an ATTACH
+    // would let a caller open and SELECT from an arbitrary SQLite file on disk
+    // (exfiltration), and `PRAGMA foreign_keys = OFF` would disable the cascades
+    // the write path depends on. The read bridge's authorizer denies both at
+    // prepare time (see `query::read_only_authorization`).
+    let conn = migrated();
+    let secret = tempfile::tempdir().expect("tempdir");
+    let secret_db = secret.path().join("secret.sqlite");
+    {
+        let other = Connection::open(&secret_db).expect("open secret db");
+        other
+            .execute_batch("CREATE TABLE secret(x); INSERT INTO secret(x) VALUES ('exfiltrated');")
+            .expect("seed secret");
+    }
+    let attach = format!("ATTACH DATABASE '{}' AS evil", secret_db.display());
+    assert!(
+        run_query(&conn, &attach, &[]).is_err(),
+        "read bridge must refuse ATTACH"
+    );
+    assert!(
+        run_query(&conn, "PRAGMA foreign_keys = OFF", &[]).is_err(),
+        "read bridge must refuse PRAGMA"
+    );
+
+    // The guard is scoped per call and never blocks a legitimate read: indexing
+    // a note and reading it back (incl. an FTS MATCH) still works afterwards.
+    apply_note(&conn, &note("notes/a.md", "Quick", vec![])).unwrap();
+    let rows = run_query(
+        &conn,
+        "SELECT path FROM search_fts WHERE search_fts MATCH ?1",
+        &[Value::from("quick")],
+    )
+    .unwrap();
+    assert_eq!(rows.len(), 1);
+}
+
+#[test]
 fn clear_cascades_to_child_tables() {
     let conn = migrated();
     apply_note(&conn, &note("notes/a.md", "A", vec![wiki("X")])).unwrap();
