@@ -49,6 +49,23 @@ vi.mock('@/providers/sync-provider', () => ({
   }),
 }))
 
+const audioMemo = vi.hoisted(() => ({
+  phase: 'idle' as const,
+  elapsedMs: 0,
+  stream: null,
+  available: true,
+  unavailableReason: null as string | null,
+  error: null,
+  canRetry: false,
+  toggle: vi.fn(),
+  cancel: vi.fn(),
+  retry: vi.fn(),
+  discard: vi.fn(),
+}))
+vi.mock('@/providers/audio-memo-provider', () => ({
+  useAudioMemo: () => audioMemo,
+}))
+
 const GRAPH: GraphInfo = { root: '/notes', name: 'Notes', cloudSync: null, generation: 1 }
 
 // Import after the core mock so the command registry sees the mocked module.
@@ -68,6 +85,7 @@ function renderSidebar(overrides?: Partial<CommandContext>) {
     forward: vi.fn(),
     toggleTheme: vi.fn(),
     toggleSidebar: vi.fn(),
+    toggleAudioMemo: vi.fn(),
     generation: () => 1,
     openPalette,
     enableSemanticSearch: vi.fn(),
@@ -101,6 +119,26 @@ describe('Sidebar', () => {
     const { view, openPalette } = renderSidebar()
     await userEvent.click(view.getByRole('button', { name: /search anything/i }))
     expect(openPalette).toHaveBeenCalled()
+  })
+
+  it('the mic button starts an audio memo', async () => {
+    audioMemo.available = true
+    audioMemo.unavailableReason = null
+    audioMemo.toggle.mockClear()
+    const { view } = renderSidebar()
+    await userEvent.click(view.getByRole('button', { name: /record audio memo/i }))
+    expect(audioMemo.toggle).toHaveBeenCalled()
+  })
+
+  it('the mic button disables (without vanishing) when no provider can transcribe', async () => {
+    audioMemo.available = false
+    audioMemo.unavailableReason = 'Add an OpenAI or Gemini model in Settings to record audio memos'
+    audioMemo.toggle.mockClear()
+    const { view } = renderSidebar()
+    const micButton = view.getByRole('button', { name: /record audio memo/i })
+    expect(micButton.getAttribute('aria-disabled')).toBe('true')
+    await userEvent.click(micButton)
+    expect(audioMemo.toggle).not.toHaveBeenCalled()
   })
 
   it('pinned notes render their own section', async () => {
