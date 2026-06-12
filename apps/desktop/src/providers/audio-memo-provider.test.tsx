@@ -2,28 +2,49 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { useState, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  AiModelsState,
   AudioMemoIdentity,
   CaptureAudioMemoInput,
   CaptureAudioMemoOutcome,
-  FileChange,
   GraphInfo,
-  ReconcileAudioMemosInput,
-  ReconcileAudioMemosOutcome,
   Settings,
 } from '@reflect/core'
 
 const captureAudioMemo = vi.hoisted(() =>
   vi.fn<(input: CaptureAudioMemoInput) => Promise<CaptureAudioMemoOutcome>>(),
 )
-const reconcileAudioMemos = vi.hoisted(() =>
-  vi.fn<(input: ReconcileAudioMemosInput) => Promise<ReconcileAudioMemosOutcome>>(),
-)
 const failOperation = vi.hoisted(() => vi.fn<(message: string) => void>())
 const toggleSidebar = vi.hoisted(() => vi.fn())
-/** The handler the provider registered with useFileChanges (null = off). */
-const fileChangesHandler = vi.hoisted(() => ({
-  current: null as ((changes: FileChange[]) => void) | null,
-}))
+
+/** Fake reconciler lifecycle — the provider is only a shim over it. */
+const reconcilerControls = vi.hoisted(() => {
+  const listeners = new Set<() => void>()
+  const fake = {
+    start: vi.fn(),
+    schedule: vi.fn(),
+    dispose: vi.fn(),
+    getTranscribing: vi.fn((): boolean => false),
+    subscribe: vi.fn((listener: () => void) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    }),
+  }
+  return {
+    fake,
+    listeners,
+    setTranscribing(value: boolean): void {
+      fake.getTranscribing.mockReturnValue(value)
+      for (const listener of [...listeners]) {
+        listener()
+      }
+    },
+  }
+})
+const createTranscriptionReconciler = vi.hoisted(() =>
+  vi.fn((_options: { generation: number; getModels: () => AiModelsState }) => reconcilerControls.fake),
+)
 
 const recorderControls = vi.hoisted(() => ({
   startSpy: vi.fn(),
@@ -46,7 +67,10 @@ const sidebarState = vi.hoisted(() => ({ collapsed: false }))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   captureAudioMemo,
-  reconcileAudioMemos,
+}))
+
+vi.mock('@/lib/transcription-reconciler', () => ({
+  createTranscriptionReconciler,
 }))
 
 vi.mock('@/hooks/use-audio-recorder', () => ({
@@ -96,11 +120,6 @@ vi.mock('@/providers/settings-provider', () => ({
 vi.mock('@/providers/sidebar-provider', () => ({
   useSidebar: () => ({ collapsed: sidebarState.collapsed, toggleSidebar }),
 }))
-vi.mock('@/lib/use-file-changes', () => ({
-  useFileChanges: (handler: ((changes: FileChange[]) => void) | null) => {
-    fileChangesHandler.current = handler
-  },
-}))
 vi.mock('@/lib/provider-fetch', () => ({
   providerFetch: vi.fn(),
 }))
@@ -132,13 +151,6 @@ const MEMO: AudioMemoIdentity = {
   mimeType: 'audio/mp4',
 }
 
-const DRAINED: ReconcileAudioMemosOutcome = {
-  pending: 0,
-  transcribed: 0,
-  rejected: 0,
-  stopped: null,
-}
-
 beforeEach(() => {
   vi.clearAllMocks()
   recorderControls.stopResult = RECORDING
@@ -153,8 +165,9 @@ beforeEach(() => {
     defaultAiModelId: 'cfg-openai',
   }
   captureAudioMemo.mockResolvedValue({ ok: true, memo: MEMO })
-  reconcileAudioMemos.mockResolvedValue(DRAINED)
-  fileChangesHandler.current = null
+  reconcilerControls.fake.getTranscribing.mockReturnValue(false)
+  reconcilerControls.listeners.clear()
+  createTranscriptionReconciler.mockReturnValue(reconcilerControls.fake)
 })
 
 afterEach(cleanup)
@@ -182,9 +195,22 @@ describe('AudioMemoProvider', () => {
     })
   })
 
+  it('mounts one reconciler per graph session, started immediately, disposed on unmount', () => {
+    const { unmount } = renderHook(() => useAudioMemo(), { wrapper })
+
+    expect(createTranscriptionReconciler).toHaveBeenCalledTimes(1)
+    const options = createTranscriptionReconciler.mock.calls[0]?.[0]
+    expect(options?.generation).toBe(3)
+    // Models are read lazily, so a key added mid-session reaches the next pass.
+    expect(options?.getModels().defaultModelId).toBe('cfg-openai')
+    expect(reconcilerControls.fake.start).toHaveBeenCalledTimes(1)
+
+    unmount()
+    expect(reconcilerControls.fake.dispose).toHaveBeenCalledTimes(1)
+  })
+
   it('a saved capture schedules transcription without waiting on the watcher', async () => {
     const { result } = renderHook(() => useAudioMemo(), { wrapper })
-    await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalledTimes(1))
 
     await act(async () => {
       result.current.toggle()
@@ -194,24 +220,28 @@ describe('AudioMemoProvider', () => {
     })
     await waitFor(() => expect(result.current.phase).toBe('idle'))
 
-    expect(reconcileAudioMemos).toHaveBeenCalledTimes(2)
+    expect(reconcilerControls.fake.schedule).toHaveBeenCalled()
   })
 
-  it('a recording reported by the watcher (e.g. pulled by sync) triggers transcription', async () => {
-    renderHook(() => useAudioMemo(), { wrapper })
-    await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalledTimes(1))
+  it('adding the first transcription-capable model kicks the pass the gate was suppressing', async () => {
+    SETTINGS.current = {
+      aiModels: [
+        { id: 'claude', provider: 'anthropic', model: 'claude-fable-5', keyHint: 'wxyz1' },
+      ],
+      defaultAiModelId: 'claude',
+    }
+    const { rerender } = renderHook(() => useAudioMemo(), { wrapper })
+    expect(reconcilerControls.fake.schedule).not.toHaveBeenCalled()
 
+    SETTINGS.current = {
+      aiModels: [{ id: 'cfg-openai', provider: 'openai', model: 'gpt-5.1', keyHint: 'wxyz1' }],
+      defaultAiModelId: 'cfg-openai',
+    }
     await act(async () => {
-      fileChangesHandler.current?.([{ path: MEMO.audioPath, kind: 'upsert' }])
+      rerender()
     })
-    await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalledTimes(2))
 
-    // Note edits ride the same stream — they must not spin the reconciler.
-    await act(async () => {
-      fileChangesHandler.current?.([{ path: 'notes/some-note.md', kind: 'upsert' }])
-      fileChangesHandler.current?.([{ path: MEMO.audioPath, kind: 'remove' }])
-    })
-    expect(reconcileAudioMemos).toHaveBeenCalledTimes(2)
+    expect(reconcilerControls.fake.schedule).toHaveBeenCalledTimes(1)
   })
 
   it('a too-short recording is discarded without saving', async () => {
@@ -606,9 +636,9 @@ describe('AudioMemoProvider', () => {
     })
     expect(result.current.phase).toBe('idle')
     expect(recorderControls.startSpy).not.toHaveBeenCalled()
-    expect(reconcileAudioMemos).not.toHaveBeenCalled()
-    // The watcher subscription is off too — nothing to transcribe with.
-    expect(fileChangesHandler.current).toBeNull()
+    // The reconciler still mounts (its passes gate internally), but nothing
+    // here schedules one.
+    expect(reconcilerControls.fake.schedule).not.toHaveBeenCalled()
   })
 
   it('cancel discards the recording without saving', async () => {
@@ -626,67 +656,18 @@ describe('AudioMemoProvider', () => {
     expect(captureAudioMemo).not.toHaveBeenCalled()
   })
 
-  it('runs a reconcile pass on mount and again on window focus', async () => {
-    renderHook(() => useAudioMemo(), { wrapper })
-    await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalledTimes(1))
-
-    await act(async () => {
-      window.dispatchEvent(new Event('focus'))
-    })
-    await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalledTimes(2))
-  })
-
-  it('shows the transcribing phase while a pass has memos to transcribe', async () => {
-    let release: (outcome: ReconcileAudioMemosOutcome) => void = () => {}
-    reconcileAudioMemos.mockImplementationOnce(
-      (input) =>
-        new Promise<ReconcileAudioMemosOutcome>((resolve) => {
-          input.onPending?.(2)
-          release = resolve
-        }),
-    )
+  it('shows the transcribing phase while the reconciler reports work', async () => {
     const { result } = renderHook(() => useAudioMemo(), { wrapper })
+    expect(result.current.phase).toBe('idle')
 
-    await waitFor(() => expect(result.current.phase).toBe('transcribing'))
-
-    await act(async () => {
-      release({ pending: 2, transcribed: 2, rejected: 0, stopped: null })
+    act(() => {
+      reconcilerControls.setTranscribing(true)
     })
-    await waitFor(() => expect(result.current.phase).toBe('idle'))
-  })
+    expect(result.current.phase).toBe('transcribing')
 
-  it('a reconcile stop that needs attention surfaces once through operations', async () => {
-    reconcileAudioMemos.mockResolvedValue({
-      pending: 1,
-      transcribed: 0,
-      rejected: 0,
-      stopped: { reason: 'auth', message: 'openai rejected the API key (401)' },
+    act(() => {
+      reconcilerControls.setTranscribing(false)
     })
-    renderHook(() => useAudioMemo(), { wrapper })
-
-    await waitFor(() =>
-      expect(failOperation).toHaveBeenCalledWith('openai rejected the API key (401)'),
-    )
-
-    // The focus retry hits the same wall — it must not toast again.
-    await act(async () => {
-      window.dispatchEvent(new Event('focus'))
-    })
-    await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalledTimes(2))
-    expect(failOperation).toHaveBeenCalledTimes(1)
-  })
-
-  it('an offline reconcile stop stays silent — the next trigger retries', async () => {
-    reconcileAudioMemos.mockResolvedValue({
-      pending: 1,
-      transcribed: 0,
-      rejected: 0,
-      stopped: { reason: 'network', message: 'provider down' },
-    })
-    const { result } = renderHook(() => useAudioMemo(), { wrapper })
-
-    await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalled())
-    await waitFor(() => expect(result.current.phase).toBe('idle'))
-    expect(failOperation).not.toHaveBeenCalled()
+    expect(result.current.phase).toBe('idle')
   })
 })

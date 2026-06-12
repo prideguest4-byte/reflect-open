@@ -6,23 +6,23 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactElement,
   type ReactNode,
 } from 'react'
 import {
-  audioMemoFromPath,
   captureAudioMemo,
   errorMessage,
   pickTranscriptionConfig,
-  reconcileAudioMemos,
-  type FileChange,
+  type AiModelsState,
   type GraphInfo,
-  type ReconcileStop,
 } from '@reflect/core'
 import { isRecordingSupported, useAudioRecorder } from '@/hooks/use-audio-recorder'
 import { startOperation } from '@/lib/operations'
-import { providerFetch } from '@/lib/provider-fetch'
-import { useFileChanges } from '@/lib/use-file-changes'
+import {
+  createTranscriptionReconciler,
+  type TranscriptionReconciler,
+} from '@/lib/transcription-reconciler'
 import { useSettings } from '@/providers/settings-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
 
@@ -35,13 +35,11 @@ import { useSidebar } from '@/providers/sidebar-provider'
  *
  * The pipeline is raw-first (see `actions/audio-memo` in core): stopping a
  * recording writes the audio into the graph's `audio-memos/` — local,
- * instant — and transcription runs as a background reconcile pass that finds
- * memos without a same-named transcription note. A pass that fails (offline, bad
- * key) just leaves the memos pending; the next trigger — another capture,
- * window focus, coming back online, or the next launch — retries. Captures
- * drain through a serial queue so memos can be recorded back-to-back; a
- * failed *capture* (the one step that can lose audio) parks the queue behind
- * a Retry/Discard error.
+ * instant — and transcription belongs to the per-graph
+ * {@link createTranscriptionReconciler} lifecycle this provider mounts,
+ * which owns every trigger and retry rule. Captures drain through a serial
+ * queue so memos can be recorded back-to-back; a failed *capture* (the one
+ * step that can lose audio) parks the queue behind a Retry/Discard error.
  */
 
 /**
@@ -110,8 +108,6 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   const { collapsed, toggleSidebar } = useSidebar()
 
   const [pendingCount, setPendingCount] = useState(0)
-  /** True while a reconcile pass has memos to transcribe. */
-  const [transcribing, setTranscribing] = useState(false)
   /** True from the stop click until the recorder hands over the blob. */
   const [stopping, setStopping] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -157,97 +153,51 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   const stoppingRef = useRef(false)
   /** The in-flight stop, so a mic click in the gap can chain the next memo. */
   const stopSettledRef = useRef<Promise<void>>(Promise.resolve())
-  /** Flips on unmount (graph switch) — aborts the reconcile pass mid-loop. */
-  const staleRef = useRef(false)
+
+  // The configured-models state, by ref: the reconciler reads it lazily at
+  // the start of every pass, so a key added mid-session is seen without
+  // rebuilding the lifecycle on every settings change.
+  const modelsRef = useRef<AiModelsState>({
+    models: settings.aiModels,
+    defaultModelId: settings.defaultAiModelId,
+  })
+  modelsRef.current = { models: settings.aiModels, defaultModelId: settings.defaultAiModelId }
+
+  // One reconciler per graph session (this provider remounts per graph). It
+  // owns the launch pass and all retry triggers; the pump only schedules.
+  const [reconciler, setReconciler] = useState<TranscriptionReconciler | null>(null)
+  const reconcilerRef = useRef<TranscriptionReconciler | null>(null)
   useEffect(() => {
-    staleRef.current = false
+    const next = createTranscriptionReconciler({
+      generation: graph.generation,
+      getModels: () => modelsRef.current,
+    })
+    setReconciler(next)
+    reconcilerRef.current = next
+    next.start()
     return () => {
-      staleRef.current = true
+      next.dispose()
+      reconcilerRef.current = null
+      setReconciler((current) => (current === next ? null : current))
     }
-  }, [])
+  }, [graph.generation])
 
-  /** One reconcile pass at a time; a trigger landing mid-pass queues one rerun. */
-  const reconcileRunningRef = useRef(false)
-  const reconcileQueuedRef = useRef(false)
-  /** Last surfaced stop message — focus/online retries must not re-toast it. */
-  const surfacedStopRef = useRef<string | null>(null)
-
-  const surfaceReconcileStop = useCallback((stopped: ReconcileStop | null): void => {
-    if (stopped === null) {
-      surfacedStopRef.current = null
-      return
-    }
-    // Expected, self-healing stops stay silent: offline retries on the next
-    // trigger, and a missing provider/key already disables the mic with the
-    // reason as its tooltip.
-    if (stopped.reason === 'network' || stopped.reason === 'config' || stopped.reason === 'stale') {
-      return
-    }
-    if (surfacedStopRef.current === stopped.message) {
-      return
-    }
-    surfacedStopRef.current = stopped.message
-    startOperation('Transcribing audio memo').fail(stopped.message)
-  }, [])
-
-  const runReconcile = useCallback(async (): Promise<void> => {
-    if (reconcileRunningRef.current) {
-      reconcileQueuedRef.current = true
-      return
-    }
-    reconcileRunningRef.current = true
-    try {
-      do {
-        reconcileQueuedRef.current = false
-        const outcome = await reconcileAudioMemos({
-          models: { models: settings.aiModels, defaultModelId: settings.defaultAiModelId },
-          generation: graph.generation,
-          fetchFn: providerFetch,
-          isStale: () => staleRef.current,
-          onPending: (count) => setTranscribing(count > 0),
-        })
-        surfaceReconcileStop(outcome.stopped)
-      } while (reconcileQueuedRef.current && !staleRef.current)
-    } finally {
-      reconcileRunningRef.current = false
-      setTranscribing(false)
-    }
-  }, [settings.aiModels, settings.defaultAiModelId, graph.generation, surfaceReconcileStop])
-
-  // Reconcile whenever transcription becomes possible (launch, key added) and
-  // on the network's natural retry signals. Cheap when nothing is pending —
-  // one asset listing.
+  // Passes gate on a configured model before any IO — when the user adds the
+  // first key mid-session, kick the pass that gate was suppressing.
+  const hadConfigRef = useRef(transcriptionConfig !== null)
   useEffect(() => {
-    if (transcriptionConfig === null) {
-      return
+    const hasConfig = transcriptionConfig !== null
+    if (hasConfig && !hadConfigRef.current) {
+      reconciler?.schedule()
     }
-    void runReconcile()
-    const onWake = (): void => {
-      void runReconcile()
-    }
-    window.addEventListener('focus', onWake)
-    window.addEventListener('online', onWake)
-    return () => {
-      window.removeEventListener('focus', onWake)
-      window.removeEventListener('online', onWake)
-    }
-  }, [transcriptionConfig, runReconcile])
+    hadConfigRef.current = hasConfig
+  }, [transcriptionConfig, reconciler])
 
-  // The watcher tracks `audio-memos/` too: a recording reported there — one a
-  // sync merge pulled from another device, or dropped in externally — gets
-  // transcribed live instead of waiting for the next focus or launch pass.
-  const onFileChanges = useCallback(
-    (changes: FileChange[]): void => {
-      const hasNewRecording = changes.some(
-        (change) => change.kind === 'upsert' && audioMemoFromPath(change.path) !== null,
-      )
-      if (hasNewRecording) {
-        void runReconcile()
-      }
-    },
-    [runReconcile],
+  /** True while a reconcile pass has memos to transcribe. */
+  const transcribing = useSyncExternalStore(
+    reconciler?.subscribe ?? (() => () => {}),
+    reconciler?.getTranscribing ?? (() => false),
   )
-  useFileChanges(transcriptionConfig === null ? null : onFileChanges)
 
   const pump = useCallback(async (): Promise<void> => {
     if (pumpingRef.current) {
@@ -292,9 +242,9 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       // which feeds the sync engine's commit debounce like any note edit.
       // Transcription is kicked directly rather than waiting on the
       // watcher's own debounce to echo our write back.
-      void runReconcile()
+      reconcilerRef.current?.schedule()
     }
-  }, [graph.generation, runReconcile])
+  }, [graph.generation])
 
   const start = useCallback(async (): Promise<void> => {
     if (!supported || transcriptionConfig === null) {

@@ -185,13 +185,11 @@ export {
 
 // Capture actions (audio memos; Plan 11's link capture joins here)
 export {
-  appendToDailyNote,
   audioMemoFromPath,
   audioMemoIdentity,
   captureAudioMemo,
   listPendingAudioMemos,
   reconcileAudioMemos,
-  type AppendToDailyNoteInput,
   type AudioMemoIdentity,
   type CaptureAudioMemoInput,
   type CaptureAudioMemoOutcome,

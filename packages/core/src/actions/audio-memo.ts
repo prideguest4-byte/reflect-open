@@ -265,7 +265,14 @@ async function memoNoteBody(input: {
   }
 }
 
-/** Append the memo's wikilink to its day's daily note, once. */
+/**
+ * Append the memo's wikilink to its day's daily note, once — creating the
+ * file when the day has none yet (capture must never depend on the note
+ * already existing). The write goes straight to disk: the watcher reindexes
+ * it, and an open editor session reconciles it like any external change
+ * (clean buffers reload in place; dirty ones park a conflict rather than
+ * being clobbered).
+ */
 async function ensureDailyBacklink(memo: AudioMemoIdentity, generation: number): Promise<void> {
   const source = await dailyNoteSource(memo.date, generation)
   if (hasBacklink(source, memo)) {
@@ -417,31 +424,3 @@ export async function reconcileAudioMemos(
   return { pending: pending.length, transcribed, rejected, stopped: null }
 }
 
-export interface AppendToDailyNoteInput {
-  /** The target day, as a local ISO date (`YYYY-MM-DD`). */
-  date: string
-  /** The block to append. */
-  text: string
-  /** `GraphInfo.generation` — pins the write to the issuing graph. */
-  generation: number
-}
-
-/**
- * Append `text` to the day's daily note, creating the file when the day has
- * none yet — capture must never depend on the note already existing. The
- * write goes straight to disk: the watcher reindexes it, and an open editor
- * session reconciles it like any external change (clean buffers reload in
- * place; dirty ones park a conflict rather than being clobbered).
- */
-export async function appendToDailyNote(input: AppendToDailyNoteInput): Promise<void> {
-  const path = dailyPath(input.date)
-  let source = ''
-  try {
-    source = await readNote(path, input.generation)
-  } catch (cause) {
-    if (!isAppError(cause) || cause.kind !== 'notFound') {
-      throw cause
-    }
-  }
-  await writeNote(path, appendBlock(source, input.text), input.generation)
-}
