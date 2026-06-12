@@ -77,15 +77,21 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Record a graph as most-recently-opened.
-pub fn record(root: &Path, name: &str) -> AppResult<()> {
+/// Record a graph as most-recently-opened. Returns whether this was the
+/// root's **first** recorded open (absent from the stored list) — the fact
+/// `graph_open` reports so first-run policy (welcome-note seeding) can live
+/// in the frontend without re-deriving open history.
+pub fn record(root: &Path, name: &str) -> AppResult<bool> {
     let path = store_path()?;
     let entry = RecentGraph {
         root: root.to_string_lossy().into_owned(),
         name: name.to_string(),
         opened_ms: now_ms(),
     };
-    save_to(&path, &with_entry(load_from(&path)?, entry))
+    let recents = load_from(&path)?;
+    let first_open = !recents.iter().any(|recent| recent.root == entry.root);
+    save_to(&path, &with_entry(recents, entry))?;
+    Ok(first_open)
 }
 
 /// The recent-graphs list, newest first.

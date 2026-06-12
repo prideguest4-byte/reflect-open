@@ -67,7 +67,13 @@ const { ChatScreen } = await import('./chat-screen')
 
 afterEach(cleanup)
 
-const GRAPH: GraphInfo = { root: '/graphs/test', name: 'test-graph', cloudSync: null, generation: 1 }
+const GRAPH: GraphInfo = {
+  root: '/graphs/test',
+  name: 'test-graph',
+  cloudSync: null,
+  generation: 1,
+  firstOpen: false,
+}
 
 const GRAPH_CONTEXT = cloudSafeGraphContext({
   graphName: 'test-graph',

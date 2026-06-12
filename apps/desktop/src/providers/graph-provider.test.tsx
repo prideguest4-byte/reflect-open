@@ -39,7 +39,14 @@ function installFakeBridge(): void {
             pendingOpens.set(root, resolve)
           })
           generation += 1
-          return { root, name: root.slice(1), cloudSync: null, generation }
+          // Mirror Rust's recents recording: firstOpen is decided against the
+          // stored list, then the open lands in it.
+          const firstOpen = !storedRecents.some((recent) => recent.root === root)
+          storedRecents = [
+            { root, name: root.slice(1), openedMs: generation },
+            ...storedRecents.filter((recent) => recent.root !== root),
+          ]
+          return { root, name: root.slice(1), cloudSync: null, generation, firstOpen }
         }
         case 'recent_graphs':
           return storedRecents
@@ -124,7 +131,7 @@ describe('GraphProvider open sequencing', () => {
 })
 
 describe('GraphProvider welcome seeding', () => {
-  it('seeds the welcome note when the user picks a brand-new empty folder', async () => {
+  it('seeds the welcome note on a folder’s first-ever open when it is empty', async () => {
     vi.mocked(open).mockResolvedValue('/fresh')
     const { result } = renderHook(() => useGraph(), { wrapper })
     await waitFor(() => expect(result.current.status).toBe('choosing'))

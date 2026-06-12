@@ -80,6 +80,14 @@ export function createUpdateController(options: UpdateControllerOptions): Update
     }
     const before = state
     setState({ phase: 'checking' })
+    // A silent check only ever adds information — it never retracts a visible
+    // affordance. Any outcome other than a found update (an empty answer can
+    // be transient: release mid-edit, manifest propagation; a failure is just
+    // offline) puts the state back the way the user saw it. If the update
+    // truly vanished, installing it fails loudly — the honest signal.
+    const restoreQuietly = (): void => {
+      setState(before.phase === 'available' ? before : { phase: 'idle' })
+    }
     try {
       const update = await check()
       if (currentPhase() !== 'checking') {
@@ -88,19 +96,12 @@ export function createUpdateController(options: UpdateControllerOptions): Update
       if (update) {
         pendingUpdate = update
         setState({ phase: 'available', version: update.version })
-      } else if (!silent) {
+      } else if (silent) {
+        restoreQuietly()
+      } else {
         // The user asked: the endpoint's answer is authoritative.
         pendingUpdate = null
         setState({ phase: 'upToDate' })
-      } else if (before.phase === 'available') {
-        // A silent check only ever adds information — it never retracts a
-        // visible affordance. An empty answer can be transient (release being
-        // edited, manifest propagation); if the update truly vanished, the
-        // install fails loudly, which is the honest signal.
-        setState(before)
-      } else {
-        pendingUpdate = null
-        setState({ phase: 'idle' })
       }
     } catch (error) {
       if (currentPhase() !== 'checking') {
@@ -108,9 +109,7 @@ export function createUpdateController(options: UpdateControllerOptions): Update
       }
       if (silent) {
         console.warn('update check failed (ignored):', error)
-        // Same rule as above: failing to re-check (e.g. offline) must not
-        // forget an update an earlier check already found.
-        setState(before.phase === 'available' ? before : { phase: 'idle' })
+        restoreQuietly()
       } else {
         setState({ phase: 'error', message: errorMessage(error), during: 'check' })
       }

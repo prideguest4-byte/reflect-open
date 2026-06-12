@@ -32,7 +32,11 @@ This note is pinned to the sidebar — unpin it (⌘O) when you're done.
 /**
  * Seed the welcome note into an **empty** graph (no markdown under `daily/`
  * or `notes/`). A graph with any note at all is someone's existing data —
- * never write into it. Returns whether a seed happened.
+ * never write into it. The caller supplies the other half of "brand new":
+ * the graph provider only seeds on a root's first-ever open
+ * (`GraphInfo.firstOpen`, Rust's fact from the recents store), so a graph
+ * someone emptied on purpose is never re-onboarded. Returns whether a seed
+ * happened.
  */
 export async function seedWelcomeNote(generation: number): Promise<boolean> {
   const files = await listFiles(generation)

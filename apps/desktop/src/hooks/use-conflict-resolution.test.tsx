@@ -21,7 +21,9 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 vi.mock('@/lib/query-client', () => ({ invalidateIndexQueries: vi.fn() }))
 
 const graphState = vi.hoisted(() => ({
-  graph: { root: '/g', name: 'G', cloudSync: null, generation: 3 } as GraphInfo | null,
+  graph: { root: '/g', name: 'G', cloudSync: null, generation: 3, firstOpen: false } as
+    | GraphInfo
+    | null,
   indexGeneration: 7 as number | null,
 }))
 vi.mock('@/providers/graph-provider', () => ({ useGraph: () => graphState }))
@@ -36,7 +38,7 @@ const SOURCE = [
 ].join('\n')
 
 beforeEach(() => {
-  graphState.graph = { root: '/g', name: 'G', cloudSync: null, generation: 3 }
+  graphState.graph = { root: '/g', name: 'G', cloudSync: null, generation: 3, firstOpen: false }
   graphState.indexGeneration = 7
   vi.mocked(readNote).mockResolvedValue(SOURCE)
 })
