@@ -49,12 +49,16 @@ export function ChatScreen(): ReactElement {
         }
       }}
       onDrop={(event) => {
-        const files = imageFilesFrom(event.dataTransfer)
-        if (files.length === 0) {
+        if (event.dataTransfer.files.length === 0) {
           return
         }
+        // Claim every file drop, matching or not: the webview's default for
+        // an unhandled file is to navigate to it, replacing the app.
         event.preventDefault()
-        void attachImages(files)
+        const files = imageFilesFrom(event.dataTransfer)
+        if (files.length > 0) {
+          void attachImages(files)
+        }
       }}
     >
       <ChatTurnList />

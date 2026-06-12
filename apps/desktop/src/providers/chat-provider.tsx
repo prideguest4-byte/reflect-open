@@ -210,7 +210,13 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
   }, [])
 
   const attachImages = useCallback(async (files: File[]): Promise<void> => {
+    // Reading files is async: a drop still in flight when New chat clears
+    // the session must not land in the fresh composer afterwards.
+    const session = sessionRef.current
     const queued = await Promise.all(files.map(toChatAttachment))
+    if (session !== sessionRef.current) {
+      return
+    }
     setAttachments((current) => [...current, ...queued])
   }, [])
 

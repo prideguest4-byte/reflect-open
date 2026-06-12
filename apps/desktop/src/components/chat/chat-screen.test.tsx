@@ -80,9 +80,12 @@ function pngFile(name: string): File {
 }
 
 let probedSend: ((text: string) => Promise<void>) | null = null
+let probedNewChat: (() => void) | null = null
 
 function SendProbe(): ReactElement | null {
-  probedSend = useChatSession().send
+  const session = useChatSession()
+  probedSend = session.send
+  probedNewChat = session.newChat
   return null
 }
 
@@ -310,6 +313,49 @@ describe('ChatScreen', () => {
     // The queue cleared; the photo now lives in the transcript bubble.
     expect(view.queryByRole('button', { name: 'Remove cat.png' })).toBeNull()
     expect(view.getByAltText('cat.png')).toBeDefined()
+  })
+
+  it('a drop still reading when New chat clears the session never lands', async () => {
+    configureModel()
+    const view = renderChat()
+
+    // A file whose read only settles when the test says so.
+    let releaseRead: (buffer: ArrayBuffer) => void = () => {}
+    const file = pngFile('cat.png')
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          releaseRead = resolve
+        }),
+    })
+    fireEvent.drop(view.getByLabelText('Chat message'), {
+      dataTransfer: { files: [file], types: ['Files'] },
+    })
+
+    await act(async () => {
+      probedNewChat?.()
+    })
+    await act(async () => {
+      releaseRead(new Uint8Array([0x89]).buffer)
+    })
+
+    expect(view.queryByAltText('cat.png')).toBeNull()
+  })
+
+  it('claims non-image file drops so the webview never navigates to them', () => {
+    configureModel()
+    const view = renderChat()
+
+    const notCancelled = fireEvent.drop(view.getByLabelText('Chat message'), {
+      dataTransfer: {
+        files: [new File(['hi'], 'notes.txt', { type: 'text/plain' })],
+        types: ['Files'],
+      },
+    })
+
+    // fireEvent returns false when a handler called preventDefault.
+    expect(notCancelled).toBe(false)
+    expect(view.queryByAltText('notes.txt')).toBeNull()
   })
 
   it('a removed attachment never sends', async () => {
