@@ -5,6 +5,7 @@ import { flushOpenDocuments, openSession, registerOpenDocument } from './open-do
 function fakeSession(path: string, log: string[]): NoteSession {
   return {
     path,
+    retarget: () => {},
     load: () => {},
     editorChanged: () => {},
     externalChanged: () => {},
@@ -74,5 +75,26 @@ describe('open documents', () => {
       unregisterBad()
       unregisterGood()
     }
+  })
+})
+
+describe('retargetOpenDocument (Plan 17)', () => {
+  it('re-keys the entry; the original unregister still finds it by identity', async () => {
+    const { retargetOpenDocument } = await import('./open-documents')
+    const session = fakeSession('notes/a.md', [])
+    const unregister = registerOpenDocument({ session })
+
+    retargetOpenDocument('notes/a.md', 'notes/renamed.md')
+    expect(openSession('notes/a.md')).toBeNull()
+    expect(openSession('notes/renamed.md')).toBe(session)
+
+    unregister() // registered under a.md, re-keyed since — must still evict
+    expect(openSession('notes/renamed.md')).toBeNull()
+  })
+
+  it('re-keying a path with no entry is a no-op', async () => {
+    const { retargetOpenDocument } = await import('./open-documents')
+    retargetOpenDocument('notes/ghost.md', 'notes/elsewhere.md')
+    expect(openSession('notes/elsewhere.md')).toBeNull()
   })
 })

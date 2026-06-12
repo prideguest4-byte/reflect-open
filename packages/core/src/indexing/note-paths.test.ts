@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { availableNotePath } from './note-paths'
+import { availableNotePath, slugPathForTitle } from './note-paths'
 
 describe('availableNotePath', () => {
   it('returns the bare slug path when free', async () => {
@@ -31,5 +31,36 @@ describe('availableNotePath', () => {
     await expect(availableNotePath('meeting', async () => true)).rejects.toThrow(
       /no available note path/,
     )
+  })
+})
+
+describe('slugPathForTitle', () => {
+  const taken = (occupied: string[]) => async (path: string) => occupied.includes(path)
+
+  it('returns the slug path when free', async () => {
+    await expect(
+      slugPathForTitle('notes/01abc.md', 'Meeting Notes', taken([])),
+    ).resolves.toBe('notes/meeting-notes.md')
+  })
+
+  it('returns the current path unchanged when the name already matches', async () => {
+    const probe = vi.fn(taken([]))
+    await expect(
+      slugPathForTitle('notes/meeting-notes.md', 'Meeting Notes', probe),
+    ).resolves.toBe('notes/meeting-notes.md')
+    // Its own path is never probed — a note can't collide with itself.
+    expect(probe).not.toHaveBeenCalled()
+  })
+
+  it('a suffixed home still counts as already-named (no tightening moves)', async () => {
+    await expect(
+      slugPathForTitle('notes/meeting-2.md', 'Meeting', taken(['notes/meeting.md'])),
+    ).resolves.toBe('notes/meeting-2.md')
+  })
+
+  it('suffixes around occupied candidates', async () => {
+    await expect(
+      slugPathForTitle('notes/01abc.md', 'Meeting', taken(['notes/meeting.md'])),
+    ).resolves.toBe('notes/meeting-2.md')
   })
 })

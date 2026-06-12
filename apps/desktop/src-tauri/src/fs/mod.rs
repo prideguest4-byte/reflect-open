@@ -224,6 +224,27 @@ pub fn note_exists(path: String, state: State<GraphState>) -> AppResult<bool> {
     Ok(resolve(&root, &path)?.is_file())
 }
 
+/// Rename `from` → `to` on disk (both graph-relative, traversal-guarded).
+///
+/// When `to` already exists, the source is **removed instead of renamed**: in
+/// the rename pipeline (Plan 17) the only realistic cause is the note's own
+/// just-retargeted save landing at the destination first — that file carries
+/// the *newest* content, and overwriting it with the stale source would lose
+/// the very keystrokes the save persisted.
+pub(crate) fn move_note_file(root: &Path, from: &str, to: &str) -> AppResult<()> {
+    let from_abs = resolve(root, from)?;
+    let to_abs = resolve(root, to)?;
+    if to_abs.is_file() {
+        fs::remove_file(from_abs)?;
+        return Ok(());
+    }
+    if let Some(parent) = to_abs.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(from_abs, to_abs)?;
+    Ok(())
+}
+
 /// Move/rename a note within the graph (pinned to `generation`).
 #[tauri::command]
 pub fn note_move(

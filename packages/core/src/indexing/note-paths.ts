@@ -1,5 +1,6 @@
 import { noteExists } from '../graph/commands'
 import { notePath } from '../graph/paths'
+import { slugForTitle } from '../markdown/slug'
 import { db } from './db'
 
 /**
@@ -41,6 +42,30 @@ export async function availableNotePath(
 ): Promise<string> {
   for (let ordinal = 1; ordinal <= MAX_COLLISION_PROBES; ordinal += 1) {
     const candidate = notePath(ordinal === 1 ? slug : `${slug}-${ordinal}`)
+    if (!(await taken(candidate))) {
+      return candidate
+    }
+  }
+  throw new Error(`no available note path for slug "${slug}" after ${MAX_COLLISION_PROBES} probes`)
+}
+
+/**
+ * Where `path`'s file should live for `title` (the rename pipeline's target,
+ * Plan 17): the slug path with a collision suffix — or `path` unchanged when
+ * a candidate *is* the note's current path, so a note whose name already
+ * matches its title never moves (and never collides with itself).
+ */
+export async function slugPathForTitle(
+  path: string,
+  title: string,
+  taken: (candidate: string) => Promise<boolean> = pathTaken,
+): Promise<string> {
+  const slug = slugForTitle(title)
+  for (let ordinal = 1; ordinal <= MAX_COLLISION_PROBES; ordinal += 1) {
+    const candidate = notePath(ordinal === 1 ? slug : `${slug}-${ordinal}`)
+    if (candidate === path) {
+      return path
+    }
     if (!(await taken(candidate))) {
       return candidate
     }

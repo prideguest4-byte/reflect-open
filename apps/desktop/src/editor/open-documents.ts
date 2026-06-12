@@ -27,13 +27,20 @@ export interface OpenDocument {
 
 const documents = new Map<string, OpenDocument>()
 
-/** Register an open document (keyed by its session's path); returns the unregister. */
+/**
+ * Register an open document (keyed by its session's path); returns the
+ * unregister. Unregistration is by **identity**, not key — a rename can
+ * re-key the entry ({@link retargetOpenDocument}) between registration and
+ * teardown, and the unregister must still find it.
+ */
 export function registerOpenDocument(document: OpenDocument): () => void {
-  const path = document.session.path
-  documents.set(path, document)
+  documents.set(document.session.path, document)
   return () => {
-    if (documents.get(path) === document) {
-      documents.delete(path)
+    for (const [key, registered] of documents) {
+      if (registered === document) {
+        documents.delete(key)
+        return
+      }
     }
   }
 }
@@ -41,6 +48,21 @@ export function registerOpenDocument(document: OpenDocument): () => void {
 /** The live session for `path`, if that note is open in some pane. */
 export function openSession(path: string): NoteSession | null {
   return documents.get(path)?.session ?? null
+}
+
+/**
+ * Re-key an open document after its note file moved (Plan 17), so
+ * {@link openSession} lookups under the new path find the live session. The
+ * old registration's unregister closure no-ops afterwards (it checks
+ * identity under the old key), and the adopting pane re-registers under the
+ * new path.
+ */
+export function retargetOpenDocument(from: string, to: string): void {
+  const document = documents.get(from)
+  if (document !== undefined) {
+    documents.delete(from)
+    documents.set(to, document)
+  }
 }
 
 /**

@@ -108,7 +108,9 @@ later surface), daily notes (untouched in every respect — `daily/YYYY-MM-DD.md
 5. **Reconciliation by construction** (no watcher special-casing). The fs rename
    echoes back as `remove(old)` + `upsert(new)`. Because the DB moved *first*:
    `remove(old)` deletes rows that no longer exist (no-op) and `upsert(new)`
-   hash-matches the already-moved row (skip). Verify with an integration test
+   re-applies an identical projection over the moved row (idempotent; the
+   live path doesn't hash-skip, but embedding chunks live outside `apply_note`
+   so vectors survive). Verify with an integration test
    rather than suppression logic — the ordering *is* the mechanism. The
    reconcile/index path itself **never renames files**: only in-app settled
    titles move files, so external editors, sync pulls, and rebuilds can never

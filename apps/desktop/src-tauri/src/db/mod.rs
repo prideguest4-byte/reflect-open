@@ -144,6 +144,38 @@ pub fn index_remove(path: String, generation: u64, index: State<IndexState>) -> 
     Ok(())
 }
 
+/// Move a note file **and** its projection in one step (Plan 17): the index
+/// rows migrate inside a transaction, the file renames while it's still open,
+/// and a rename failure rolls everything back. DB-first ordering is what makes
+/// the watcher's echo benign by construction: `remove(from)` finds no rows,
+/// and `upsert(to)` re-applies an identical projection over the moved one —
+/// embedding chunks live outside `apply_note`, so vectors survive the echo.
+///
+/// `generation` is the **graph** generation (the same gate as `note_write`):
+/// a rename is user-initiated file mutation, and a stale UI must be rejected
+/// loudly. The index connection is whatever is current — the two states rebind
+/// together on graph open, and the projection is rebuildable in the worst case.
+#[tauri::command]
+pub fn note_move_indexed(
+    from: String,
+    to: String,
+    generation: u64,
+    graph: State<GraphState>,
+    index: State<IndexState>,
+) -> AppResult<()> {
+    let root = crate::fs::root_for_generation(&graph, generation)?;
+    let mut state = lock_state(&index)?;
+    let conn = state.conn.as_mut().ok_or_else(AppError::no_graph)?;
+    let tx = conn.transaction()?;
+    // Child tables FK `notes(path)`; deferring lets the parent key move first
+    // and the constraint re-check at commit, when the children have followed.
+    tx.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
+    write::move_note(&tx, &from, &to)?;
+    crate::fs::move_note_file(&root, &from, &to)?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Upsert one `index_meta` key (no-op if stale). The table is bookkeeping the
 /// TS policy layer owns — e.g. `syncIndex` stamps the projection version after
 /// a rebuild — and `index_clear` deliberately preserves it, so a marker can

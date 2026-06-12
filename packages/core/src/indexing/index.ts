@@ -7,6 +7,7 @@ export {
   applyIndexedNote,
   applyIndexedNotes,
   removeFromIndex,
+  moveNoteIndexed,
   clearIndex,
   setIndexMeta,
   watchStart,
@@ -24,7 +25,7 @@ export {
   type ApplyErrorHandler,
 } from './live'
 export { hashContent } from './hash'
-export { availableNotePath } from './note-paths'
+export { availableNotePath, slugPathForTitle } from './note-paths'
 export {
   buildIndexedNote,
   indexedNoteSchema,

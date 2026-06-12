@@ -15,7 +15,13 @@ import { foldKey, parseNote } from '@reflect/core'
  */
 
 export interface TitleRename {
-  from: string
+  /**
+   * The settled-away-from title — or `null` for a **birth**: the first
+   * authored title on an untitled note. Births rewrite no links and add no
+   * alias (nothing links to a title that never existed), but the file still
+   * adopts its slug name (Plan 17), on the same settled cadence as renames.
+   */
+  from: string | null
   to: string
   /** The alias auto-added by this session's previous rename (prune candidate). */
   previousAutoAlias: string | null
@@ -80,7 +86,7 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
 
   function fire(): void {
     cancelTimer()
-    if (disposed || pending === null || baselineTitle === null) {
+    if (disposed || pending === null) {
       return
     }
     if (canFire !== undefined && !canFire()) {
@@ -89,10 +95,11 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
     const rename: TitleRename = {
       from: baselineTitle,
       to: pending,
-      previousAutoAlias,
+      previousAutoAlias: baselineTitle === null ? null : previousAutoAlias,
     }
     // The title we just renamed away from becomes this session's auto-alias —
     // a follow-up rename prunes it instead of accreting one alias per edit.
+    // A birth (`from: null`) leaves no alias behind, so the chain stays empty.
     previousAutoAlias = baselineTitle
     baselineTitle = pending
     pending = null
@@ -122,11 +129,14 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
       return
     }
     if (baselineTitle === null) {
-      // The first authored title on an untitled note is a birth, not a
-      // rename — nothing links to a title that never existed.
+      // The first authored title on an untitled note is a **birth**, not a
+      // rename — nothing links to a title that never existed, so no rewrite.
+      // It still settles through the quiet timer: the birth event is what
+      // moves the file onto its slug name (Plan 17), and firing it per save
+      // would rename the file under a half-typed title.
+      pending = title
       cancelTimer()
-      pending = null
-      baselineTitle = title
+      timer = setTimeout(fire, quietMs)
       return
     }
     if (foldKey(title) === foldKey(baselineTitle)) {

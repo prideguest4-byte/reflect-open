@@ -28,6 +28,13 @@ export interface NoteDocument extends NoteSessionSnapshot {
   keepMine: () => void
   /** Resolve a conflict by loading the external content (discards the buffer). */
   loadTheirs: () => void
+  /**
+   * Stable identity of the underlying session: increments when a session is
+   * *created*, not when a rename retargets one (Plan 17). Key the editor on
+   * this instead of the path, so a note following its title to a new filename
+   * keeps its live editor — cursor, selection, undo history and all.
+   */
+  sessionEpoch: number
 }
 
 export interface NoteDocumentOptions {
@@ -71,6 +78,12 @@ export function useNoteDocument(
   const coordinatorRef = useRef<RenameCoordinator | null>(null)
   /** Mirrors the snapshot's conflict for non-reactive checks (rename gating). */
   const conflictRef = useRef<string | null>(null)
+  /** The previous effect run's path — adoption keys on the path having changed. */
+  const prevPathRef = useRef<string | null>(null)
+  /** Counts session *creations* (not retarget adoptions) — the editor's key. */
+  const epochRef = useRef(0)
+  /** Bumped per effect run — the deferred-teardown check for unadopted sessions. */
+  const runIdRef = useRef(0)
 
   // Writes read the generation at write time, not at session creation, so the
   // session must NOT be keyed on `generation`: reopening the *same* graph bumps
@@ -85,47 +98,61 @@ export function useNoteDocument(
   const canWrite = generation !== null
 
   useEffect(() => {
+    runIdRef.current += 1
     if (!path) {
       return
     }
-    // The auto-rename lifecycle (Plan 07b) is owned by the coordinator — the
-    // tracker, the rewrite chain, and alias placement live there. It holds no
-    // pane state at all: session liveness comes from the open-documents
-    // service, and status surfaces through the global operations store.
-    const coordinator = trackRenames
-      ? createRenameCoordinator({
-          path,
-          generation: () => generationRef.current,
-          canFire: () => conflictRef.current === null,
-        })
-      : null
-    coordinatorRef.current = coordinator
-
-    const session = createNoteSession({
-      path,
-      io: {
-        read: readNote,
-        write: canWrite
-          ? (forPath, contents) => {
-              const current = generationRef.current
-              if (current === null) {
-                return Promise.reject(new Error('no graph generation available for save'))
+    // A rename retargeted this hook's live session to `path` (Plan 17): the
+    // route followed the file, the previous run's cleanup saw the path
+    // mismatch and handed the session over instead of disposing it. Adopt —
+    // same document, same coordinator, same editor; only the registration is
+    // refreshed. Adoption keys on the path having *changed* (prevPathRef):
+    // a same-path re-run (e.g. `canWrite` flipping) must rebuild the session,
+    // whose io bindings are taken at creation.
+    const previous = sessionRef.current
+    const retargeted =
+      previous !== null && previous.path === path && prevPathRef.current !== path
+        ? previous
+        : null
+    const coordinator =
+      retargeted !== null
+        ? coordinatorRef.current
+        : trackRenames
+          ? createRenameCoordinator({
+              path,
+              generation: () => generationRef.current,
+              canFire: () => conflictRef.current === null,
+            })
+          : null
+    const session =
+      retargeted ??
+      createNoteSession({
+        path,
+        io: {
+          read: readNote,
+          write: canWrite
+            ? (forPath, contents) => {
+                const current = generationRef.current
+                if (current === null) {
+                  return Promise.reject(new Error('no graph generation available for save'))
+                }
+                return writeNote(forPath, contents, current)
               }
-              return writeNote(forPath, contents, current)
-            }
-          : null,
-      },
-      classify: checkRoundTrip,
-      onSnapshot: (snapshot) => {
-        conflictRef.current = snapshot.conflict
-        setSnapshot(snapshot)
-      },
-      applyContent: (markdown) => editorRef.current?.setMarkdown(markdown),
-      onContent: coordinator ? coordinator.content : undefined,
-      createIfMissing,
-      missingSeed,
-    })
+            : null,
+        },
+        classify: checkRoundTrip,
+        onSnapshot: (snapshot) => {
+          conflictRef.current = snapshot.conflict
+          setSnapshot(snapshot)
+        },
+        applyContent: (markdown) => editorRef.current?.setMarkdown(markdown),
+        onContent: coordinator ? coordinator.content : undefined,
+        createIfMissing,
+        missingSeed,
+      })
     sessionRef.current = session
+    coordinatorRef.current = coordinator
+    prevPathRef.current = path
     // One registration covers everything app-global teardown needs: the
     // quit-time flush, settle-time rename work, and reopened-note lookups.
     const unregisterDocument = registerOpenDocument({
@@ -133,18 +160,17 @@ export function useNoteDocument(
       settle: coordinator ? () => coordinator.settle() : undefined,
       settled: coordinator ? () => coordinator.settled() : undefined,
     })
-    session.load()
-    return () => {
+    if (retargeted === null) {
+      epochRef.current += 1
+      session.load()
+    }
+    const teardown = (): void => {
       if (sessionRef.current === session) {
         sessionRef.current = null
       }
       if (coordinatorRef.current === coordinator) {
         coordinatorRef.current = null
       }
-      // Unregister first: a rename settling from this teardown must not see
-      // this session as "open" — its alias goes to disk (or to a reopened
-      // pane's live session, which registers under the same path).
-      unregisterDocument()
       // Disposal flushes pending edits to the session's own path — the
       // path-switch "final flush" lives here, not in cross-note bookkeeping.
       // The flush's landed save reaches the tracker via onContent('saved');
@@ -157,6 +183,28 @@ export function useNoteDocument(
           coordinator.dispose()
         })
       }
+    }
+    return () => {
+      // Unregister first (by identity — a rename may have re-keyed the
+      // entry): a rename settling from this teardown must not see this
+      // session as "open" — its alias goes to disk (or to a reopened pane's
+      // live session, which registers under the same path).
+      unregisterDocument()
+      if (session.path !== path) {
+        // The session was retargeted away (Plan 17): when the route followed
+        // the move, the next effect run adopts it synchronously within this
+        // commit — disposing now would flush a just-moved document over its
+        // old home. But if no run follows (the pane really unmounted), the
+        // session must still be torn down: defer the check past the commit.
+        const runId = runIdRef.current
+        queueMicrotask(() => {
+          if (runIdRef.current === runId && sessionRef.current === session) {
+            teardown()
+          }
+        })
+        return
+      }
+      teardown()
     }
   }, [path, canWrite, createIfMissing, trackRenames, missingSeed])
 
@@ -213,5 +261,12 @@ export function useNoteDocument(
     sessionRef.current?.loadTheirs()
   }, [])
 
-  return { ...snapshot, onEditorChange, bindEditor, keepMine, loadTheirs }
+  return {
+    ...snapshot,
+    onEditorChange,
+    bindEditor,
+    keepMine,
+    loadTheirs,
+    sessionEpoch: epochRef.current,
+  }
 }
