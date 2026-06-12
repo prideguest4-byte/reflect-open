@@ -5,6 +5,7 @@
 use rusqlite::Connection;
 use serde_json::Value;
 
+use super::chat_write::{delete_conversation, save_message, ChatConversation, ChatMessageRow};
 use super::embed_write::{apply_chunks, remove_chunks, EmbeddedChunk};
 use super::migrations::{migrate, migrate_to, open_in_memory, open_index_at, validate_migrations};
 use super::query::run_query;
@@ -60,7 +61,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 7); // applied migrations (0001 through 0007)
+    assert_eq!(version, 8); // applied migrations (0001 through 0008)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -264,7 +265,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
@@ -856,4 +857,157 @@ fn watcher_echo_after_a_move_is_benign_and_vectors_survive() {
         vec![("notes/kept-title.md".to_string(), "e1".to_string())]
     );
     assert_eq!(vector_count(&conn), 1);
+}
+
+// ---- chat history (0008) ----------------------------------------------------
+
+fn conversation(id: &str) -> ChatConversation {
+    ChatConversation {
+        id: id.to_string(),
+        title: "What did I write about Rust?".to_string(),
+        created_ms: 1_000,
+        updated_ms: 1_000,
+    }
+}
+
+fn chat_message(id: &str, conversation_id: &str) -> ChatMessageRow {
+    ChatMessageRow {
+        id: id.to_string(),
+        conversation_id: conversation_id.to_string(),
+        user_text: "What did I write about Rust?".to_string(),
+        attachments: "[]".to_string(),
+        parts: "[]".to_string(),
+        response_messages: "[]".to_string(),
+        created_ms: 1_000,
+    }
+}
+
+#[test]
+fn chat_message_save_round_trips_and_upserts_the_conversation() {
+    let conn = migrated();
+    save_message(&conn, &conversation("c1"), &chat_message("m1", "c1")).unwrap();
+
+    let rows = run_query(
+        &conn,
+        "SELECT title, created_ms, updated_ms FROM chat_conversations WHERE id = 'c1'",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0]["title"],
+        Value::from("What did I write about Rust?")
+    );
+
+    // A later save bumps updated_ms but never rewrites title/created_ms —
+    // the title is the conversation's identity, set once at creation.
+    let mut later = conversation("c1");
+    later.title = "ignored".to_string();
+    later.created_ms = 9_000;
+    later.updated_ms = 9_000;
+    save_message(&conn, &later, &chat_message("m2", "c1")).unwrap();
+    let rows = run_query(
+        &conn,
+        "SELECT title, created_ms, updated_ms FROM chat_conversations WHERE id = 'c1'",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        rows[0]["title"],
+        Value::from("What did I write about Rust?")
+    );
+    assert_eq!(rows[0]["created_ms"], Value::from(1_000));
+    assert_eq!(rows[0]["updated_ms"], Value::from(9_000));
+}
+
+#[test]
+fn chat_message_resave_updates_by_id() {
+    // The settle-time save re-sends the same row id with the streamed result.
+    let conn = migrated();
+    save_message(&conn, &conversation("c1"), &chat_message("m1", "c1")).unwrap();
+    let mut settled = chat_message("m1", "c1");
+    settled.parts = r#"[{"kind":"text","text":"You wrote three notes."}]"#.to_string();
+    settled.response_messages =
+        r#"[{"role":"assistant","content":"You wrote three notes."}]"#.to_string();
+    save_message(&conn, &conversation("c1"), &settled).unwrap();
+
+    let rows = run_query(
+        &conn,
+        "SELECT parts FROM chat_messages WHERE id = 'm1'",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0]["parts"],
+        Value::from(r#"[{"kind":"text","text":"You wrote three notes."}]"#)
+    );
+}
+
+#[test]
+fn chat_message_seq_is_assigned_per_conversation() {
+    // seq is computed inside the insert (MAX + 1 per conversation), never by
+    // the caller — the frontend's view can undercount the table (the read
+    // path drops rows it cannot parse), so a TS-derived counter could collide
+    // with a row it never saw. Counters are independent per conversation, a
+    // re-save keeps its slot, and the unique index stays on as a backstop.
+    let conn = migrated();
+    save_message(&conn, &conversation("c1"), &chat_message("m1", "c1")).unwrap();
+    save_message(&conn, &conversation("c1"), &chat_message("m2", "c1")).unwrap();
+    save_message(&conn, &conversation("c2"), &chat_message("m3", "c2")).unwrap();
+    save_message(&conn, &conversation("c1"), &chat_message("m2", "c1")).unwrap();
+
+    let rows = run_query(
+        &conn,
+        "SELECT id, seq FROM chat_messages ORDER BY conversation_id, seq",
+        &[],
+    )
+    .unwrap();
+    let slots: Vec<(String, i64)> = rows
+        .iter()
+        .map(|row| {
+            (
+                row["id"].as_str().unwrap().to_string(),
+                row["seq"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        slots,
+        vec![
+            ("m1".to_string(), 0),
+            ("m2".to_string(), 1),
+            ("m3".to_string(), 0),
+        ]
+    );
+}
+
+#[test]
+fn chat_conversation_delete_cascades_to_messages() {
+    let conn = migrated();
+    save_message(&conn, &conversation("c1"), &chat_message("m1", "c1")).unwrap();
+    save_message(&conn, &conversation("c2"), &chat_message("m2", "c2")).unwrap();
+    delete_conversation(&conn, "c1").unwrap();
+
+    let conversations = run_query(&conn, "SELECT id FROM chat_conversations", &[]).unwrap();
+    assert_eq!(conversations.len(), 1);
+    assert_eq!(conversations[0]["id"], Value::from("c2"));
+    let messages = run_query(&conn, "SELECT id FROM chat_messages", &[]).unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["id"], Value::from("m2"));
+}
+
+#[test]
+fn clear_index_preserves_chat_history() {
+    // Chat rows are durable, not a rebuildable projection — the full-rebuild
+    // wipe must leave them alone.
+    let conn = migrated();
+    apply_note(&conn, &note("notes/a.md", "A", vec![])).unwrap();
+    save_message(&conn, &conversation("c1"), &chat_message("m1", "c1")).unwrap();
+    clear_index(&conn).unwrap();
+
+    let notes = run_query(&conn, "SELECT count(*) AS n FROM notes", &[]).unwrap();
+    assert_eq!(notes[0]["n"], Value::from(0));
+    let messages = run_query(&conn, "SELECT count(*) AS n FROM chat_messages", &[]).unwrap();
+    assert_eq!(messages[0]["n"], Value::from(1));
 }
