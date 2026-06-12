@@ -13,6 +13,16 @@ import { openSession, retargetOpenDocument } from './open-documents'
  * document; then it rethrows. On success every subscriber (the router's
  * history rewrite, adopting panes) hears about it. Shared by the rename
  * pipeline and the 17c migration.
+ *
+ * Retarget-before-move is deliberate. A save can only land mid-move if the
+ * user edits inside the single IPC round-trip that follows a flush behind a
+ * 5s save-quiet gate (the debounce alone is 800ms — orders of magnitude
+ * wider than the window). If that ever happens, the write lands at the
+ * destination — where the note is about to live — and the refused move
+ * leaves at worst an orphan copy the duplicate-id surface flags. The
+ * alternative order (retarget after) fails worse: the same race would
+ * resurrect the *old* path holding the newest bytes while the index points
+ * at the new one. See the plan's risk log (decided 2026-06-11).
  */
 export async function moveNoteCarryingSession(
   from: string,

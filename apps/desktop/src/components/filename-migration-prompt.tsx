@@ -54,6 +54,14 @@ export function FilenameMigrationPrompt(): ReactElement | null {
     }
   }, [root, indexing, declined])
 
+  // `indexing` gates the SCAN above (the count must be computed against a
+  // settled index), deliberately not the render: every path that re-triggers
+  // indexing goes through `status: 'opening'`, which unmounts the workspace —
+  // and this dialog — first, so an open offer can never coexist with a fresh
+  // reconcile. Hiding an already-offered dialog on a background flag would
+  // only yank it out from under the user's cursor. And writes during a
+  // reconcile are an everyday condition anyway (autosaves) — the runner
+  // re-validates every candidate before touching it.
   if (
     root === null ||
     generation === null ||
