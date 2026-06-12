@@ -80,10 +80,18 @@ export function appendEvent(parts: AssistantPart[], event: ChatStreamEvent): Ass
  * The model-facing history a new turn resends: every user message followed
  * by the messages its turn contributed (tool calls and results included —
  * settled turns carry them even when stopped or failed part-way).
+ *
+ * A turn that produced **nothing** — failed before the provider replied, or
+ * stopped before any output — is omitted user message and all: resending an
+ * unanswered question would break the role alternation some providers
+ * enforce, and invite the model to answer a question the transcript shows
+ * as failed.
  */
 export function buildHistory(turns: readonly ChatTurn[]): ChatModelMessage[] {
-  return turns.flatMap((turn): ChatModelMessage[] => [
-    { role: 'user', content: turn.userText },
-    ...turn.responseMessages,
-  ])
+  return turns
+    .filter((turn) => turn.responseMessages.length > 0)
+    .flatMap((turn): ChatModelMessage[] => [
+      { role: 'user', content: turn.userText },
+      ...turn.responseMessages,
+    ])
 }

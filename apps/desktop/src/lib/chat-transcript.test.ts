@@ -115,16 +115,42 @@ describe('buildHistory', () => {
       },
       {
         id: 'turn-2',
-        userText: 'thanks',
+        userText: 'and the budget?',
         parts: [],
-        responseMessages: [],
-        status: 'streaming',
+        responseMessages: [{ role: 'assistant', content: 'In [[Q3 Budget]].' }],
+        status: 'done',
       },
     ]
     expect(buildHistory(turns)).toEqual([
       { role: 'user', content: 'where is the plan?' },
       { role: 'assistant', content: 'In [[Atlas]].' },
-      { role: 'user', content: 'thanks' },
+      { role: 'user', content: 'and the budget?' },
+      { role: 'assistant', content: 'In [[Q3 Budget]].' },
+    ])
+  })
+
+  it('omits turns that produced nothing — no dangling user messages', () => {
+    const turns: ChatTurn[] = [
+      {
+        id: 'turn-1',
+        // Failed before the provider replied (e.g. missing API key): the
+        // transcript shows the error, the model history never saw it.
+        userText: 'this one failed',
+        parts: [{ kind: 'notice', tone: 'error', text: 'No API key found' }],
+        responseMessages: [],
+        status: 'done',
+      },
+      {
+        id: 'turn-2',
+        userText: 'this one worked',
+        parts: [],
+        responseMessages: [{ role: 'assistant', content: 'Answer.' }],
+        status: 'done',
+      },
+    ]
+    expect(buildHistory(turns)).toEqual([
+      { role: 'user', content: 'this one worked' },
+      { role: 'assistant', content: 'Answer.' },
     ])
   })
 })

@@ -148,7 +148,13 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
       applyEvent({ type: 'error', message: errorMessage(cause), messages: [] })
     } finally {
       updateTurn((turn) => ({ ...turn, status: 'done' }))
-      abortRef.current = null
+      // Only release the slot if it's still ours: a turn detached by New
+      // chat must not, while winding down, unhook the controller a newer
+      // turn has since registered — Stop and the unmount abort always have
+      // to target the live stream.
+      if (abortRef.current === controller) {
+        abortRef.current = null
+      }
     }
   }, [])
 
