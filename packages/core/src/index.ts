@@ -13,7 +13,13 @@
  */
 export { setBridge, hasBridge, type IpcBridge, type Unlisten } from './ipc/bridge'
 export { call } from './ipc/invoke'
-export { getAppVersion } from './ipc/commands'
+export {
+  getAppVersion,
+  getAppPlatform,
+  isMobilePlatform,
+  mobileGraphRoot,
+  type AppPlatform,
+} from './ipc/commands'
 export { confirmQuit, subscribeQuitRequested } from './app/quit'
 
 // Embeddings & retrieval (Plan 09)
@@ -109,6 +115,7 @@ export {
   aiProviderConfigSchema,
   aiProvidersSchema,
   defaultAiProviderIdSchema,
+  chatModelSelectionSchema,
   DEFAULT_SETTINGS,
   type Settings,
   type EditorMarkdownSyntax,
@@ -301,6 +308,9 @@ export {
   createGithubRepo,
   getGithubRepo,
   getAuthenticatedUser,
+  createGist,
+  updateGist,
+  deleteGist,
   createSyncEngine,
   isSyncError,
   type GitStatus,
@@ -315,6 +325,8 @@ export {
   type GithubRepoRef,
   type GithubRepo,
   type GithubUser,
+  type PublishedGist,
+  type GistFile,
   type SyncEngine,
   type SyncEngineOptions,
   type SyncErrorKind,
@@ -324,6 +336,9 @@ export {
 // Markdown document model (Plan 03)
 export {
   frontmatterSchema,
+  gistFrontmatterSchema,
+  gistBodyHash,
+  gistFilename,
   isPinned,
   pinnedOrder,
   PARSED_NOTE_VERSION,
@@ -354,6 +369,7 @@ export {
   slugForTitle,
   type ConflictResolution,
   type Frontmatter,
+  type GistFrontmatter,
   type Span,
   type WikiLink,
   type MarkdownLink,
@@ -383,6 +399,7 @@ export {
   subscribeIndexChanges,
   subscribeFileChanges,
   emitFileChanges,
+  setLocalWriteEcho,
   applyIndexChanges,
   hashContent,
   buildIndexedNote,

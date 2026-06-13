@@ -21,6 +21,8 @@ use crate::error::{AppError, AppResult};
 use self::io::{atomic_write, atomic_write_bytes, bootstrap, collect_files, NOTE_DIRS};
 use self::resolve::resolve;
 
+// Consumed by the watcher (desktop) and the capture inbox (all platforms),
+// so the re-export is no longer desktop-gated.
 pub(crate) use self::io::modified_ms;
 /// The traversal guard, shared with sibling modules that address graph files
 /// (capture promotes screenshots into `assets/`).
@@ -297,11 +299,56 @@ pub(crate) fn move_note_file(root: &Path, from: &str, to: &str) -> AppResult<()>
 }
 
 /// Send a note to the OS trash (recoverable), not a hard delete (pinned to
-/// `generation`).
+/// `generation`). Mobile has no OS trash: the file moves into the graph-local
+/// `.reflect/trash/` instead (Plan 19) — the same recoverability promise, and
+/// `.reflect/` is already excluded from sync and indexing.
 #[tauri::command]
 pub fn note_delete(path: String, generation: u64, state: State<GraphState>) -> AppResult<()> {
     let root = root_for_generation(&state, generation)?;
-    trash::delete(resolve(&root, &path)?).map_err(|err| AppError::io(err.to_string()))?;
+    let abs = resolve(&root, &path)?;
+    #[cfg(desktop)]
+    trash::delete(abs).map_err(|err| AppError::io(err.to_string()))?;
+    #[cfg(mobile)]
+    move_to_graph_trash(&root, &abs)?;
+    Ok(())
+}
+
+/// Move a deleted file under `<graph>/.reflect/trash/`, stamping the name
+/// with epoch millis — and a counter beyond that — until the name is free
+/// (repeat deletes of `a.md`, even within one millisecond).
+#[cfg(mobile)]
+fn move_to_graph_trash(root: &Path, abs: &Path) -> AppResult<()> {
+    let trash_dir = root.join(".reflect").join("trash");
+    fs::create_dir_all(&trash_dir)?;
+    let name = abs
+        .file_name()
+        .ok_or_else(|| AppError::io("delete target has no file name"))?;
+    let name = Path::new(name);
+    let stem = name
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("note");
+    let ext = name.extension().and_then(|value| value.to_str());
+    let with_suffix = |suffix: &str| match ext {
+        Some(ext) => format!("{stem}{suffix}.{ext}"),
+        None => format!("{stem}{suffix}"),
+    };
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|err| AppError::io(err.to_string()))?
+        .as_millis();
+    let mut target = trash_dir.join(with_suffix(""));
+    let mut attempt: u32 = 0;
+    while target.exists() {
+        attempt += 1;
+        let suffix = if attempt == 1 {
+            format!("-{millis}")
+        } else {
+            format!("-{millis}-{attempt}")
+        };
+        target = trash_dir.join(with_suffix(&suffix));
+    }
+    fs::rename(abs, target)?;
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 name: reflect-open
 options:
-  bundleIdPrefix: com.alex.reflect-open
+  bundleIdPrefix: app.reflect
   deploymentTarget:
     iOS: 14.0
 fileGroups: [../../src]
@@ -10,8 +10,8 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: reflect-open
-      PRODUCT_BUNDLE_IDENTIFIER: com.alex.reflect-open
+      PRODUCT_NAME: Reflect
+      PRODUCT_BUNDLE_IDENTIFIER: app.reflect.ios
       CODE_SIGN_STYLE: Automatic
       DEVELOPMENT_TEAM: 789ULN5MZB
 targetTemplates:
@@ -32,7 +32,11 @@ targets:
     sources:
       - path: Sources
       - path: Assets.xcassets
+      # Build artifacts (libapp.a) land here; without an explicit `none`,
+      # regenerating after a build sweeps them into Copy Bundle Resources,
+      # shipping the Rust static archive inside the app bundle.
       - path: Externals
+        buildPhase: none
       - path: reflect-open_iOS
       - path: assets
         buildPhase: resources
@@ -42,6 +46,10 @@ targets:
       path: reflect-open_iOS/Info.plist
       properties:
         LSRequiresIPhoneOS: true
+        # The graph lives in Documents/ — expose it in the Files app so the
+        # user can see, copy, and back up their markdown (Plan 19).
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         UILaunchStoryboardName: LaunchScreen
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
@@ -53,8 +61,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.1.0
-        CFBundleVersion: "0.1.0"
+        CFBundleShortVersionString: 0.2.0
+        CFBundleVersion: 0.2.0
     entitlements:
       path: reflect-open_iOS/reflect-open_iOS.entitlements
     scheme:
@@ -74,6 +82,11 @@ targets:
     dependencies:
       - framework: libapp.a
         embed: false
+      # libgit2 (vendored into libapp.a) needs zlib and iconv at the final
+      # Xcode link — cargo's `rustc-link-lib` directives don't reach
+      # xcodebuild. iconv backs libgit2's Apple filename-precompose support.
+      - sdk: libz.tbd
+      - sdk: libiconv.tbd
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework

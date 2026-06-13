@@ -26,6 +26,7 @@ import {
   type Unlisten,
 } from '@reflect/core'
 import { setBackupFlusher } from '@/lib/backup-flush'
+import { invalidateGithubAuth } from '@/lib/github-auth-state'
 import { startOperation } from '@/lib/operations'
 import { providerFetch } from '@/lib/provider-fetch'
 import { invalidateIndexQueries } from '@/lib/query-client'
@@ -314,6 +315,7 @@ export function createBackupController(options: BackupControllerOptions): Backup
     },
     signOut: async () => {
       await clearGithubAuth()
+      invalidateGithubAuth()
       await start()
     },
     backUpNow: async () => {

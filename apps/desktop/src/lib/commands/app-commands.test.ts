@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { EmbedStatus } from '@reflect/core'
+import type { EmbedStatus, NoteRow, PinnedNote } from '@reflect/core'
 import type { Route } from '@/routing/route'
 import { resetOperations } from '@/lib/operations'
 import type { CommandContext } from './types'
@@ -11,16 +11,30 @@ const embedStatus = vi.hoisted(() =>
 )
 const backfillEmbeddingsVisibly = vi.hoisted(() => vi.fn(async () => 'completed'))
 const toggleNotePinned = vi.hoisted(() => vi.fn(async () => true))
+const toggleNotePrivate = vi.hoisted(() => vi.fn(async () => true))
+const getNote = vi.hoisted(() => vi.fn<() => Promise<NoteRow | undefined>>(async () => undefined))
+const getPinnedNotes = vi.hoisted(() => vi.fn<() => Promise<PinnedNote[]>>(async () => []))
+const operationFail = vi.hoisted(() => vi.fn())
+const startOperation = vi.hoisted(() =>
+  vi.fn(() => ({ progress: vi.fn(), done: vi.fn(), fail: operationFail })),
+)
 vi.mock('@/lib/semantic', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/semantic')>()),
   backfillEmbeddingsVisibly,
 }))
 vi.mock('@/lib/note-pin', () => ({ toggleNotePinned }))
+vi.mock('@/lib/note-private', () => ({ toggleNotePrivate }))
+vi.mock('@/lib/operations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/operations')>()),
+  startOperation,
+}))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   randomNotePath,
   rebuildIndex,
   embedStatus,
+  getNote,
+  getPinnedNotes,
 }))
 
 // Importing registers the commands (module side effect, like production).
@@ -51,6 +65,18 @@ function fakeContext(overrides?: Partial<CommandContext>) {
     ...overrides,
   }
   return { context, navigated }
+}
+
+function noteRow(isPrivate: boolean): NoteRow {
+  return {
+    path: 'notes/a.md',
+    title: 'A',
+    dailyDate: null,
+    isPrivate,
+    hasConflict: false,
+    gistUrl: null,
+    gistStale: false,
+  }
 }
 
 describe('keybindingFor', () => {
@@ -135,16 +161,24 @@ describe('app commands', () => {
     expect(toggleNotePinned).toHaveBeenCalledWith('daily/2026-06-09.md', 7)
   })
 
-  it('note.togglePin reports a failed toggle as an operation, never an unhandled throw', async () => {
-    try {
-      toggleNotePinned.mockClear()
-      toggleNotePinned.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
-      const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
-      // runCommand has no error channel — the command must absorb and report.
-      await expect(command('note.togglePin').run(context)).resolves.toBeUndefined()
-    } finally {
-      resetOperations()
-    }
+  it('note.togglePin reports a failed pin as "Pinning note", never an unhandled throw', async () => {
+    toggleNotePinned.mockClear()
+    startOperation.mockClear()
+    getPinnedNotes.mockResolvedValueOnce([])
+    toggleNotePinned.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    // runCommand has no error channel — the command must absorb and report.
+    await expect(command('note.togglePin').run(context)).resolves.toBeUndefined()
+    expect(startOperation).toHaveBeenCalledWith('Pinning note')
+  })
+
+  it('note.togglePin reports a failed unpin as "Unpinning note"', async () => {
+    startOperation.mockClear()
+    getPinnedNotes.mockResolvedValueOnce([{ path: 'notes/a.md', title: 'A', dailyDate: null }])
+    toggleNotePinned.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    await expect(command('note.togglePin').run(context)).resolves.toBeUndefined()
+    expect(startOperation).toHaveBeenCalledWith('Unpinning note')
   })
 
   it('note.togglePin no-ops on note-less routes and without a graph', async () => {
@@ -154,6 +188,37 @@ describe('app commands', () => {
     const { context: noGraph } = fakeContext({ generation: () => null })
     await command('note.togglePin').run(noGraph)
     expect(toggleNotePinned).not.toHaveBeenCalled()
+  })
+
+  it('note.togglePrivate flips the flag of the route note without surfacing an operation', async () => {
+    toggleNotePrivate.mockClear()
+    startOperation.mockClear()
+    getNote.mockResolvedValueOnce(noteRow(false))
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    await command('note.togglePrivate').run(context)
+    expect(toggleNotePrivate).toHaveBeenCalledWith('notes/a.md', 7)
+    expect(startOperation).not.toHaveBeenCalled()
+  })
+
+  it('note.togglePrivate reports a failed lock as "Locking note"', async () => {
+    startOperation.mockClear()
+    operationFail.mockClear()
+    getNote.mockResolvedValueOnce(noteRow(false))
+    toggleNotePrivate.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    // runCommand has no error channel — the command must absorb and report.
+    await expect(command('note.togglePrivate').run(context)).resolves.toBeUndefined()
+    expect(startOperation).toHaveBeenCalledWith('Locking note')
+    expect(operationFail).toHaveBeenCalledTimes(1)
+  })
+
+  it('note.togglePrivate reports a failed unlock as "Unlocking note"', async () => {
+    startOperation.mockClear()
+    getNote.mockResolvedValueOnce(noteRow(true))
+    toggleNotePrivate.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    await expect(command('note.togglePrivate').run(context)).resolves.toBeUndefined()
+    expect(startOperation).toHaveBeenCalledWith('Unlocking note')
   })
 
   it('semantic.enable persists the opt-in through the context capability', async () => {

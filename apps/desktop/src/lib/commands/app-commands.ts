@@ -1,6 +1,7 @@
-import { errorMessage, randomNotePath } from '@reflect/core'
+import { errorMessage, getNote, getPinnedNotes, randomNotePath } from '@reflect/core'
 import { untitledNotePath } from '@/lib/create-note'
 import { todayIso } from '@/lib/dates'
+import { runGistPublish } from '@/lib/note-gist'
 import { toggleNotePinned } from '@/lib/note-pin'
 import { toggleNotePrivate } from '@/lib/note-private'
 import { startOperation } from '@/lib/operations'
@@ -85,12 +86,16 @@ const APP_COMMANDS: AppCommand[] = [
       if (generation === null || path === null) {
         return
       }
+      // Read the current state first so a failure is surfaced with the toggle's
+      // actual direction — the sidebar's pin/unpin wording — not a fixed label.
+      let wasPinned = false
       try {
+        wasPinned = (await getPinnedNotes()).some((note) => note.path === path)
         await toggleNotePinned(path, generation)
       } catch (cause) {
         // runCommand has no error channel of its own — an unreported failure
         // here would be a silent ⌘O. Surface it like other background work.
-        startOperation('Pinning note').fail(errorMessage(cause))
+        startOperation(wasPinned ? 'Unpinning note' : 'Pinning note').fail(errorMessage(cause))
       }
     },
   },
@@ -108,11 +113,34 @@ const APP_COMMANDS: AppCommand[] = [
       if (generation === null || path === null) {
         return
       }
+      // Read the current flag first so a failure is surfaced with the toggle's
+      // actual direction — the sidebar's Lock/Unlock wording — instead of a
+      // fixed "private" label that misreads when the user is unlocking.
+      let wasPrivate = false
       try {
+        wasPrivate = (await getNote(path))?.isPrivate ?? false
         await toggleNotePrivate(path, generation)
       } catch (cause) {
-        startOperation('Marking note as private').fail(errorMessage(cause))
+        startOperation(wasPrivate ? 'Unlocking note' : 'Locking note').fail(errorMessage(cause))
       }
+    },
+  },
+  {
+    id: 'note.publishGist',
+    title: 'Publish note to gist',
+    keywords: ['gist', 'github', 'share', 'publish', 'export'],
+    // Publishes the body of the note the current route edits to a secret
+    // GitHub gist (republishing to the same gist thereafter) and copies the
+    // link. No default keybinding: the palette keeps it keyboard-reachable
+    // without spending a shortcut. `runGistPublish` owns all feedback — the
+    // progress line, the failure surface, and the "link copied" confirmation.
+    run: async (context) => {
+      const generation = context.generation()
+      const path = notePathForRoute(context.route(), todayIso())
+      if (generation === null || path === null) {
+        return
+      }
+      await runGistPublish(path, generation)
     },
   },
   {

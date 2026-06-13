@@ -4580,7 +4580,7 @@ dependencies = [
 
 [[package]]
 name = "reflect-open"
-version = "0.1.0"
+version = "0.2.0-beta.1"
 dependencies = [
  "base64 0.22.1",
  "dirs",
@@ -4600,6 +4600,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-http",
+ "tauri-plugin-keyboard",
  "tauri-plugin-opener",
  "tauri-plugin-process",
  "tauri-plugin-updater",
@@ -5859,6 +5860,16 @@ dependencies = [
  "tokio",
  "url",
  "urlpattern",
+]
+
+[[package]]
+name = "tauri-plugin-keyboard"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
