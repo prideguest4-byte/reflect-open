@@ -39,6 +39,7 @@ function fakeSession(path: string) {
     updateFrontmatter: () => true,
     dispose: () => {},
     discard: () => {},
+    beginDelete: async () => ({ commit: () => {}, rollback: () => {} }),
   }
   return { session, flush }
 }

@@ -20,6 +20,7 @@ function fakeSession(path: string, log: string[]): NoteSession {
     updateFrontmatter: () => true,
     dispose: () => {},
     discard: () => {},
+    beginDelete: async () => ({ commit: () => {}, rollback: () => {} }),
   }
 }
 

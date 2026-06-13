@@ -257,9 +257,26 @@ export interface NoteSession {
    * Detach **without** flushing — for deleting the note: a final flush (which
    * `dispose` performs) would rewrite the buffer and recreate the file we are
    * removing. After `discard`, a later `dispose` (e.g. on the pane's unmount)
-   * is a no-op. Pending saves are cancelled.
+   * is a no-op. Pending saves are cancelled. For file deletion, use
+   * {@link NoteSession.beginDelete} first so an already-dispatched write cannot
+   * land after the file is moved to trash.
    */
   discard: () => void
+  /**
+   * Suspend future saves and wait for any already-dispatched save to settle
+   * before the caller deletes the file. Commit the returned guard after a
+   * successful delete; roll it back if the delete fails so the mounted editor
+   * resumes saving normally.
+   */
+  beginDelete: () => Promise<NoteSessionDeleteGuard>
+}
+
+/** Completes or cancels a {@link NoteSession.beginDelete} transaction. */
+export interface NoteSessionDeleteGuard {
+  /** Permanently detach the session after the file has been deleted. */
+  commit: () => void
+  /** Resume normal saves because the delete failed or was cancelled. */
+  rollback: () => void
 }
 
 /** Exact frontmatter bytes (may be empty) and the body that follows them. */
@@ -313,6 +330,9 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
   // Set by `discard` — tells `dispose` to skip its flush (the file is being
   // deleted, so rewriting it would recreate it).
   let discarded = false
+  // Set while delete is waiting for in-flight saves to settle. Edits may still
+  // update the buffer, but no write can start until the delete rolls back.
+  let savesSuspended = false
 
   let lastEmitted: NoteSessionSnapshot | null = null
 
@@ -352,7 +372,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     // conflict likewise pauses all saves: writing the buffer before the user
     // chooses Keep mine / Load theirs would clobber the external change and
     // defeat the non-destructive flow.
-    if (discarded || io.write === null || !dirty || isProtected || conflict !== null) {
+    if (discarded || savesSuspended || io.write === null || !dirty || isProtected || conflict !== null) {
       return
     }
     const write = io.write
@@ -363,7 +383,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
         // have reverted or kept typing, or the session may have been discarded
         // for a delete. (After dispose the buffer is frozen, so this same step
         // doubles as the final flush.)
-        if (discarded || !dirty || isProtected || conflict !== null) {
+        if (discarded || savesSuspended || !dirty || isProtected || conflict !== null) {
           return
         }
         const content = header + buffer
@@ -433,7 +453,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
       dirty = false
     }
     emit()
-    if (dirty) {
+    if (dirty && !savesSuspended) {
       scheduleSave()
     }
   }
@@ -611,7 +631,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     header = splitDoc(upsertFrontmatter(header + buffer, yamlPatch(patch))).header
     dirty = header + buffer !== disk
     emit()
-    if (dirty) {
+    if (dirty && !savesSuspended) {
       scheduleSave()
     }
     return true
@@ -655,8 +675,35 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
 
   function discard(): void {
     cancelScheduledSave()
+    savesSuspended = true
     discarded = true
     disposed = true
+  }
+
+  async function beginDelete(): Promise<NoteSessionDeleteGuard> {
+    cancelScheduledSave()
+    savesSuspended = true
+    await saveChain
+    let finished = false
+    return {
+      commit: () => {
+        if (finished) {
+          return
+        }
+        finished = true
+        discard()
+      },
+      rollback: () => {
+        if (finished) {
+          return
+        }
+        finished = true
+        savesSuspended = false
+        if (!discarded && !disposed && dirty) {
+          scheduleSave()
+        }
+      },
+    }
   }
 
   return {
@@ -678,5 +725,6 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     commitFrontmatter,
     dispose,
     discard,
+    beginDelete,
   }
 }

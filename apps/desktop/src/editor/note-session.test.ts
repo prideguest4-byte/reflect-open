@@ -14,6 +14,8 @@ interface Harness {
   writes: Array<{ path: string; contents: string }>
   applied: string[]
   contents: Array<{ content: string; origin: string }>
+  writeStarted: Promise<void>
+  releaseWrite: () => void
   /** `null` deletes the file: subsequent reads throw the notFound AppError. */
   setDisk: (contents: string | null) => void
   /** While set, writes reject with this message (the save-failure seam). */
@@ -28,6 +30,7 @@ function harness(options?: {
   disk?: string | null
   createIfMissing?: boolean
   missingSeed?: string
+  deferWrites?: boolean
 }): Harness {
   const snapshots: NoteSessionSnapshot[] = []
   const writes: Array<{ path: string; contents: string }> = []
@@ -35,6 +38,14 @@ function harness(options?: {
   const contents: Array<{ content: string; origin: string }> = []
   let disk = options?.disk === undefined ? '# Hello\n' : options.disk
   let writeFailure: string | null = null
+  let markWriteStarted = (): void => {}
+  let releaseWrite = (): void => {}
+  const writeStarted = new Promise<void>((resolve) => {
+    markWriteStarted = resolve
+  })
+  const writeGate = new Promise<void>((resolve) => {
+    releaseWrite = resolve
+  })
   const session = createNoteSession({
     path: 'notes/a.md',
     io: {
@@ -50,6 +61,10 @@ function harness(options?: {
           : async (path, contents) => {
               if (writeFailure !== null) {
                 throw new Error(writeFailure)
+              }
+              if (options?.deferWrites === true) {
+                markWriteStarted()
+                await writeGate
               }
               writes.push({ path, contents })
               disk = contents
@@ -72,6 +87,8 @@ function harness(options?: {
     writes,
     applied,
     contents,
+    writeStarted,
+    releaseWrite,
     setDisk: (contents) => {
       disk = contents
     },
@@ -140,6 +157,52 @@ describe('createNoteSession', () => {
     session.dispose()
     await settled()
     expect(writes).toEqual([])
+  })
+
+  it('beginDelete waits for an in-flight save before the file is deleted', async () => {
+    const { session, writes, writeStarted, releaseWrite } = harness({ deferWrites: true })
+    session.load()
+    await settled()
+
+    session.editorChanged('# First save\n')
+    await vi.advanceTimersByTimeAsync(10)
+    await writeStarted
+
+    let guardReady = false
+    const guardPromise = session.beginDelete().then((guard) => {
+      guardReady = true
+      return guard
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(guardReady).toBe(false)
+
+    session.editorChanged('# Edited while deleting\n')
+    await settled()
+    expect(writes).toEqual([])
+
+    releaseWrite()
+    const guard = await guardPromise
+    expect(writes).toEqual([{ path: 'notes/a.md', contents: '# First save\n' }])
+
+    guard.commit()
+    await session.flush()
+    await settled()
+    expect(writes).toEqual([{ path: 'notes/a.md', contents: '# First save\n' }])
+  })
+
+  it('beginDelete rollback resumes saving if the delete fails', async () => {
+    const { session, writes } = harness()
+    session.load()
+    await settled()
+
+    session.editorChanged('# Still here\n')
+    const guard = await session.beginDelete()
+    await settled()
+    expect(writes).toEqual([])
+
+    guard.rollback()
+    await settled()
+    expect(writes).toEqual([{ path: 'notes/a.md', contents: '# Still here\n' }])
   })
 
   it('does not re-emit identical snapshots', async () => {

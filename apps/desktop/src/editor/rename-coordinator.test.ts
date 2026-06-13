@@ -110,6 +110,7 @@ function fakeSession(content: string): NoteSession & {
     updateFrontmatter: vi.fn(() => true),
     dispose: () => {},
     discard: () => {},
+    beginDelete: async () => ({ commit: () => {}, rollback: () => {} }),
   }
 }
 

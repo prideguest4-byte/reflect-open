@@ -2,14 +2,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { deleteOpenNote } from './note-delete'
 
 /**
- * `deleteOpenNote` deletes first, then discards the open session — so a
- * failed delete never leaves a discarded-but-mounted session (which would
- * silently stop persisting the user's edits).
+ * `deleteOpenNote` suspends the live session before deleting, then either
+ * commits the no-flush detach or rolls the session back to normal saving.
  */
 
 const deleteNoteMock = vi.fn<(path: string, generation: number) => Promise<void>>()
-const discard = vi.fn()
-const openSessionMock = vi.fn<(path: string) => { discard: () => void } | null>()
+const commitDelete = vi.fn()
+const rollbackDelete = vi.fn()
+const beginDelete = vi.fn<
+  () => Promise<{ commit: () => void; rollback: () => void }>
+>()
+const openSessionMock = vi.fn<
+  (path: string) => { beginDelete: () => Promise<{ commit: () => void; rollback: () => void }> } | null
+>()
 
 vi.mock('@reflect/core', () => ({
   deleteNote: (path: string, generation: number) => deleteNoteMock(path, generation),
@@ -20,29 +25,54 @@ vi.mock('@/editor/open-documents', () => ({
 
 afterEach(() => {
   deleteNoteMock.mockReset()
-  discard.mockReset()
+  beginDelete.mockReset()
+  commitDelete.mockReset()
+  rollbackDelete.mockReset()
   openSessionMock.mockReset()
 })
 
 describe('deleteOpenNote', () => {
-  it('discards the open session after a successful delete', async () => {
+  it('commits the open session delete guard after a successful delete', async () => {
     deleteNoteMock.mockResolvedValue()
-    openSessionMock.mockReturnValue({ discard })
+    beginDelete.mockResolvedValue({ commit: commitDelete, rollback: rollbackDelete })
+    openSessionMock.mockReturnValue({ beginDelete })
 
     await deleteOpenNote('notes/gone.md', 3)
 
+    expect(beginDelete).toHaveBeenCalledOnce()
     expect(deleteNoteMock).toHaveBeenCalledWith('notes/gone.md', 3)
-    expect(discard).toHaveBeenCalledOnce()
+    expect(commitDelete).toHaveBeenCalledOnce()
+    expect(rollbackDelete).not.toHaveBeenCalled()
   })
 
-  it('leaves the session intact when the delete fails', async () => {
+  it('waits for in-flight writes to settle before deleting', async () => {
+    let releaseDeleteGuard = (): void => {}
+    beginDelete.mockReturnValue(
+      new Promise((resolve) => {
+        releaseDeleteGuard = () => resolve({ commit: commitDelete, rollback: rollbackDelete })
+      }),
+    )
+    openSessionMock.mockReturnValue({ beginDelete })
+    deleteNoteMock.mockResolvedValue()
+
+    const deleting = deleteOpenNote('notes/gone.md', 3)
+    await Promise.resolve()
+    expect(deleteNoteMock).not.toHaveBeenCalled()
+
+    releaseDeleteGuard()
+    await deleting
+    expect(deleteNoteMock).toHaveBeenCalledWith('notes/gone.md', 3)
+  })
+
+  it('rolls back the session guard when the delete fails', async () => {
     deleteNoteMock.mockRejectedValue(new Error('disk full'))
-    openSessionMock.mockReturnValue({ discard })
+    beginDelete.mockResolvedValue({ commit: commitDelete, rollback: rollbackDelete })
+    openSessionMock.mockReturnValue({ beginDelete })
 
     await expect(deleteOpenNote('notes/gone.md', 3)).rejects.toThrow('disk full')
 
-    // The session was never discarded — the screen stays editable.
-    expect(discard).not.toHaveBeenCalled()
-    expect(openSessionMock).not.toHaveBeenCalled()
+    // The session resumes saving — the screen stays editable.
+    expect(rollbackDelete).toHaveBeenCalledOnce()
+    expect(commitDelete).not.toHaveBeenCalled()
   })
 })
