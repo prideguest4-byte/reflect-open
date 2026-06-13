@@ -45,7 +45,7 @@ async function runRebuild(generation: number): Promise<void> {
     } else {
       const sample = skippedNotes.slice(0, 3).join('; ')
       const suffix = skippedNotes.length > 3 ? `; +${skippedNotes.length - 3} more` : ''
-      operation.fail(`Rebuilt with ${skippedNotes.length} skipped note(s): ${sample}${suffix}`)
+      operation.warn(`Rebuilt with ${skippedNotes.length} skipped note(s): ${sample}${suffix}`)
     }
   } catch (cause) {
     operation.fail(errorMessage(cause))

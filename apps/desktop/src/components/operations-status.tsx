@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useOperations } from '@/lib/operations'
+import { type Operation, useOperations } from '@/lib/operations'
 
 /**
  * The global status surface (foundations hardening): a small, unobtrusive
@@ -7,6 +7,14 @@ import { useOperations } from '@/lib/operations'
  * rewrite is the first tenant; indexing/sync states can migrate here as
  * they're touched. Renders nothing when idle.
  */
+
+function messageClassName(status: Operation['status']): string {
+  if (status === 'failed') {
+    return 'block text-red-600 dark:text-red-400'
+  }
+  return 'block text-amber-700 dark:text-amber-300'
+}
+
 export function OperationsStatus(): ReactElement | null {
   const operations = useOperations()
   if (operations.length === 0) {
@@ -26,8 +34,8 @@ export function OperationsStatus(): ReactElement | null {
               {operation.progress.done}/{operation.progress.total}
             </span>
           ) : null}
-          {operation.status === 'failed' ? (
-            <span className="block text-red-600 dark:text-red-400">{operation.message}</span>
+          {operation.status !== 'running' ? (
+            <span className={messageClassName(operation.status)}>{operation.message}</span>
           ) : null}
         </div>
       ))}
