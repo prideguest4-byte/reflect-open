@@ -127,8 +127,8 @@ const APP_COMMANDS: AppCommand[] = [
   },
   {
     id: 'note.publishGist',
-    title: 'Publish note to gist',
-    keywords: ['gist', 'github', 'share', 'publish', 'export'],
+    title: 'Share with private link',
+    keywords: ['gist', 'github', 'share', 'publish', 'private link', 'export'],
     // Publishes the body of the note the current route edits to a secret
     // GitHub gist (republishing to the same gist thereafter) and copies the
     // link. No default keybinding: the palette keeps it keyboard-reachable

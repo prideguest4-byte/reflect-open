@@ -19,7 +19,7 @@ interface NoteGistActionProps {
  * The last publish's result, held until the index reflects it — the same
  * bridge as `NoteToggleAction`: the label otherwise lags one watcher
  * round-trip behind the frontmatter write, and in that window the button
- * would still read "Publish to gist" after the gist already exists.
+ * would still read "Share with private link" after the gist already exists.
  */
 interface PendingPublish {
   path: string
@@ -27,13 +27,13 @@ interface PendingPublish {
 }
 
 /**
- * "Publish to gist" as a Note actions button. Rendered only when a GitHub
+ * Private-link sharing as a Note actions button. Rendered only when a GitHub
  * credential is stored and the note isn't private (the publish path enforces
  * the privacy block again on live content — this is just not offering it).
- * After the first publish the label flips to "Republish gist", and an
+ * After the first publish the label flips to "Republish private link", and an
  * accent-tinted icon plus tooltip nudge when the body changed since
  * (`gist_stale` from the index). Failures surface through the operations
- * status line; success copies the gist link to the clipboard.
+ * status line; success copies the gist-backed link to the clipboard.
  */
 export function NoteGistAction({ path, keybinding = null }: NoteGistActionProps): ReactElement | null {
   const { graph } = useGraph()
@@ -75,10 +75,14 @@ export function NoteGistAction({ path, keybinding = null }: NoteGistActionProps)
     }
   }
 
-  const label = isPublishing ? 'Publishing…' : published ? 'Republish gist' : 'Publish to gist'
+  const label = isPublishing
+    ? 'Publishing…'
+    : published
+      ? 'Republish private link'
+      : 'Share with private link'
   const tooltip = stale
-    ? 'The note changed since it was last published'
-    : 'Creates a secret GitHub gist and copies its link'
+    ? 'The note changed since its private GitHub gist was last published'
+    : 'Creates a secret GitHub gist and copies its private link'
 
   return (
     <Tooltip>

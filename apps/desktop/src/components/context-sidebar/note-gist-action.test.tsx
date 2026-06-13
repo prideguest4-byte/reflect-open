@@ -62,34 +62,34 @@ describe('NoteGistAction', () => {
     expect(view.queryByRole('button')).toBeNull()
   })
 
-  it('offers Publish to gist for an unpublished note (even before its row exists)', () => {
+  it('offers Share with private link for an unpublished note (even before its row exists)', () => {
     const view = renderAction()
-    expect(view.getByRole('button', { name: /Publish to gist/ })).toBeTruthy()
+    expect(view.getByRole('button', { name: /Share with private link/ })).toBeTruthy()
   })
 
-  it('offers Republish gist once the note carries a gist', () => {
+  it('offers Republish private link once the note carries a gist', () => {
     useNoteRow.mockReturnValue(noteRow({ gistUrl: 'https://gist.github.com/alex/g1' }))
     const view = renderAction()
-    expect(view.getByRole('button', { name: /Republish gist/ })).toBeTruthy()
+    expect(view.getByRole('button', { name: /Republish private link/ })).toBeTruthy()
   })
 
   it('publishes on click and flips to Republish before the index catches up', async () => {
     const view = renderAction()
-    await userEvent.click(view.getByRole('button', { name: /Publish to gist/ }))
+    await userEvent.click(view.getByRole('button', { name: /Share with private link/ }))
 
     expect(runGistPublish).toHaveBeenCalledWith('notes/a.md', 7)
     await waitFor(() => {
-      expect(view.getByRole('button', { name: /Republish gist/ })).toBeTruthy()
+      expect(view.getByRole('button', { name: /Republish private link/ })).toBeTruthy()
     })
   })
 
   it('stays on Publish when the publish failed (already surfaced elsewhere)', async () => {
     runGistPublish.mockResolvedValue(null)
     const view = renderAction()
-    await userEvent.click(view.getByRole('button', { name: /Publish to gist/ }))
+    await userEvent.click(view.getByRole('button', { name: /Share with private link/ }))
 
     await waitFor(() => {
-      expect(view.getByRole('button', { name: /Publish to gist/ })).toBeTruthy()
+      expect(view.getByRole('button', { name: /Share with private link/ })).toBeTruthy()
     })
   })
 
@@ -105,7 +105,7 @@ describe('NoteGistAction', () => {
     const accentIcon = () => view.getByRole('button').querySelector('.text-accent')
     expect(accentIcon()).toBeTruthy()
 
-    await userEvent.click(view.getByRole('button', { name: /Republish gist/ }))
+    await userEvent.click(view.getByRole('button', { name: /Republish private link/ }))
     await waitFor(() => {
       // Index still says stale (the watcher hasn't re-indexed yet) — the
       // retired bridge must not mask it.
