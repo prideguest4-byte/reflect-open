@@ -1,4 +1,4 @@
-import { errorMessage, randomNotePath } from '@reflect/core'
+import { errorMessage, getNote, randomNotePath } from '@reflect/core'
 import { untitledNotePath } from '@/lib/create-note'
 import { todayIso } from '@/lib/dates'
 import { runGistPublish } from '@/lib/note-gist'
@@ -109,10 +109,15 @@ const APP_COMMANDS: AppCommand[] = [
       if (generation === null || path === null) {
         return
       }
+      // Read the current flag first so a failure is surfaced with the toggle's
+      // actual direction — the sidebar's Lock/Unlock wording — instead of a
+      // fixed "private" label that misreads when the user is unlocking.
+      let wasPrivate = false
       try {
+        wasPrivate = (await getNote(path))?.isPrivate ?? false
         await toggleNotePrivate(path, generation)
       } catch (cause) {
-        startOperation('Marking note as private').fail(errorMessage(cause))
+        startOperation(wasPrivate ? 'Unlocking note' : 'Locking note').fail(errorMessage(cause))
       }
     },
   },
