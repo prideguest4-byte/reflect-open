@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { EmbedStatus, NoteRow } from '@reflect/core'
+import type { EmbedStatus, NoteRow, PinnedNote } from '@reflect/core'
 import type { Route } from '@/routing/route'
 import { resetOperations } from '@/lib/operations'
 import type { CommandContext } from './types'
@@ -13,6 +13,7 @@ const backfillEmbeddingsVisibly = vi.hoisted(() => vi.fn(async () => 'completed'
 const toggleNotePinned = vi.hoisted(() => vi.fn(async () => true))
 const toggleNotePrivate = vi.hoisted(() => vi.fn(async () => true))
 const getNote = vi.hoisted(() => vi.fn<() => Promise<NoteRow | undefined>>(async () => undefined))
+const getPinnedNotes = vi.hoisted(() => vi.fn<() => Promise<PinnedNote[]>>(async () => []))
 const operationFail = vi.hoisted(() => vi.fn())
 const startOperation = vi.hoisted(() =>
   vi.fn(() => ({ progress: vi.fn(), done: vi.fn(), fail: operationFail })),
@@ -33,6 +34,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   rebuildIndex,
   embedStatus,
   getNote,
+  getPinnedNotes,
 }))
 
 // Importing registers the commands (module side effect, like production).
@@ -159,16 +161,24 @@ describe('app commands', () => {
     expect(toggleNotePinned).toHaveBeenCalledWith('daily/2026-06-09.md', 7)
   })
 
-  it('note.togglePin reports a failed toggle as an operation, never an unhandled throw', async () => {
-    try {
-      toggleNotePinned.mockClear()
-      toggleNotePinned.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
-      const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
-      // runCommand has no error channel — the command must absorb and report.
-      await expect(command('note.togglePin').run(context)).resolves.toBeUndefined()
-    } finally {
-      resetOperations()
-    }
+  it('note.togglePin reports a failed pin as "Pinning note", never an unhandled throw', async () => {
+    toggleNotePinned.mockClear()
+    startOperation.mockClear()
+    getPinnedNotes.mockResolvedValueOnce([])
+    toggleNotePinned.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    // runCommand has no error channel — the command must absorb and report.
+    await expect(command('note.togglePin').run(context)).resolves.toBeUndefined()
+    expect(startOperation).toHaveBeenCalledWith('Pinning note')
+  })
+
+  it('note.togglePin reports a failed unpin as "Unpinning note"', async () => {
+    startOperation.mockClear()
+    getPinnedNotes.mockResolvedValueOnce([{ path: 'notes/a.md', title: 'A', dailyDate: null }])
+    toggleNotePinned.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    await expect(command('note.togglePin').run(context)).resolves.toBeUndefined()
+    expect(startOperation).toHaveBeenCalledWith('Unpinning note')
   })
 
   it('note.togglePin no-ops on note-less routes and without a graph', async () => {

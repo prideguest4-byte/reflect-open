@@ -1,4 +1,4 @@
-import { errorMessage, getNote, randomNotePath } from '@reflect/core'
+import { errorMessage, getNote, getPinnedNotes, randomNotePath } from '@reflect/core'
 import { untitledNotePath } from '@/lib/create-note'
 import { todayIso } from '@/lib/dates'
 import { runGistPublish } from '@/lib/note-gist'
@@ -86,12 +86,16 @@ const APP_COMMANDS: AppCommand[] = [
       if (generation === null || path === null) {
         return
       }
+      // Read the current state first so a failure is surfaced with the toggle's
+      // actual direction — the sidebar's pin/unpin wording — not a fixed label.
+      let wasPinned = false
       try {
+        wasPinned = (await getPinnedNotes()).some((note) => note.path === path)
         await toggleNotePinned(path, generation)
       } catch (cause) {
         // runCommand has no error channel of its own — an unreported failure
         // here would be a silent ⌘O. Surface it like other background work.
-        startOperation('Pinning note').fail(errorMessage(cause))
+        startOperation(wasPinned ? 'Unpinning note' : 'Pinning note').fail(errorMessage(cause))
       }
     },
   },
