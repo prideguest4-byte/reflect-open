@@ -1,8 +1,9 @@
 import { type ReactElement } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { dailyPath } from '@reflect/core'
 import { NotePane } from '@/components/note-pane'
 import { Button } from '@/components/ui/button'
+import { untitledNotePath } from '@/lib/create-note'
 import { addDaysIso, formatDayLabel } from '@/lib/dates'
 import { useToday } from '@/lib/use-today'
 import { useSettings } from '@/providers/settings-provider'
@@ -12,7 +13,10 @@ import { useRouter } from '@/routing/router'
  * One daily note — the mobile spine (Plan 19). The header pages between
  * days, with a jump back to today whenever the view has wandered; the body
  * is the shared document stack via `NotePane`, exactly as on desktop. The
- * scroll container yields to the keyboard via `--keyboard-height`.
+ * scroll container yields to the keyboard via `--keyboard-height`, and the
+ * new-note button floats above both — V1 parity: the daily note itself is
+ * the capture surface, and `+` opens a fresh untitled note (the same
+ * seed/ghost-title flow as desktop's ⌘N).
  */
 export function MobileDaily({ date }: { date: string }): ReactElement {
   const { settings } = useSettings()
@@ -56,6 +60,15 @@ export function MobileDaily({ date }: { date: string }): ReactElement {
       >
         <NotePane path={dailyPath(date)} lazy gutterClassName="px-4" editorClassName="min-h-[60dvh]" />
       </main>
+      <Button
+        size="icon"
+        aria-label="New note"
+        className="fixed right-4 z-40 size-12 rounded-full shadow-lg"
+        style={{ bottom: 'calc(max(env(safe-area-inset-bottom), var(--keyboard-height, 0px)) + 1rem)' }}
+        onClick={() => navigate({ kind: 'note', path: untitledNotePath() })}
+      >
+        <Plus className="size-6" />
+      </Button>
     </div>
   )
 }
