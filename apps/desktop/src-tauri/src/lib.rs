@@ -114,7 +114,8 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build());
 
     // The keyboard bridge (Plan 19, decision 8) is mobile-only: desktop has
-    // no software keyboard to track.
+    // no software keyboard to track. (Sharing uses the webview's Web Share
+    // API, so it needs no native plugin.)
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_keyboard::init());
 
