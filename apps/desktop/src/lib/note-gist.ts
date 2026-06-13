@@ -57,8 +57,8 @@ export async function publishNoteToGist(path: string, generation: number): Promi
   const previous = parsed.frontmatter.gist
   const published =
     (previous !== undefined
-      ? await updateGist(token, previous.id, previous.file, { filename, content: body }, providerFetch)
-      : null) ?? (await createGist(token, { filename, content: body }, providerFetch))
+      ? await updateGist(token, previous.id, previous.file, { name: filename, content: body }, providerFetch)
+      : null) ?? (await createGist(token, { name: filename, content: body }, providerFetch))
 
   const gist: GistFrontmatter = {
     id: published.id,

@@ -61,7 +61,7 @@ export {
   createGist,
   updateGist,
   type PublishedGist,
-  type GistContent,
+  type GistFile,
 } from './gists'
 export {
   createSyncEngine,

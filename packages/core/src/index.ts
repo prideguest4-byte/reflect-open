@@ -283,7 +283,7 @@ export {
   type GithubRepo,
   type GithubUser,
   type PublishedGist,
-  type GistContent,
+  type GistFile,
   type SyncEngine,
   type SyncEngineOptions,
   type SyncErrorKind,

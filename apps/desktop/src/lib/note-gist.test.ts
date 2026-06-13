@@ -60,7 +60,7 @@ describe('publishNoteToGist', () => {
 
     expect(createGist).toHaveBeenCalledWith(
       'tok',
-      { filename: 'A.md', content: BODY },
+      { name: 'A.md', content: BODY },
       expect.any(Function),
     )
     const gist = { id: 'g1', url: PUBLISHED.htmlUrl, file: 'A.md', hash: gistBodyHash(BODY) }
@@ -75,7 +75,7 @@ describe('publishNoteToGist', () => {
       'tok',
       'g0',
       'Old.md',
-      { filename: 'A.md', content: BODY },
+      { name: 'A.md', content: BODY },
       expect.any(Function),
     )
     expect(createGist).not.toHaveBeenCalled()

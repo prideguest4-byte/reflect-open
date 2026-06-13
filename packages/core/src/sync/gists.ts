@@ -34,19 +34,19 @@ function toPublished(parsed: z.infer<typeof gistResponseSchema>): PublishedGist 
 }
 
 /** What one publish sends: the gist filename and the note body it carries. */
-export interface GistContent {
-  filename: string
+export interface GistFile {
+  name: string
   content: string
 }
 
 /**
- * Create a **secret** gist holding `content`. Secret is not negotiable here:
+ * Create a **secret** gist holding `file`. Secret is not negotiable here:
  * the share flow is copy-the-link, and a public gist would also list on the
  * user's profile feed.
  */
 export async function createGist(
   token: string,
-  content: GistContent,
+  file: GistFile,
   fetchFn: FetchFn = fetch,
 ): Promise<PublishedGist> {
   const response = await fetchFn('https://api.github.com/gists', {
@@ -54,7 +54,7 @@ export async function createGist(
     headers: { ...apiHeaders(token), 'Content-Type': 'application/json' },
     body: JSON.stringify({
       public: false,
-      files: { [content.filename]: { content: content.content } },
+      files: { [file.name]: { content: file.content } },
     }),
   })
   if (response.status === 404) {
@@ -86,14 +86,14 @@ export async function updateGist(
   token: string,
   gistId: string,
   previousFilename: string,
-  content: GistContent,
+  file: GistFile,
   fetchFn: FetchFn = fetch,
 ): Promise<PublishedGist | null> {
   const response = await fetchFn(`https://api.github.com/gists/${gistId}`, {
     method: 'PATCH',
     headers: { ...apiHeaders(token), 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      files: { [previousFilename]: { filename: content.filename, content: content.content } },
+      files: { [previousFilename]: { filename: file.name, content: file.content } },
     }),
   })
   if (response.status === 404) {

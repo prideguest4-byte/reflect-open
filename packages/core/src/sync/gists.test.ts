@@ -13,7 +13,7 @@ const GIST = { id: 'g1', html_url: 'https://gist.github.com/alex/g1' }
 describe('createGist', () => {
   it('posts a secret single-file gist and returns its id and url', async () => {
     const fetchFn = vi.fn(async () => jsonResponse(GIST, 201))
-    const published = await createGist('tok', { filename: 'A.md', content: '# A\n' }, fetchFn)
+    const published = await createGist('tok', { name: 'A.md', content: '# A\n' }, fetchFn)
 
     expect(published).toEqual({ id: 'g1', htmlUrl: 'https://gist.github.com/alex/g1' })
     const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit]
@@ -28,23 +28,25 @@ describe('createGist', () => {
 
   it('maps 404 to a reconnect-and-grant auth error (missing gist permission)', async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ message: 'Not Found' }, 404))
-    await expect(createGist('tok', { filename: 'A.md', content: 'x' }, fetchFn)).rejects.toMatchObject(
-      { kind: 'auth', message: expect.stringMatching(/reconnect/i) },
-    )
+    await expect(createGist('tok', { name: 'A.md', content: 'x' }, fetchFn)).rejects.toMatchObject({
+      kind: 'auth',
+      message: expect.stringMatching(/reconnect/i),
+    })
   })
 
   it('maps 401 to a rejected-token auth error', async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ message: 'Bad credentials' }, 401))
-    await expect(createGist('tok', { filename: 'A.md', content: 'x' }, fetchFn)).rejects.toMatchObject(
-      { kind: 'auth' },
-    )
+    await expect(createGist('tok', { name: 'A.md', content: 'x' }, fetchFn)).rejects.toMatchObject({
+      kind: 'auth',
+    })
   })
 
   it('surfaces other failures with the response body', async () => {
     const fetchFn = vi.fn(async () => new Response('Validation Failed', { status: 422 }))
-    await expect(createGist('tok', { filename: 'A.md', content: 'x' }, fetchFn)).rejects.toMatchObject(
-      { kind: 'io', message: expect.stringContaining('422') },
-    )
+    await expect(createGist('tok', { name: 'A.md', content: 'x' }, fetchFn)).rejects.toMatchObject({
+      kind: 'io',
+      message: expect.stringContaining('422'),
+    })
   })
 })
 
@@ -55,7 +57,7 @@ describe('updateGist', () => {
       'tok',
       'g1',
       'Old Title.md',
-      { filename: 'New Title.md', content: 'body' },
+      { name: 'New Title.md', content: 'body' },
       fetchFn,
     )
 
@@ -71,14 +73,14 @@ describe('updateGist', () => {
   it('returns null on 404 — the gist is gone and the caller re-creates', async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ message: 'Not Found' }, 404))
     await expect(
-      updateGist('tok', 'g1', 'A.md', { filename: 'A.md', content: 'x' }, fetchFn),
+      updateGist('tok', 'g1', 'A.md', { name: 'A.md', content: 'x' }, fetchFn),
     ).resolves.toBeNull()
   })
 
   it('maps 403 to an auth error', async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ message: 'Forbidden' }, 403))
     await expect(
-      updateGist('tok', 'g1', 'A.md', { filename: 'A.md', content: 'x' }, fetchFn),
+      updateGist('tok', 'g1', 'A.md', { name: 'A.md', content: 'x' }, fetchFn),
     ).rejects.toMatchObject({ kind: 'auth' })
   })
 })
