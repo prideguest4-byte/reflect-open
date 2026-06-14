@@ -4,6 +4,8 @@ import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 
+const SIMILAR_NOTES_LIMIT = 6
+
 /**
  * The note's semantic neighbors ("Similar notes"), one query shared by every
  * surface that shows them (the in-note panel and the context sidebars). The
@@ -21,8 +23,8 @@ export function useSimilarNotes(path: string): RetrievalHit[] {
   const { settings } = useSettings()
   const { data } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'related', path],
-    queryFn: () => relatedNotes(path),
+    queryFn: () => relatedNotes(path, SIMILAR_NOTES_LIMIT),
     enabled: hasBridge() && graph !== null && settings.semanticSearchEnabled,
   })
-  return settings.semanticSearchEnabled ? (data ?? []) : []
+  return settings.semanticSearchEnabled ? (data ?? []).slice(0, SIMILAR_NOTES_LIMIT) : []
 }
