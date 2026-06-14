@@ -49,6 +49,20 @@ describe('operations store', () => {
     expect(result.current).toEqual([])
   })
 
+  it('a warning operation lingers without being marked failed', () => {
+    const { result } = renderHook(() => useOperations())
+    let handle!: ReturnType<typeof startOperation>
+    act(() => {
+      handle = startOperation('Rebuilding search index')
+    })
+    act(() => handle.warn('Rebuilt with 1 skipped note: notes/bad.md'))
+    expect(result.current[0].status).toBe('warning')
+    expect(result.current[0].message).toBe('Rebuilt with 1 skipped note: notes/bad.md')
+
+    act(() => vi.advanceTimersByTime(8000 + 1200))
+    expect(result.current).toEqual([])
+  })
+
   it('handles are scoped: finishing one operation leaves others running', () => {
     const { result } = renderHook(() => useOperations())
     let first!: ReturnType<typeof startOperation>

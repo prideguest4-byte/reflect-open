@@ -13,8 +13,8 @@ export interface Operation {
   id: number
   label: string
   progress: { done: number; total: number } | null
-  status: 'running' | 'failed'
-  /** The lingering line under the label when the operation failed. */
+  status: 'running' | 'warning' | 'failed'
+  /** The lingering line under the label when the operation needs attention. */
   message: string | null
 }
 
@@ -22,6 +22,8 @@ export interface OperationHandle {
   progress: (done: number, total: number) => void
   /** The operation completed; its entry disappears. */
   done: () => void
+  /** The operation completed with caveats; its warning lingers briefly. */
+  warn: (message: string) => void
   /** The operation failed; the entry lingers briefly so the error is seen. */
   fail: (message: string) => void
 }
@@ -83,6 +85,10 @@ export function startOperation(label: string): OperationHandle {
   return {
     progress: (done, total) => patch(id, { progress: { done, total } }),
     done: () => removeAfterMinimum(0),
+    warn: (message) => {
+      patch(id, { status: 'warning', message })
+      removeAfterMinimum(LINGER_MS)
+    },
     fail: (message) => {
       patch(id, { status: 'failed', message })
       removeAfterMinimum(LINGER_MS)
