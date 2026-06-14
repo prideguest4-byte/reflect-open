@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import type { NoteRow } from '@reflect/core'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { formatDayLabel } from '@/lib/dates'
 import { monthLabel, monthOf } from '@/lib/month-grid'
@@ -11,10 +12,12 @@ import { DailyContextSidebar } from './daily-context-sidebar'
 
 const dailyDatesInRange = vi.hoisted(() => vi.fn())
 const relatedNotes = vi.hoisted(() => vi.fn())
+const getNote = vi.hoisted(() => vi.fn<() => Promise<NoteRow | undefined>>(async () => undefined))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   dailyDatesInRange,
+  getNote,
   relatedNotes,
 }))
 vi.mock('@/providers/graph-provider', () => ({
@@ -49,8 +52,22 @@ function renderSidebar(date: string) {
 beforeEach(() => {
   window.sessionStorage.clear()
   dailyDatesInRange.mockReset().mockResolvedValue([])
+  getNote.mockReset().mockResolvedValue(undefined)
   relatedNotes.mockReset().mockResolvedValue([])
 })
+
+function noteRow(overrides: Partial<NoteRow> = {}): NoteRow {
+  return {
+    path: 'daily/2026-06-09.md',
+    title: '2026-06-09',
+    dailyDate: '2026-06-09',
+    isPrivate: false,
+    hasConflict: false,
+    gistUrl: null,
+    gistStale: false,
+    ...overrides,
+  }
+}
 
 describe('DailyContextSidebar calendar header', () => {
   it('jumps to today from the calendar-icon button', async () => {
@@ -137,6 +154,17 @@ describe('DailyContextSidebar related notes', () => {
 })
 
 describe('DailyContextSidebar sections', () => {
+  it('shows the published URL section for a published daily note', async () => {
+    getNote.mockResolvedValue(
+      noteRow({ gistUrl: 'https://gist.github.com/alex/daily20260609' }),
+    )
+    const view = renderSidebar('2026-06-09')
+
+    await view.findByText('Published URL')
+    expect(view.getByRole('link', { name: 'https://gist.github.com/alex/daily20260609' })).toBeDefined()
+    view.unmount()
+  })
+
   it('collapses a section and persists the state for the session', async () => {
     const view = renderSidebar('2026-06-09')
     const header = view.getByRole('button', { name: /Note actions/ })

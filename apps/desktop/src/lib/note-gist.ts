@@ -40,7 +40,7 @@ import { providerFetch } from '@/lib/provider-fetch'
  */
 export async function publishNoteToGist(path: string, generation: number): Promise<string> {
   const owner = openSession(path)
-  const source = owner !== null ? owner.content() : await readNoteOrEmpty(path)
+  const source = owner?.liveContent() ?? (await readNoteOrEmpty(path))
   const parsed = parseNote({ path, source })
   assertCloudAllowed({ path, isPrivate: parsed.frontmatter.private })
 

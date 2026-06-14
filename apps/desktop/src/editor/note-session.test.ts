@@ -345,6 +345,15 @@ describe('frontmatter ownership (Plan 07b)', () => {
     expect(h.snapshots.at(-1)?.dirty).toBe(false)
   })
 
+  it('commitFrontmatter declines when the session has no write channel', async () => {
+    const h = harness({ disk: '# Hello\n', write: false })
+    h.session.load()
+    await vi.runAllTimersAsync()
+
+    await expect(h.session.commitFrontmatter({ pinned: true })).resolves.toBe(false)
+    expect(h.writes).toEqual([])
+  })
+
   it('commitFrontmatter under a parked conflict writes through and refreshes the park', async () => {
     const h = harness()
     h.session.load()

@@ -618,6 +618,9 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
   }
 
   async function commitFrontmatter(patch: FrontmatterPatch): Promise<boolean> {
+    if (io.write === null) {
+      return false
+    }
     if (!updateFrontmatter(patch)) {
       return false
     }
@@ -630,14 +633,12 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     // content and write it through. The park refreshes in place, so "load
     // theirs" adopts the patched bytes, and recording the write in `disk`
     // makes the watcher's echo a recognized no-op.
-    if (io.write !== null) {
-      const patched = upsertFrontmatter(conflict, yamlPatch(patch))
-      if (patched !== conflict) {
-        await io.write(path, patched)
-        conflict = patched
-        disk = patched
-        emit()
-      }
+    const patched = upsertFrontmatter(conflict, yamlPatch(patch))
+    if (patched !== conflict) {
+      await io.write(path, patched)
+      conflict = patched
+      disk = patched
+      emit()
     }
     return true
   }
