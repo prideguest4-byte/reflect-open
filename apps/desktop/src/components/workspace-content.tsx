@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useLayoutEffect, type ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { PanelLeft } from 'lucide-react'
 import { AppShell } from '@/components/app-shell'
@@ -8,6 +8,7 @@ import { DailyContextSidebar } from '@/components/context-sidebar/daily-context-
 import { NoteContextSidebar } from '@/components/context-sidebar/note-context-sidebar'
 import {
   contextSidebarTarget,
+  contextTargetForFocus,
   type ContextSidebarTarget,
 } from '@/components/context-sidebar/sidebar-route'
 import { EmbeddingsSync } from '@/components/embeddings-sync'
@@ -21,6 +22,10 @@ import { keybindingFor } from '@/lib/commands/app-commands'
 import { useToday } from '@/lib/use-today'
 import { cn } from '@/lib/utils'
 import { hasMacosTitleBarOverlay } from '@/lib/window-chrome'
+import {
+  useFocusedDailyDate,
+  useSetFocusedDailyDate,
+} from '@/providers/focused-daily-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
 import { useAppShortcuts } from '@/routing/app-shortcuts'
 import { useRouter } from '@/routing/router'
@@ -60,10 +65,23 @@ export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement
   // search/settings get none (AppShell omits the region when context is absent).
   const sidebarTarget = contextSidebarTarget(route, today)
 
+  // In the daily stream the route stays on the day you navigated to while focus
+  // moves between days. The sidebar follows the focused day, falling back to the
+  // routed day — which is also the calendar-pick path, where focus stays out of
+  // the stream. A new routed day resets focus tracking pre-paint, so the sidebar
+  // snaps to it immediately and only then tracks where focus lands.
+  const routeDailyDate = sidebarTarget?.kind === 'daily' ? sidebarTarget.date : null
+  const focusedDailyDate = useFocusedDailyDate()
+  const setFocusedDailyDate = useSetFocusedDailyDate()
+  useLayoutEffect(() => {
+    setFocusedDailyDate(null)
+  }, [routeDailyDate, setFocusedDailyDate])
+  const contextTarget = contextTargetForFocus(sidebarTarget, focusedDailyDate)
+
   return (
     <AppShell
       sidebar={collapsed ? undefined : <Sidebar graph={graph} context={commandContext} />}
-      context={contextSidebarFor(sidebarTarget)}
+      context={contextSidebarFor(contextTarget)}
     >
       <div className="relative flex h-full flex-col">
         {collapsed ? (
