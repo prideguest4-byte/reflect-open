@@ -3,12 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { RouterProvider } from '@/routing/router'
 import { NoteActionsSection } from './note-actions-section'
 
 const getPinnedNotes = vi.hoisted(() => vi.fn())
 const getNote = vi.hoisted(() => vi.fn())
 const toggleNotePinned = vi.hoisted(() => vi.fn(async () => true))
 const toggleNotePrivate = vi.hoisted(() => vi.fn(async () => true))
+const deleteOpenNote = vi.hoisted(() => vi.fn(async () => {}))
 const operationFail = vi.hoisted(() => vi.fn())
 const startOperation = vi.hoisted(() =>
   vi.fn(() => ({ progress: vi.fn(), done: vi.fn(), fail: operationFail })),
@@ -21,17 +23,20 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 }))
 vi.mock('@/lib/note-pin', () => ({ toggleNotePinned }))
 vi.mock('@/lib/note-private', () => ({ toggleNotePrivate }))
+vi.mock('@/lib/note-delete', () => ({ deleteOpenNote }))
 vi.mock('@/lib/operations', () => ({ startOperation }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 7 } }),
 }))
 
-function renderSection(path: string) {
+function renderSection(path: string, showTrash = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <TooltipProvider>
       <QueryClientProvider client={client}>
-        <NoteActionsSection path={path} />
+        <RouterProvider initialRoute={{ kind: 'note', path }}>
+          <NoteActionsSection path={path} showTrash={showTrash} />
+        </RouterProvider>
       </QueryClientProvider>
     </TooltipProvider>,
   )
@@ -43,6 +48,7 @@ beforeEach(() => {
   getNote.mockReset().mockResolvedValue(undefined)
   toggleNotePinned.mockReset().mockResolvedValue(true)
   toggleNotePrivate.mockReset().mockResolvedValue(true)
+  deleteOpenNote.mockReset().mockResolvedValue(undefined)
   startOperation.mockClear()
   operationFail.mockClear()
 })
@@ -166,6 +172,34 @@ describe('NoteActionsSection private toggle', () => {
     await userEvent.click(await view.findByRole('button', { name: /Unlock note/ }))
     expect(startOperation).toHaveBeenCalledWith('Unlocking note')
     expect(operationFail).toHaveBeenCalled()
+    view.unmount()
+  })
+})
+
+describe('NoteActionsSection trash action', () => {
+  it('does not offer trash unless the note sidebar opts in', () => {
+    const view = renderSection('notes/a.md')
+    expect(view.queryByRole('button', { name: 'Trash note' })).toBeNull()
+    view.unmount()
+  })
+
+  it('trashes an ordinary note after confirmation', async () => {
+    const view = renderSection('notes/a.md', true)
+    await userEvent.click(view.getByRole('button', { name: 'Trash note' }))
+    const trashButtons = view.getAllByRole('button', { name: 'Trash note' })
+    const confirmButton = trashButtons.at(-1)
+    if (confirmButton === undefined) {
+      throw new Error('Expected the confirmation button to render')
+    }
+    await userEvent.click(confirmButton)
+    await waitFor(() => expect(deleteOpenNote).toHaveBeenCalledWith('notes/a.md', 7))
+    expect(startOperation).toHaveBeenCalledWith('Trashing note')
+    view.unmount()
+  })
+
+  it('does not offer trash for daily notes even if enabled', () => {
+    const view = renderSection('daily/2026-06-10.md', true)
+    expect(view.queryByRole('button', { name: 'Trash note' })).toBeNull()
     view.unmount()
   })
 })

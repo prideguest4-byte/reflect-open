@@ -18,7 +18,7 @@ export function NoteContextSidebar({ path }: NoteContextSidebarProps): ReactElem
   return (
     <div className="flex flex-col py-2 text-text">
       <div className="my-4 space-y-4 pb-4">
-        <NoteActionsSection path={path} />
+        <NoteActionsSection path={path} showTrash />
         <PublishedUrlSection path={path} />
         <SimilarNotesSection path={path} />
       </div>

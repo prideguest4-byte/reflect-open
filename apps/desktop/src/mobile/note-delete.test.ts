@@ -8,11 +8,13 @@ import { deleteOpenNote } from './note-delete'
  */
 
 const deleteNoteMock = vi.fn<(path: string, generation: number) => Promise<void>>()
+const isDailyMock = vi.fn<(path: string) => boolean>()
 const discard = vi.fn()
 const openSessionMock = vi.fn<(path: string) => { discard: () => void } | null>()
 
 vi.mock('@reflect/core', () => ({
   deleteNote: (path: string, generation: number) => deleteNoteMock(path, generation),
+  isDaily: (path: string) => isDailyMock(path),
 }))
 vi.mock('@/editor/open-documents', () => ({
   openSession: (path: string) => openSessionMock(path),
@@ -20,6 +22,7 @@ vi.mock('@/editor/open-documents', () => ({
 
 afterEach(() => {
   deleteNoteMock.mockReset()
+  isDailyMock.mockReset().mockReturnValue(false)
   discard.mockReset()
   openSessionMock.mockReset()
 })
@@ -43,6 +46,17 @@ describe('deleteOpenNote', () => {
 
     // The session was never discarded — the screen stays editable.
     expect(discard).not.toHaveBeenCalled()
+    expect(openSessionMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects daily notes without touching disk', async () => {
+    isDailyMock.mockReturnValue(true)
+
+    await expect(deleteOpenNote('daily/2026-06-10.md', 3)).rejects.toThrow(
+      'Daily notes cannot be deleted',
+    )
+
+    expect(deleteNoteMock).not.toHaveBeenCalled()
     expect(openSessionMock).not.toHaveBeenCalled()
   })
 })
