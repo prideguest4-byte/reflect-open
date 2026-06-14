@@ -66,13 +66,15 @@ export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement
   const sidebarTarget = contextSidebarTarget(route, today)
 
   // In the daily stream the route stays on the day you navigated to while focus
-  // moves between days, so the sidebar follows the focused day (falling back to
-  // the routed day when focus is outside the stream — the calendar-pick path).
-  // Every navigation re-anchors the stream; reset focus tracking on the *same*
-  // signals (`arrivalSeq`/`entryId`), not on the routed date — re-targeting the
-  // current day (a calendar pick on it, ⌘D to today) re-anchors too and must
-  // snap the sidebar back to it. The reset runs pre-paint, so no stale focused
-  // day is shown before the stream re-focuses the target.
+  // moves between days, so the sidebar follows the last day focused in the
+  // stream. It deliberately *stays* on that day through transient focus moves
+  // (opening ⌘K, clicking a sidebar button) rather than flicking back to the
+  // routed day and out again — what restores the routed day is navigation, not
+  // blur. Reset on the same signals the stream re-anchors on (`arrivalSeq`/
+  // `entryId`), not the routed date, so re-targeting the current day (a calendar
+  // pick on it, ⌘D to today) snaps back too. With nothing focused yet it falls
+  // back to the routed day (also the post-navigation state). The reset runs
+  // pre-paint, so no stale day shows before the stream re-focuses the target.
   const focusedDailyDate = useFocusedDailyDate()
   const setFocusedDailyDate = useSetFocusedDailyDate()
   useLayoutEffect(() => {
