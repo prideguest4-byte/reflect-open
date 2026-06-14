@@ -353,4 +353,31 @@ describe('runGistUnpublish', () => {
     expect(operationFail).toHaveBeenCalledWith(expect.stringMatching(/connect github/i))
     expect(getNoteRowOverlay('notes/a.md', 3)).toBeNull()
   })
+
+  it('blocks publish or update while an unpublish is in flight for the same note', async () => {
+    let resolveDelete: () => void = () => {}
+    let markDeleteStarted: () => void = () => {}
+    const deleteStarted = new Promise<void>((resolve) => {
+      markDeleteStarted = resolve
+    })
+    deleteGist.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          markDeleteStarted()
+          resolveDelete = resolve
+        }),
+    )
+    readNote.mockResolvedValue(REPUBLISH_SOURCE)
+
+    const unpublish = runGistUnpublish('notes/a.md', 3)
+    await deleteStarted
+
+    await expect(runGistPublish('notes/a.md', 3)).resolves.toBeNull()
+    expect(createGist).not.toHaveBeenCalled()
+    expect(updateGist).not.toHaveBeenCalled()
+    expect(operationFail).toHaveBeenCalledWith(expect.stringMatching(/current gist operation/i))
+
+    resolveDelete()
+    await expect(unpublish).resolves.toBe(true)
+  })
 })

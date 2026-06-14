@@ -17,6 +17,21 @@ import { commitNoteFrontmatter, readNoteSource } from '@/lib/note-frontmatter'
 import { startOperation } from '@/lib/operations'
 import { providerFetch } from '@/lib/provider-fetch'
 
+const activeGistOperations = new Set<string>()
+
+function claimGistOperation(path: string): boolean {
+  if (activeGistOperations.has(path)) {
+    startOperation('Gist operation already running').fail('Wait for the current gist operation to finish')
+    return false
+  }
+  activeGistOperations.add(path)
+  return true
+}
+
+function releaseGistOperation(path: string): void {
+  activeGistOperations.delete(path)
+}
+
 /**
  * Publish a note's body to a GitHub Gist (always secret), recording the gist
  * in the note's `gist` frontmatter block. A note that already carries the
@@ -139,25 +154,32 @@ export async function unpublishNoteGist(path: string, generation: number): Promi
  * reflects the publish immediately, before the watcher re-indexes the file.
  */
 export async function runGistPublish(path: string, generation: number): Promise<string | null> {
-  const operation = startOperation('Publishing gist')
-  let url: string
-  try {
-    url = await publishNoteToGist(path, generation)
-  } catch (cause) {
-    operation.fail(errorMessage(cause))
+  if (!claimGistOperation(path)) {
     return null
   }
-  operation.done()
-  // Stamp the optimism with the publishing graph's generation, so a publish
-  // that resolves after a graph switch can't surface on the new graph.
-  setNoteRowOverlay(path, generation, { gistUrl: url, gistStale: false })
   try {
-    await navigator.clipboard.writeText(url)
-    startOperation('Gist link copied').done()
-  } catch (cause) {
-    startOperation('Copying the gist link').fail(errorMessage(cause))
+    const operation = startOperation('Publishing gist')
+    let url: string
+    try {
+      url = await publishNoteToGist(path, generation)
+    } catch (cause) {
+      operation.fail(errorMessage(cause))
+      return null
+    }
+    operation.done()
+    // Stamp the optimism with the publishing graph's generation, so a publish
+    // that resolves after a graph switch can't surface on the new graph.
+    setNoteRowOverlay(path, generation, { gistUrl: url, gistStale: false })
+    try {
+      await navigator.clipboard.writeText(url)
+      startOperation('Gist link copied').done()
+    } catch (cause) {
+      startOperation('Copying the gist link').fail(errorMessage(cause))
+    }
+    return url
+  } finally {
+    releaseGistOperation(path)
   }
-  return url
 }
 
 /**
@@ -166,14 +188,21 @@ export async function runGistPublish(path: string, generation: number): Promise<
  * index catches up.
  */
 export async function runGistUnpublish(path: string, generation: number): Promise<boolean> {
-  const operation = startOperation('Unpublishing gist')
-  try {
-    await unpublishNoteGist(path, generation)
-  } catch (cause) {
-    operation.fail(errorMessage(cause))
+  if (!claimGistOperation(path)) {
     return false
   }
-  operation.done()
-  setNoteRowOverlay(path, generation, { gistUrl: null, gistStale: false })
-  return true
+  try {
+    const operation = startOperation('Unpublishing gist')
+    try {
+      await unpublishNoteGist(path, generation)
+    } catch (cause) {
+      operation.fail(errorMessage(cause))
+      return false
+    }
+    operation.done()
+    setNoteRowOverlay(path, generation, { gistUrl: null, gistStale: false })
+    return true
+  } finally {
+    releaseGistOperation(path)
+  }
 }
