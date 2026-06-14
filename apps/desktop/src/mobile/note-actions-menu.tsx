@@ -17,7 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toggleNotePinned } from '@/lib/note-pin'
-import { deleteOpenNote } from '@/mobile/note-delete'
+import { deleteOpenNote } from '@/lib/note-delete'
 import { shareNote } from '@/mobile/share'
 import { useGraph } from '@/providers/graph-provider'
 import { usePinnedNotes } from '@/hooks/use-pinned-notes'

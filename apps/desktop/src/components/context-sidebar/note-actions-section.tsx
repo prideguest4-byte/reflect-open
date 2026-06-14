@@ -7,12 +7,15 @@ import { keybindingFor } from '@/lib/commands/app-commands'
 import { toggleNotePinned } from '@/lib/note-pin'
 import { toggleNotePrivate } from '@/lib/note-private'
 import { NoteGistAction } from './note-gist-action'
+import { NoteTrashAction } from './note-trash-action'
 import { NoteToggleAction } from './note-toggle-action'
 import { SidebarSection } from './sidebar-section'
 
 interface NoteActionsSectionProps {
   /** Graph-relative path of the note the actions operate on. */
   path: string
+  /** Whether this context can offer deleting the note. Daily sidebars leave this off. */
+  showTrash?: boolean
 }
 
 // Derived from the command definitions so the hints can never drift from the
@@ -29,7 +32,10 @@ const GIST_KEYBINDING = keybindingFor('note.publishGist')
  * sidebar's Pinned section, privacy from the note's own row), bridged by the
  * last toggle's result while the watcher catches up.
  */
-export function NoteActionsSection({ path }: NoteActionsSectionProps): ReactElement {
+export function NoteActionsSection({
+  path,
+  showTrash = false,
+}: NoteActionsSectionProps): ReactElement {
   const isPinned = usePinnedNotes().some((note) => note.path === path)
   const isPrivate = useNoteRow(path)?.isPrivate ?? false
 
@@ -61,6 +67,7 @@ export function NoteActionsSection({ path }: NoteActionsSectionProps): ReactElem
         tooltip="Private notes are never sent to AI or any other external service"
       />
       <NoteGistAction path={path} keybinding={GIST_KEYBINDING} />
+      {showTrash ? <NoteTrashAction path={path} /> : null}
     </SidebarSection>
   )
 }
