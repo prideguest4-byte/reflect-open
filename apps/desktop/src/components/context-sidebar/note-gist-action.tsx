@@ -2,6 +2,7 @@ import { useState, type ReactElement } from 'react'
 import { CloudUpload } from 'lucide-react'
 import { ShortcutKeys } from '@/components/shortcut-keys'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useNoteRowOverlay } from '@/hooks/note-row-overlay'
 import { useGithubConnected } from '@/hooks/use-github-connected'
 import { useNoteRow } from '@/hooks/use-note-row'
 import { runGistPublish } from '@/lib/note-gist'
@@ -13,17 +14,6 @@ interface NoteGistActionProps {
   path: string
   /** Keybinding hint, from the matching command definition. */
   keybinding?: string | null
-}
-
-/**
- * The last publish's result, held until the index reflects it — the same
- * bridge as `NoteToggleAction`: the label otherwise lags one watcher
- * round-trip behind the frontmatter write, and in that window the button
- * would still read "Share with private link" after the gist already exists.
- */
-interface PendingPublish {
-  path: string
-  url: string
 }
 
 /**
@@ -39,21 +29,18 @@ export function NoteGistAction({ path, keybinding = null }: NoteGistActionProps)
   const { graph } = useGraph()
   const connected = useGithubConnected()
   const row = useNoteRow(path)
+  // `row` already reflects a just-published url (the optimistic overlay flows
+  // through `useNoteRow`); the raw overlay tells us *that* a publish is still
+  // catching up, which only `stale` needs.
+  const optimistic = useNoteRowOverlay(path)?.gistUrl != null
   const [isPublishing, setIsPublishing] = useState(false)
-  const [pending, setPending] = useState<PendingPublish | null>(null)
 
-  // Render-time state adjustment: drop the bridge once the index reports the
-  // published url (or the action moved to another note). Deliberately url-only:
-  // also waiting for `gistStale` to clear could hold the bridge forever — a
-  // body edited right after publishing keeps recomputing stale, and a stuck
-  // bridge would suppress the republish nudge until navigation. The cost is a
-  // one-watcher-round-trip nudge flash after a same-url republish.
-  if (pending !== null && (pending.path !== path || row?.gistUrl === pending.url)) {
-    setPending(null)
-  }
-  const bridged = pending !== null && pending.path === path
-  const published = bridged || (row?.gistUrl ?? null) !== null
-  const stale = !bridged && (row?.gistStale ?? false)
+  const published = optimistic || (row?.gistUrl ?? null) !== null
+  // While the overlay still stands in for a not-yet-indexed publish, don't nudge
+  // "stale": the index reflects the pre-publish body for one more watcher
+  // round-trip. The overlay is url-only — it never waits on `gist_stale`, so a
+  // body edited right after publishing can't pin the nudge shut.
+  const stale = !optimistic && (row?.gistStale ?? false)
 
   if (!connected || row?.isPrivate === true) {
     return null
@@ -66,10 +53,7 @@ export function NoteGistAction({ path, keybinding = null }: NoteGistActionProps)
     }
     setIsPublishing(true)
     try {
-      const url = await runGistPublish(path, generation)
-      if (url !== null) {
-        setPending({ path, url })
-      }
+      await runGistPublish(path, generation)
     } finally {
       setIsPublishing(false)
     }

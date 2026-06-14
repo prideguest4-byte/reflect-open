@@ -50,9 +50,13 @@ beforeEach(() => {
   operationFail.mockClear()
 })
 
-function fakeSession(content: string, canCommit = true) {
+function fakeSession(content: string, canCommit = true, liveContent: string | null = content) {
   const commitFrontmatter = vi.fn(async () => canCommit)
-  const session = { content: () => content, commitFrontmatter } as unknown as NoteSession
+  const session = {
+    content: () => content,
+    liveContent: () => liveContent,
+    commitFrontmatter,
+  } as unknown as NoteSession
   return { session, commitFrontmatter }
 }
 
@@ -110,6 +114,23 @@ describe('publishNoteToGist', () => {
     openSession.mockReturnValue(session)
     readNote.mockResolvedValue(BODY)
     await publishNoteToGist('notes/a.md', 3)
+    expect(writeNote).toHaveBeenCalled()
+  })
+
+  it('reads disk, not the empty buffer, when the open session is still loading', async () => {
+    // liveContent === null means the buffer isn't the truth yet: publish must
+    // read the real body from disk, not publish an empty gist.
+    const { session } = fakeSession('', false, null)
+    openSession.mockReturnValue(session)
+    readNote.mockResolvedValue(BODY)
+
+    await publishNoteToGist('notes/a.md', 3)
+
+    expect(createGist).toHaveBeenCalledWith(
+      'tok',
+      { name: 'A.md', content: BODY },
+      expect.any(Function),
+    )
     expect(writeNote).toHaveBeenCalled()
   })
 

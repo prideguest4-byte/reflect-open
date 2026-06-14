@@ -21,9 +21,13 @@ beforeEach(() => {
   openSession.mockReturnValue(null)
 })
 
-function fakeSession(content: string, canCommit = true) {
+function fakeSession(content: string, canCommit = true, liveContent: string | null = content) {
   const commitFrontmatter = vi.fn(async () => canCommit)
-  const session = { content: () => content, commitFrontmatter } as unknown as NoteSession
+  const session = {
+    content: () => content,
+    liveContent: () => liveContent,
+    commitFrontmatter,
+  } as unknown as NoteSession
   return { session, commitFrontmatter }
 }
 
@@ -79,7 +83,8 @@ describe('toggleNotePrivate', () => {
   })
 
   it('marks a not-yet-created note private by creating its file (the lazy contract)', async () => {
-    const { session } = fakeSession('', false)
+    // Still-loading session: `liveContent` is null, so the read falls to disk.
+    const { session } = fakeSession('', false, null)
     openSession.mockReturnValue(session)
     readNote.mockRejectedValue({ kind: 'notFound', message: 'no such note' })
     await expect(toggleNotePrivate('daily/2026-06-10.md', 3)).resolves.toBe(true)

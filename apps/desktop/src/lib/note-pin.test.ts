@@ -21,9 +21,13 @@ beforeEach(() => {
   openSession.mockReturnValue(null)
 })
 
-function fakeSession(content: string, canCommit = true) {
+function fakeSession(content: string, canCommit = true, liveContent: string | null = content) {
   const commitFrontmatter = vi.fn(async () => canCommit)
-  const session = { content: () => content, commitFrontmatter } as unknown as NoteSession
+  const session = {
+    content: () => content,
+    liveContent: () => liveContent,
+    commitFrontmatter,
+  } as unknown as NoteSession
   return { session, commitFrontmatter }
 }
 
@@ -72,10 +76,11 @@ describe('toggleNotePinned', () => {
   })
 
   it('pins a not-yet-created note by creating its file (the lazy contract)', async () => {
-    // ⌘O on a fresh daily whose pane session is still loading: the session
-    // can't take the patch and the file doesn't exist — a missing note reads
-    // as empty, and the pin write is what creates it.
-    const { session } = fakeSession('', false)
+    // ⌘O on a fresh daily whose pane session is still loading: `liveContent`
+    // is null (the buffer isn't the truth yet) so the read falls to disk, the
+    // session can't take the patch, and the file doesn't exist — a missing
+    // note reads as empty, and the pin write is what creates it.
+    const { session } = fakeSession('', false, null)
     openSession.mockReturnValue(session)
     readNote.mockRejectedValue({ kind: 'notFound', message: 'no such note' })
     await expect(toggleNotePinned('daily/2026-06-10.md', 3)).resolves.toBe(true)

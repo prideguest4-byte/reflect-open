@@ -10,12 +10,10 @@ import {
   ReflectError,
   splitFrontmatter,
   updateGist,
-  upsertFrontmatter,
-  writeNote,
   type GistFrontmatter,
 } from '@reflect/core'
-import { openSession } from '@/editor/open-documents'
-import { readNoteOrEmpty } from '@/lib/note-read'
+import { setNoteRowOverlay } from '@/hooks/note-row-overlay'
+import { commitNoteFrontmatter, readNoteSource } from '@/lib/note-frontmatter'
 import { startOperation } from '@/lib/operations'
 import { providerFetch } from '@/lib/provider-fetch'
 
@@ -28,19 +26,18 @@ import { providerFetch } from '@/lib/provider-fetch'
  * one. The stored hash is of the body as published, so the indexer's
  * `gist_stale` reflects real edits, never the frontmatter write itself.
  *
- * Reads through the live session when the note is open and lands the
- * frontmatter through `commitFrontmatter`, exactly like the pin/private
- * toggles: a direct disk write under a dirty buffer would park a conflict
- * caused by our own action. With no live session (or one that can't take
- * patches), a read-patch-write on disk is reconciled like an external change.
+ * Reads and writes through the shared {@link readNoteSource} /
+ * {@link commitNoteFrontmatter} channel, exactly like the pin/private toggles:
+ * a direct disk write under a dirty buffer would park a conflict caused by our
+ * own action, and a still-loading session is read from disk rather than from
+ * its empty placeholder buffer.
  *
  * `private: true` is the hard block: the gate runs on the content actually
  * being published (live, not the possibly-lagging index), and it fails
  * closed before any byte leaves the device.
  */
 export async function publishNoteToGist(path: string, generation: number): Promise<string> {
-  const owner = openSession(path)
-  const source = owner !== null ? owner.content() : await readNoteOrEmpty(path)
+  const source = await readNoteSource(path)
   const parsed = parseNote({ path, source })
   assertCloudAllowed({ path, isPrivate: parsed.frontmatter.private })
 
@@ -75,10 +72,7 @@ export async function publishNoteToGist(path: string, generation: number): Promi
     hash: gistBodyHash(body),
   }
   try {
-    if (owner === null || !(await owner.commitFrontmatter({ gist }))) {
-      const onDisk = await readNoteOrEmpty(path)
-      await writeNote(path, upsertFrontmatter(onDisk, { gist }), generation)
-    }
+    await commitNoteFrontmatter(path, { gist }, generation)
   } catch (cause) {
     // The remote and local halves can't be atomic; compensate instead. A
     // *freshly created* gist with no local record would be orphaned (and
@@ -106,6 +100,10 @@ export async function publishNoteToGist(path: string, generation: number): Promi
  * (focus, permissions) gets its own failure line, never a phantom "publish
  * failed" for a gist that exists — or `null` when the publish failed
  * (already surfaced).
+ *
+ * On success it records the url in the optimistic note-row overlay, so every
+ * sidebar surface (the gist action's label, the Published URL section)
+ * reflects the publish immediately, before the watcher re-indexes the file.
  */
 export async function runGistPublish(path: string, generation: number): Promise<string | null> {
   const operation = startOperation('Publishing gist')
@@ -117,6 +115,7 @@ export async function runGistPublish(path: string, generation: number): Promise<
     return null
   }
   operation.done()
+  setNoteRowOverlay(path, { gistUrl: url })
   try {
     await navigator.clipboard.writeText(url)
     startOperation('Gist link copied').done()

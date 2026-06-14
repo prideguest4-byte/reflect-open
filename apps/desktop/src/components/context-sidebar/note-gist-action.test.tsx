@@ -2,13 +2,16 @@ import { cleanup, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NoteRow } from '@reflect/core'
+import { resetNoteRowOverlays, setNoteRowOverlay } from '@/hooks/note-row-overlay'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { NoteGistAction } from './note-gist-action'
 
 const useGithubConnected = vi.hoisted(() => vi.fn(() => true))
 const useNoteRow = vi.hoisted(() => vi.fn<(path: string) => NoteRow | null>(() => null))
 const runGistPublish = vi.hoisted(() =>
-  vi.fn(async (): Promise<string | null> => 'https://gist.github.com/alex/g1'),
+  vi.fn<(path: string, generation: number) => Promise<string | null>>(
+    async () => 'https://gist.github.com/alex/g1',
+  ),
 )
 
 vi.mock('@/hooks/use-github-connected', () => ({ useGithubConnected }))
@@ -40,6 +43,7 @@ function renderAction() {
 }
 
 beforeEach(() => {
+  resetNoteRowOverlays()
   useGithubConnected.mockReset().mockReturnValue(true)
   useNoteRow.mockReset().mockReturnValue(null)
   runGistPublish.mockReset().mockResolvedValue('https://gist.github.com/alex/g1')
@@ -74,6 +78,12 @@ describe('NoteGistAction', () => {
   })
 
   it('publishes on click and flips to Republish before the index catches up', async () => {
+    // The real publish records the url in the optimistic overlay; mirror that
+    // so the label flips off the overlay, ahead of any index refresh.
+    runGistPublish.mockImplementation(async (path) => {
+      setNoteRowOverlay(path, { gistUrl: 'https://gist.github.com/alex/g1' })
+      return 'https://gist.github.com/alex/g1'
+    })
     const view = renderAction()
     await userEvent.click(view.getByRole('button', { name: /Share with private link/ }))
 
@@ -93,32 +103,31 @@ describe('NoteGistAction', () => {
     })
   })
 
-  it('keeps nudging after a same-url republish — the bridge retires on url match alone', async () => {
-    // A published, edited note: the row already carries the url the republish
-    // will return. Were the bridge to also wait for `gistStale` to clear, a
-    // body that keeps changing would hold it forever and mute the nudge.
+  it('holds the stale nudge while a publish is optimistically pending, then follows the index', () => {
+    // A published, edited note. Right after a republish the gist matches the
+    // body again, so the lagging index's "stale" must be held back rather than
+    // flashing — the overlay (url-only) suppresses it until the index agrees,
+    // and never waits on `gist_stale`, so a still-editing note can't mute the
+    // nudge forever.
     const url = 'https://gist.github.com/alex/g1'
-    runGistPublish.mockResolvedValue(url)
     useNoteRow.mockReturnValue(noteRow({ gistUrl: url, gistStale: true }))
+    const accentIcon = (view: ReturnType<typeof renderAction>) =>
+      view.getByRole('button').querySelector('.text-accent')
 
-    const view = renderAction()
-    const accentIcon = () => view.getByRole('button').querySelector('.text-accent')
-    expect(accentIcon()).toBeTruthy()
+    // Nothing pending: the index reads stale, so the nudge shows.
+    const idle = renderAction()
+    expect(accentIcon(idle)).toBeTruthy()
+    idle.unmount()
 
-    await userEvent.click(view.getByRole('button', { name: /Republish private link/ }))
-    await waitFor(() => {
-      // Index still says stale (the watcher hasn't re-indexed yet) — the
-      // retired bridge must not mask it.
-      expect(accentIcon()).toBeTruthy()
-    })
+    // A fresh publish sits in the overlay: the nudge is held back.
+    setNoteRowOverlay('notes/a.md', { gistUrl: url })
+    const pending = renderAction()
+    expect(accentIcon(pending)).toBeNull()
+    pending.unmount()
 
-    // The watcher catches up: staleness clears, and so does the nudge.
-    useNoteRow.mockReturnValue(noteRow({ gistUrl: url, gistStale: false }))
-    view.rerender(
-      <TooltipProvider>
-        <NoteGistAction path="notes/a.md" />
-      </TooltipProvider>,
-    )
-    expect(accentIcon()).toBeNull()
+    // Overlay retired (the index caught up): the nudge follows the index again.
+    resetNoteRowOverlays()
+    const settled = renderAction()
+    expect(accentIcon(settled)).toBeTruthy()
   })
 })

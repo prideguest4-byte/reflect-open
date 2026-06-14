@@ -166,8 +166,12 @@ export interface FrontmatterPatch {
   gist?: GistFrontmatter
 }
 
-/** Translate the typed patch into the YAML write (`undefined` deletes a key). */
-function yamlPatch(patch: FrontmatterPatch): Record<string, unknown> {
+/**
+ * Translate the typed patch into the YAML write (`undefined` deletes a key).
+ * Exported so the disk-fallback write (`commitNoteFrontmatter`) encodes a flag
+ * byte-for-byte the same way the live session does — one translation, no drift.
+ */
+export function frontmatterPatchToYaml(patch: FrontmatterPatch): Record<string, unknown> {
   const yaml: Record<string, unknown> = {}
   if (patch.aliases !== undefined) {
     yaml.aliases = patch.aliases
@@ -608,7 +612,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     if (disposed || isProtected || status !== 'ready') {
       return false
     }
-    header = splitDoc(upsertFrontmatter(header + buffer, yamlPatch(patch))).header
+    header = splitDoc(upsertFrontmatter(header + buffer, frontmatterPatchToYaml(patch))).header
     dirty = header + buffer !== disk
     emit()
     if (dirty) {
@@ -618,6 +622,13 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
   }
 
   async function commitFrontmatter(patch: FrontmatterPatch): Promise<boolean> {
+    // No write channel (no graph generation yet) means the patch can't land —
+    // say so, rather than riding `updateFrontmatter`'s in-memory success while
+    // `save()` silently no-ops. A `true` here would let publish/pin/private
+    // skip their disk fallback and treat an unwritten flag as persisted.
+    if (io.write === null) {
+      return false
+    }
     if (!updateFrontmatter(patch)) {
       return false
     }
@@ -630,14 +641,12 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     // content and write it through. The park refreshes in place, so "load
     // theirs" adopts the patched bytes, and recording the write in `disk`
     // makes the watcher's echo a recognized no-op.
-    if (io.write !== null) {
-      const patched = upsertFrontmatter(conflict, yamlPatch(patch))
-      if (patched !== conflict) {
-        await io.write(path, patched)
-        conflict = patched
-        disk = patched
-        emit()
-      }
+    const patched = upsertFrontmatter(conflict, frontmatterPatchToYaml(patch))
+    if (patched !== conflict) {
+      await io.write(path, patched)
+      conflict = patched
+      disk = patched
+      emit()
     }
     return true
   }
