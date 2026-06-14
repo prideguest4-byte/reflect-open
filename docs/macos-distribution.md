@@ -78,11 +78,10 @@ pnpm release:macos --no-notarize   # signed-only build (runs locally; Gatekeeper
 The version is declared in three places that must move together —
 `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/src-tauri/Cargo.toml`, and the
 `reflect-open` entry in `Cargo.lock`. `pnpm release:bump` edits all three, commits the
-bump on a short-lived release branch, pushes that branch, and opens a PR back to the
-protected release branch. After the PR lands, `pnpm release:bump --tag-only` pushes the
-`v<version>` tag from the merged commit — and that tag push is what triggers the Release
-workflow to build, sign, notarize, and publish. You don't run `release:macos` by hand for
-a normal release.
+bump on a short-lived release branch, pushes that branch, opens and immediately merges a
+PR back to the protected release branch, then pushes the `v<version>` tag from the
+merged commit. That tag push triggers the Release workflow to build, sign, notarize, and
+publish. You don't run `release:macos` by hand for a normal release.
 
 ```bash
 pnpm release:bump                # cut the next beta: 0.2.0-beta.1 → 0.2.0-beta.2
@@ -91,7 +90,7 @@ pnpm release:bump patch          # 0.2.0 → 0.2.1   (also: minor, major)
 pnpm release:bump preminor       # open a new beta cycle: 0.2.0 → 0.3.0-beta.1
 pnpm release:bump 0.5.0-beta.1   # set an explicit version
 pnpm release:bump --dry-run      # show the plan, change nothing
-pnpm release:bump --tag-only     # after the release PR merges, push the release tag
+pnpm release:bump --tag-only     # recovery: push the tag for an already-merged bump
 ```
 
 Default (no argument) is `beta`, the common case on `next`. The script refuses to run on
@@ -99,19 +98,21 @@ a dirty tree or a branch out of sync with origin, refuses a version whose tag al
 exists, and locks each release to its branch — betas only from `next`, and stable
 versions only from `master` (a stable tag reaches `releases/latest` and auto-updates
 every stable install, so it must never be pushed from a branch whose code hasn't landed
-on `master`). It prints the plan and asks for confirmation (skip with `--yes`).
+on `master`). It requires the GitHub CLI (`gh`) for the protected-branch PR flow, merges
+the release PR immediately with admin bypass instead of waiting for CI, prints the plan,
+and asks for confirmation (skip with `--yes`).
 
 The typical flows:
 
-- **Beta** (on `next`): `pnpm release:bump`, merge the release PR, pull `next`, then
-  `pnpm release:bump --tag-only`.
+- **Beta** (on `next`): `pnpm release:bump`.
 - **Stable** (on `master`, after merging `next` → `master`): `pnpm release:bump stable`,
-  merge the release PR, pull `master`, then `pnpm release:bump --tag-only`. After that,
-  switch back to `next` and use `pnpm release:bump preminor` to open the next beta cycle.
+  then switch back to `next` and use `pnpm release:bump preminor` to open the next beta
+  cycle.
 
 `--direct` keeps the old direct-push behavior for repositories or maintainers that have
 an explicit ruleset bypass. With `--direct`, `--no-tag` bumps and pushes the branch
 without tagging, for when you want the version commit but aren't ready to release.
+`--tag-only` is a recovery path for a release PR that was merged without the tag push.
 
 ## Publishing to GitHub Releases
 

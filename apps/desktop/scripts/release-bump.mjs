@@ -4,9 +4,8 @@
 //   - apps/desktop/src-tauri/tauri.conf.json  (what release-macos.mjs reads)
 //   - apps/desktop/src-tauri/Cargo.toml       (the crate that gets compiled)
 //   - Cargo.lock                              (the reflect-open entry)
-// This script edits all three, commits the bump on a release branch, and opens
-// a PR back to the protected release branch. After the PR lands, run
-// `pnpm release:bump --tag-only` from the updated release branch to push the
+// This script edits all three, commits the bump on a release branch, opens and
+// immediately merges a PR back to the protected release branch, then pushes the
 // `v<version>` tag — which triggers the Release workflow
 // (.github/workflows/release.yml) to build, sign, notarize and publish.
 //
@@ -17,7 +16,7 @@
 //   pnpm release:bump patch|minor|major        Stable bump
 //   pnpm release:bump prepatch|preminor|premajor  Open a new beta cycle (…-beta.1)
 //   pnpm release:bump 0.5.0-beta.1   Set an explicit version
-//   pnpm release:bump --tag-only     Push the tag for the already-merged version bump
+//   pnpm release:bump --tag-only     Recovery: push the tag for an already-merged version bump
 //
 // Flags:
 //   --dry-run   Show the plan and exit; touch nothing
@@ -149,6 +148,15 @@ function run(command, args) {
   return { status: result.status, output: `${result.stdout ?? ''}${result.stderr ?? ''}` }
 }
 
+/** Assert the GitHub CLI is installed and authenticated. */
+function ensureGhReady() {
+  if (run('gh', ['--version']).status !== 0) {
+    fail('GitHub CLI not found — install it from https://cli.github.com and run `gh auth login`')
+  }
+  const auth = run('gh', ['auth', 'status'])
+  if (auth.status !== 0) fail(`gh is not authenticated — run \`gh auth login\`\n${auth.output.trim()}`)
+}
+
 /** The current branch name, or fail on a detached HEAD. */
 function currentBranch() {
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'])
@@ -192,6 +200,11 @@ function writeVersion(current, next) {
 /** Name the short-lived branch that carries the release bump PR. */
 function releaseBranchName(tag) {
   return `release/${tag}`
+}
+
+/** Block the current thread for short GitHub propagation waits. */
+function sleep(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
 }
 
 /** Confirm the destructive part of the run unless --yes was passed. */
@@ -250,33 +263,66 @@ async function pushTagOnly({ skipPrompt }) {
   log('track it in GitHub → Actions → Release.')
 }
 
-/** Create a GitHub PR for the pushed release branch when gh is available. */
+/** Create a GitHub PR for the pushed release branch and return its URL. */
 function createReleasePr({ releaseBranch, baseBranch, tag, version }) {
-  if (run('gh', ['--version']).status !== 0) {
-    log('GitHub CLI not found; create the release PR manually.')
-    console.log(`  gh pr create --base ${baseBranch} --head ${releaseBranch} --title "Release ${tag}"`)
-    return
-  }
-
   const body = [
     `Bumps Reflect to ${version}.`,
     '',
-    'After this PR merges, run:',
-    '',
-    '```bash',
-    `git switch ${baseBranch}`,
-    `git pull --ff-only origin ${baseBranch}`,
-    'pnpm release:bump --tag-only',
-    '```',
+    'The release bump script will merge this PR, pull the merged commit, and push the release tag.',
   ].join('\n')
   const create = run('gh', ['pr', 'create', '--base', baseBranch, '--head', releaseBranch, '--title', `Release ${tag}`, '--body', body])
   if (create.status === 0) {
-    log(`opened release PR: ${create.output.trim()}`)
-    return
+    const prUrl = create.output.trim()
+    log(`opened release PR: ${prUrl}`)
+    return prUrl
   }
 
-  log(`could not create the PR automatically:\n${create.output.trim()}`)
-  console.log(`  gh pr create --base ${baseBranch} --head ${releaseBranch} --title "Release ${tag}"`)
+  fail(`could not create the release PR:\n${create.output.trim()}`)
+}
+
+/** Merge the release PR immediately; this intentionally bypasses pending CI. */
+function mergeReleasePr({ prUrl, tag, version }) {
+  const merge = run('gh', [
+    'pr',
+    'merge',
+    prUrl,
+    '--squash',
+    '--delete-branch',
+    '--admin',
+    '--subject',
+    `Release ${tag}`,
+    '--body',
+    `Bump Reflect to ${version}.`,
+  ])
+  if (merge.status !== 0) fail(`could not merge the release PR:\n${merge.output.trim()}`)
+  log(`merged release PR: ${prUrl}`)
+}
+
+/** Wait until GitHub reports the PR merged and return the merge commit SHA. */
+function waitForMergedPr(prUrl) {
+  for (let attempt = 1; attempt <= 60; attempt += 1) {
+    const view = run('gh', ['pr', 'view', prUrl, '--json', 'state,mergeCommit'])
+    if (view.status !== 0) fail(`could not inspect the release PR:\n${view.output.trim()}`)
+    const pr = JSON.parse(view.output)
+    if (pr.state === 'MERGED' && pr.mergeCommit?.oid) return pr.mergeCommit.oid
+    if (pr.state === 'CLOSED') fail(`release PR closed without merging: ${prUrl}`)
+    if (attempt === 1) log('waiting for GitHub to report the merged release PR…')
+    sleep(5000)
+  }
+  fail(`timed out waiting for release PR to merge: ${prUrl}`)
+}
+
+/** Return to the release branch, fast-forward to the merge commit, and clean up. */
+function syncMergedReleaseBranch({ baseBranch, releaseBranch, mergeCommit }) {
+  git(['fetch', 'origin', baseBranch, '--tags'])
+  git(['switch', baseBranch])
+  git(['pull', '--ff-only', 'origin', baseBranch])
+  const head = git(['rev-parse', 'HEAD'])
+  if (head !== mergeCommit) {
+    fail(`local ${baseBranch} is at ${head.slice(0, 7)} but the release PR merged as ${mergeCommit.slice(0, 7)}`)
+  }
+  const deleteBranch = tryGit(['branch', '-D', releaseBranch])
+  if (deleteBranch.status !== 0) log(`could not delete local ${releaseBranch}: ${deleteBranch.output.trim()}`)
 }
 
 async function main() {
@@ -306,7 +352,7 @@ async function main() {
     return
   }
   if (noTag && !direct) {
-    fail('--no-tag only applies with --direct; PR mode always waits to tag until after merge')
+    fail('--no-tag only applies with --direct; PR mode always tags after merging the release PR')
   }
   const bump = positionals[0] ?? 'beta'
 
@@ -370,6 +416,7 @@ async function main() {
   }
 
   const releaseKind = isPrerelease ? 'pre-release' : 'release'
+  if (!direct) ensureGhReady()
   log(`current version: ${current}`)
   log(`next version:    ${next}  (${bump})`)
   log(`branch:          ${branch}  (in sync with origin)`)
@@ -382,13 +429,16 @@ async function main() {
   } else {
     console.log(`  - push ${releaseBranch} to origin`)
     console.log(`  - open a PR into ${branch}`)
+    console.log('  - merge the PR immediately with admin bypass')
+    console.log(`  - fast-forward ${branch} to the merged release commit`)
+    console.log(`  - tag ${tag} and push it → triggers the Release workflow (${releaseKind})`)
   }
   if (direct && noTag) {
     console.log('  - (skipping the tag — no release will be triggered)')
   } else if (direct) {
     console.log(`  - tag ${tag} and push it → triggers the Release workflow (${releaseKind})`)
   } else {
-    console.log(`  - after the PR merges, run \`pnpm release:bump --tag-only\` to push ${tag}`)
+    console.log('  - clean up the local release branch')
   }
 
   if (dryRun) {
@@ -410,8 +460,11 @@ async function main() {
     if (spawnSync('git', ['push', '-u', 'origin', releaseBranch], { cwd: repoRoot, stdio: 'inherit' }).status !== 0) {
       fail('pushing the release branch failed — resolve the issue and retry (nothing was tagged)')
     }
-    createReleasePr({ releaseBranch, baseBranch: branch, tag, version: next })
-    log(`release bump PR is ready. After it merges, run \`pnpm release:bump --tag-only\` from ${branch}.`)
+    const prUrl = createReleasePr({ releaseBranch, baseBranch: branch, tag, version: next })
+    mergeReleasePr({ prUrl, tag, version: next })
+    const mergeCommit = waitForMergedPr(prUrl)
+    syncMergedReleaseBranch({ baseBranch: branch, releaseBranch, mergeCommit })
+    await pushTagOnly({ skipPrompt: true })
     return
   }
 
@@ -450,7 +503,7 @@ Levels:
 
 Flags:
   --dry-run   show the plan and exit; change nothing
-  --tag-only  push the tag for an already-merged release bump
+  --tag-only  recovery: push the tag for an already-merged release bump
   --direct    push the bump commit directly to next/master and tag immediately
   --no-tag    with --direct, bump + push the branch, but don't tag (no release)
   --yes       skip the confirmation prompt
