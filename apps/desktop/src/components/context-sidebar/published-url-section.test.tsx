@@ -12,10 +12,19 @@ const operationFail = vi.hoisted(() => vi.fn())
 const startOperation = vi.hoisted(() =>
   vi.fn(() => ({ progress: vi.fn(), done: operationDone, fail: operationFail })),
 )
+const runGistPublish = vi.hoisted(() =>
+  vi.fn<(path: string, generation: number) => Promise<string | null>>(
+    async () => 'https://gist.github.com/alex/g1',
+  ),
+)
 
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn(async () => {}) }))
 vi.mock('@/hooks/use-note-row', () => ({ useNoteRow }))
+vi.mock('@/lib/note-gist', () => ({ runGistPublish }))
 vi.mock('@/lib/operations', () => ({ startOperation }))
+vi.mock('@/providers/graph-provider', () => ({
+  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 7 } }),
+}))
 
 function noteRow(overrides: Partial<NoteRow> = {}): NoteRow {
   return {
@@ -50,6 +59,7 @@ beforeEach(() => {
   useNoteRow.mockReset().mockReturnValue(null)
   vi.mocked(openUrl).mockClear()
   startOperation.mockClear()
+  runGistPublish.mockReset().mockResolvedValue('https://gist.github.com/alex/g1')
   operationDone.mockClear()
   operationFail.mockClear()
   Reflect.deleteProperty(navigator, 'clipboard')
@@ -95,6 +105,26 @@ describe('PublishedUrlSection', () => {
     expect(writeText).toHaveBeenCalledWith(url)
     expect(startOperation).toHaveBeenCalledWith('Published URL copied')
     expect(operationDone).toHaveBeenCalled()
+  })
+
+  it('updates the published gist from the URL section icon', async () => {
+    const url = 'https://gist.github.com/alex/g1'
+    useNoteRow.mockReturnValue(noteRow({ gistUrl: url }))
+
+    const view = renderSection()
+    await userEvent.click(view.getByRole('button', { name: 'Update published gist' }))
+
+    expect(runGistPublish).toHaveBeenCalledWith('notes/a.md', 7)
+  })
+
+  it('shows the stale update affordance beside the copy button', () => {
+    const url = 'https://gist.github.com/alex/g1'
+    useNoteRow.mockReturnValue(noteRow({ gistUrl: url, gistStale: true }))
+
+    const view = renderSection()
+    expect(view.getByRole('button', { name: 'Copy published URL' })).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Update published gist' })).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Update published gist' }).className).toContain('text-accent')
   })
 
   it('surfaces copy failures through the operations status', async () => {

@@ -92,6 +92,33 @@ export async function publishNoteToGist(path: string, generation: number): Promi
 }
 
 /**
+ * Delete the note's published GitHub Gist and remove the local `gist`
+ * frontmatter block. A missing local block is already unpublished, so this is a
+ * no-op. A remote 404 is success through {@link deleteGist}: the desired shared
+ * link is gone, and the local record can be cleared.
+ */
+export async function unpublishNoteGist(path: string, generation: number): Promise<void> {
+  const source = await readNoteSource(path)
+  const parsed = parseNote({ path, source })
+  if (parsed.frontmatterWarning !== undefined) {
+    throw new ReflectError('parse', 'The note has invalid frontmatter — fix it before unpublishing')
+  }
+
+  const previous = parsed.frontmatter.gist
+  if (previous === undefined) {
+    return
+  }
+
+  const token = await getGithubToken(providerFetch)
+  if (token === null) {
+    throw new ReflectError('auth', 'Connect GitHub in Settings to unpublish gists')
+  }
+
+  await deleteGist(token, previous.id, providerFetch)
+  await commitNoteFrontmatter(path, { gist: false }, generation)
+}
+
+/**
  * The publish action as both entry points run it (Note actions button, ⌘K
  * command): publish, copy the gist link, and surface progress through the
  * operations status line — the second short-lived entry is the only success
@@ -125,4 +152,22 @@ export async function runGistPublish(path: string, generation: number): Promise<
     startOperation('Copying the gist link').fail(errorMessage(cause))
   }
   return url
+}
+
+/**
+ * The unpublish action as the sidebar runs it: delete the remote gist, clear
+ * the local gist metadata, and hide the published URL optimistically while the
+ * index catches up.
+ */
+export async function runGistUnpublish(path: string, generation: number): Promise<boolean> {
+  const operation = startOperation('Unpublishing gist')
+  try {
+    await unpublishNoteGist(path, generation)
+  } catch (cause) {
+    operation.fail(errorMessage(cause))
+    return false
+  }
+  operation.done()
+  setNoteRowOverlay(path, generation, { gistUrl: null })
+  return true
 }

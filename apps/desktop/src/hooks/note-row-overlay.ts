@@ -24,13 +24,13 @@ import type { NoteRow } from '@reflect/core'
 
 /**
  * Index-row fields an action may assert ahead of the re-index. `gistUrl` is the
- * only one today (publishing always yields a concrete URL — never `null`, so a
- * publish can't be optimistically "unpublished"). `gistStale` is intentionally
- * absent: a body edited right after publishing keeps it `true`, which would
- * pin the overlay open forever and mute the republish nudge.
+ * only one today: publishing yields a concrete URL, and unpublishing yields
+ * `null`. `gistStale` is intentionally absent: a body edited right after
+ * publishing keeps it `true`, which would pin the overlay open forever and mute
+ * the update nudge.
  */
 export interface NoteRowOverlay {
-  readonly gistUrl?: string
+  readonly gistUrl?: string | null
 }
 
 interface OverlayEntry {

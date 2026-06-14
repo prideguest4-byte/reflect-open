@@ -28,7 +28,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 vi.mock('@/editor/open-documents', () => ({ openSession }))
 vi.mock('@/lib/operations', () => ({ startOperation }))
 
-const { publishNoteToGist, runGistPublish } = await import('./note-gist')
+const { publishNoteToGist, runGistPublish, runGistUnpublish, unpublishNoteGist } = await import('./note-gist')
 
 const PUBLISHED = { id: 'g1', htmlUrl: 'https://gist.github.com/alex/g1' }
 const BODY = '# A\n\nhello\n'
@@ -202,6 +202,46 @@ describe('publishNoteToGist', () => {
   })
 })
 
+describe('unpublishNoteGist', () => {
+  it('deletes the existing gist and removes the frontmatter block', async () => {
+    readNote.mockResolvedValue(REPUBLISH_SOURCE)
+    await expect(unpublishNoteGist('notes/a.md', 3)).resolves.toBeUndefined()
+
+    expect(deleteGist).toHaveBeenCalledWith('tok', 'g0', expect.any(Function))
+    expect(writeNote).toHaveBeenCalledWith('notes/a.md', BODY, 3)
+  })
+
+  it('routes the gist removal through the live session when the note is open', async () => {
+    const { session, commitFrontmatter } = fakeSession(REPUBLISH_SOURCE)
+    openSession.mockReturnValue(session)
+
+    await unpublishNoteGist('notes/a.md', 3)
+
+    expect(commitFrontmatter).toHaveBeenCalledWith({ gist: false })
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('is a no-op when the note has no gist block', async () => {
+    readNote.mockResolvedValue(BODY)
+
+    await unpublishNoteGist('notes/a.md', 3)
+
+    expect(deleteGist).not.toHaveBeenCalled()
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('asks for a GitHub connection before deleting the gist', async () => {
+    readNote.mockResolvedValue(REPUBLISH_SOURCE)
+    getGithubToken.mockResolvedValue(null)
+
+    await expect(unpublishNoteGist('notes/a.md', 3)).rejects.toMatchObject({
+      kind: 'auth',
+      message: expect.stringMatching(/connect github/i),
+    })
+    expect(deleteGist).not.toHaveBeenCalled()
+  })
+})
+
 describe('runGistPublish', () => {
   const writeText = vi.fn(async () => {})
 
@@ -261,5 +301,27 @@ describe('runGistPublish', () => {
     expect(startOperation).not.toHaveBeenCalledWith('Gist link copied')
     expect(operationDone).toHaveBeenCalledTimes(1) // the publish itself
     expect(operationFail).toHaveBeenCalledWith(expect.stringMatching(/not focused/i))
+  })
+})
+
+describe('runGistUnpublish', () => {
+  it('unpublishes and clears the published url in the optimistic overlay', async () => {
+    readNote.mockResolvedValue(REPUBLISH_SOURCE)
+
+    await expect(runGistUnpublish('notes/a.md', 3)).resolves.toBe(true)
+
+    expect(startOperation).toHaveBeenCalledWith('Unpublishing gist')
+    expect(operationDone).toHaveBeenCalled()
+    expect(getNoteRowOverlay('notes/a.md', 3)?.gistUrl).toBeNull()
+  })
+
+  it('surfaces failures and leaves no overlay', async () => {
+    readNote.mockResolvedValue(REPUBLISH_SOURCE)
+    getGithubToken.mockResolvedValue(null)
+
+    await expect(runGistUnpublish('notes/a.md', 3)).resolves.toBe(false)
+
+    expect(operationFail).toHaveBeenCalledWith(expect.stringMatching(/connect github/i))
+    expect(getNoteRowOverlay('notes/a.md', 3)).toBeNull()
   })
 })
