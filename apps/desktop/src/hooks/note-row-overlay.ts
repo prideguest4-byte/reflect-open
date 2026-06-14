@@ -81,6 +81,13 @@ export function setNoteRowOverlay(path: string, generation: number, patch: NoteR
     return
   }
   const existing = overlays.get(path)
+  // Never let an older generation's late write clobber a newer graph's overlay.
+  // Rust already rejects stale-generation file writes before a publish reaches
+  // here (the publish throws and never records an overlay), so this is defence
+  // in depth — the store owns the invariant rather than trusting the caller.
+  if (existing !== undefined && existing.generation > generation) {
+    return
+  }
   const base = existing?.generation === generation ? existing.overlay : {}
   overlays.set(path, { generation, overlay: { ...base, ...defined } })
   emit()

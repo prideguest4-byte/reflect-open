@@ -62,6 +62,20 @@ describe('setNoteRowOverlay', () => {
     expect(getNoteRowOverlay('notes/a.md', GEN + 1)).toBeNull()
     expect(getNoteRowOverlay('notes/a.md', undefined)).toBeNull()
   })
+
+  it('lets a newer generation replace an older overlay', () => {
+    setNoteRowOverlay('notes/a.md', GEN, { gistUrl: 'old' })
+    setNoteRowOverlay('notes/a.md', GEN + 1, { gistUrl: 'new' })
+    expect(getNoteRowOverlay('notes/a.md', GEN + 1)?.gistUrl).toBe('new')
+    expect(getNoteRowOverlay('notes/a.md', GEN)).toBeNull()
+  })
+
+  it('ignores an older generation late write, keeping the newer overlay', () => {
+    setNoteRowOverlay('notes/a.md', GEN + 1, { gistUrl: 'new' })
+    setNoteRowOverlay('notes/a.md', GEN, { gistUrl: 'stale' }) // older graph, resolved late
+    expect(getNoteRowOverlay('notes/a.md', GEN + 1)?.gistUrl).toBe('new')
+    expect(getNoteRowOverlay('notes/a.md', GEN)).toBeNull()
+  })
 })
 
 describe('useNoteRowOverlay', () => {
