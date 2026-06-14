@@ -93,6 +93,13 @@ export function BackupSection(): ReactElement {
     })
   }
 
+  async function confirmSignOut(): Promise<void> {
+    await action.run(async () => {
+      await signOut()
+      setSignOutOpen(false)
+    })
+  }
+
   return (
     <SettingsSection id="backup">
       <SettingsField
@@ -189,7 +196,7 @@ export function BackupSection(): ReactElement {
                         <Button
                           variant="destructive"
                           disabled={action.pending}
-                          onClick={() => void action.run(signOut)}
+                          onClick={() => void confirmSignOut()}
                         >
                           Sign out
                         </Button>

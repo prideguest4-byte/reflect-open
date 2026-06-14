@@ -106,5 +106,8 @@ describe('BackupSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
 
     await waitFor(() => expect(sync.signOut).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Sign out of GitHub?' })).toBeNull(),
+    )
   })
 })
