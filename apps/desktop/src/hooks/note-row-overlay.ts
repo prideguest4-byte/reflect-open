@@ -93,7 +93,14 @@ export function setNoteRowOverlay(path: string, generation: number, patch: NoteR
   emit()
 }
 
-/** The overlay for `path` on `generation`, or `null` when none applies. */
+/**
+ * The overlay for `path` on `generation`, or `null` when none applies. Readers
+ * (here and {@link useNoteRowOverlay}) accept `undefined` — the graph may not
+ * have loaded yet — and report no overlay; writers always hold a concrete
+ * generation, so {@link setNoteRowOverlay}/{@link reconcileNoteRowOverlay}
+ * require one. Keep that asymmetry: it is the load-state boundary, not an
+ * inconsistency to unify.
+ */
 export function getNoteRowOverlay(path: string, generation: number | undefined): NoteRowOverlay | null {
   if (generation === undefined) {
     return null

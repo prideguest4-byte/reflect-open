@@ -108,6 +108,14 @@ describe('reconcileNoteRowOverlay', () => {
     act(() => reconcileNoteRowOverlay('notes/a.md', GEN, null))
     expect(result.current?.gistUrl).toBe(URL)
   })
+
+  it('holds an overlay whose generation does not match the reconciling read', () => {
+    setNoteRowOverlay('notes/a.md', GEN, { gistUrl: URL })
+    // A reconcile on a *different* generation can't retire this overlay — even
+    // when the row's value matches — so a stale-graph read never drops it.
+    reconcileNoteRowOverlay('notes/a.md', GEN + 1, noteRow({ gistUrl: URL }))
+    expect(getNoteRowOverlay('notes/a.md', GEN)?.gistUrl).toBe(URL)
+  })
 })
 
 describe('resetNoteRowOverlays', () => {
