@@ -49,7 +49,7 @@ beforeEach(() => {
 describe('SimilarNotesSection', () => {
   it('renders nothing at all when the note has no semantic neighbors', async () => {
     const view = renderSimilar('daily/2026-06-09.md', false)
-    await waitFor(() => expect(relatedNotes).toHaveBeenCalledWith('daily/2026-06-09.md'))
+    await waitFor(() => expect(relatedNotes).toHaveBeenCalledWith('daily/2026-06-09.md', 6))
     expect(view.container.firstChild).toBeNull()
     view.unmount()
   })
@@ -97,9 +97,30 @@ describe('SimilarNotesSection', () => {
     await view.findByText('Rust')
     expect(view.getByText('Similar notes')).toBeDefined()
     expect(view.getByText('Zig')).toBeDefined()
+    const rustRow = view.getByRole('button', { name: 'Rust' })
+    expect(rustRow.className).toContain('px-3')
+    expect(rustRow.parentElement?.className ?? '').not.toContain('-mx-1')
     // V1 rows are bare titles — snippets never render here.
     expect(view.queryByText('borrow checker notes')).toBeNull()
     expect(view.queryByText('comptime experiments')).toBeNull()
+    view.unmount()
+  })
+
+  it('shows no more than six neighbors', async () => {
+    relatedNotes.mockResolvedValue(
+      Array.from({ length: 7 }, (_, index) => ({
+        path: `notes/note-${index + 1}.md`,
+        title: `Note ${index + 1}`,
+        score: 1 - index / 10,
+        snippet: `snippet ${index + 1}`,
+        heading: null,
+        isPrivate: false,
+      })),
+    )
+    const view = renderSimilar('notes/languages.md', false)
+    await view.findByText('Note 6')
+    expect(view.queryByText('Note 7')).toBeNull()
+    expect(relatedNotes).toHaveBeenCalledWith('notes/languages.md', 6)
     view.unmount()
   })
 
