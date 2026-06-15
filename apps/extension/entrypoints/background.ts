@@ -3,8 +3,10 @@ import { defineBackground } from '#imports'
 import { SAVE_CURRENT_PAGE_COMMAND } from '@/lib/commands'
 import { flushQueue } from '@/lib/flush'
 import { isFlushRequest } from '@/lib/messages'
+import { readIncludePageTextPreference } from '@/lib/popup-preferences'
 import { saveCapture } from '@/lib/save-capture'
 import { snapshotTab } from '@/lib/snapshot-active-tab'
+import { tryExtractPageText } from './popup/extract-page-text'
 
 /**
  * The MV3 service worker owns retries and the shortcut fast path. Every
@@ -22,9 +24,13 @@ async function saveTabWithDefaults(tab: Parameters<typeof snapshotTab>[0]): Prom
   if (captured.status !== 'ready') {
     return
   }
+  const contentText = (await readIncludePageTextPreference())
+    ? await tryExtractPageText(captured.tabId, captured.page.url)
+    : undefined
   const outcome = await saveCapture(
     {
       ...captured.page,
+      contentText,
       id: crypto.randomUUID(),
       capturedAt: new Date(),
     },

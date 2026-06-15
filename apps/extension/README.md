@@ -1,12 +1,12 @@
 # Reflect Capture (Chrome extension)
 
 Save the page you're reading into Reflect: ⌘⇧K saves immediately with default
-settings, while the toolbar button opens the capture popup for an optional
-note. Captures include the page URL, title, selection, and screenshot when
-Chrome allows them, then hand off to the **installed desktop app** through a
-local native-messaging host. No Reflect-hosted services are involved, and
-capture works even while the app is closed: the host spools into the graph's
-capture inbox
+settings, including the stored page-text preference, while the toolbar button
+opens the capture popup for an optional note. Captures include the page URL,
+title, selection, screenshot, and optional page text when Chrome allows them,
+then hand off to the **installed desktop app** through a local native-messaging
+host. No Reflect-hosted services are involved, and capture works even while the
+app is closed: the host spools into the graph's capture inbox
 (`<graph>/.reflect/inbox/`), and the app drains it on next launch.
 [Plan 11](../../docs/plans/11-link-capture.md) is the design doc.
 
