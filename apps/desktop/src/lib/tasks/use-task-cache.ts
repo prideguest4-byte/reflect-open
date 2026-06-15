@@ -18,8 +18,15 @@ export interface TaskCacheWriter {
   snapshot: () => Promise<TaskCacheSnapshot>
   /** Optimistically rewrite the open and completed lists at once. */
   patch: (open: TaskListPatch, completed: TaskListPatch) => void
-  /** Restore both lists from a snapshot and surface the failure once. */
+  /** Restore both lists from a snapshot and surface the failure once (single-write undo). */
   rollback: (captured: TaskCacheSnapshot | undefined, label: string, cause: unknown) => void
+  /**
+   * Refetch both lists from the index and surface the failure once. For a **batch**
+   * where some writes may have already landed, restoring the pre-batch snapshot
+   * would wrongly un-do the persisted ones (and could clobber a fresher reindex);
+   * invalidating reconciles the cache to disk truth instead.
+   */
+  reconcile: (label: string, cause: unknown) => void
 }
 
 /**
@@ -69,5 +76,11 @@ export function useTaskCacheWriter(): TaskCacheWriter {
     startOperation(label).fail(errorMessage(cause))
   }
 
-  return { snapshot, patch, rollback }
+  const reconcile = (label: string, cause: unknown): void => {
+    void queryClient.invalidateQueries({ queryKey: openKey })
+    void queryClient.invalidateQueries({ queryKey: completedKey })
+    startOperation(label).fail(errorMessage(cause))
+  }
+
+  return { snapshot, patch, rollback, reconcile }
 }

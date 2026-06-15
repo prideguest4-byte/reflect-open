@@ -614,4 +614,22 @@ describe('TasksScreen', () => {
     await view.findByText('project task')
     view.unmount()
   })
+
+  it('refetches (does not restore a stale snapshot) when a bulk complete fails', async () => {
+    toggleTask.mockRejectedValue(new Error('stale index'))
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] second', text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByRole('button', { name: 'first' })
+    await userEvent.keyboard('{Meta>}a{/Meta}')
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    await waitFor(() => expect(fail).toHaveBeenCalledWith('stale index'))
+    // A batch failure reconciles by refetching the index, not by restoring the
+    // pre-batch snapshot (which would un-do any write that already landed).
+    await waitFor(() => expect(getOpenTasks.mock.calls.length).toBeGreaterThan(1))
+    view.unmount()
+  })
 })

@@ -68,8 +68,10 @@ export function useTaskActions(): TaskActions {
       markRecentlyCompleted(root, tasks)
       return snapshot
     },
-    onError: (cause, tasks, context) => {
-      cache.rollback(context, 'Completing tasks', cause)
+    onError: (cause, tasks) => {
+      // A batch can fail after earlier writes landed — refetch truth rather than
+      // restore a snapshot that would un-do the ones that persisted.
+      cache.reconcile('Completing tasks', cause)
       forgetRecentlyCompleted(root, tasks.map(taskKey))
     },
   })
@@ -95,7 +97,7 @@ export function useTaskActions(): TaskActions {
       forgetRecentlyCompleted(root, tasks.map(taskKey))
       return snapshot
     },
-    onError: (cause, _tasks, context) => cache.rollback(context, 'Deleting tasks', cause),
+    onError: (cause) => cache.reconcile('Deleting tasks', cause),
   })
 
   const editMutation = useMutation({
@@ -144,8 +146,10 @@ export function useTaskActions(): TaskActions {
       markRecentlyCompleted(root, [edited])
       return snapshot
     },
-    onError: (cause, { task }, context) => {
-      cache.rollback(context, 'Completing task', cause)
+    onError: (cause, { task }) => {
+      // Two sequential writes (edit then toggle) — if the toggle fails after the
+      // edit lands, refetch rather than roll back over the persisted edit.
+      cache.reconcile('Completing task', cause)
       forgetRecentlyCompleted(root, [taskKey(task)])
     },
   })
