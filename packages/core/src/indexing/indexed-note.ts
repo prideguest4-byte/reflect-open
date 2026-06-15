@@ -38,9 +38,10 @@ import { previewSnippet } from './snippet'
  * carried `modifiedMs` (hash-reconcile can never refresh them) ·
  * 4 — `notes.has_conflict` (sync conflict markers, Plan 12) ·
  * 5 — `notes.gist_url` + `notes.gist_stale` (gist publishing) ·
- * 6 — rendered Markdown escapes in titles, wiki-link targets, and previews.
+ * 6 — rendered Markdown escapes in titles, wiki-link targets, and previews ·
+ * 7 — `tasks` projection from GFM checkbox items.
  */
-export const PROJECTION_VERSION = 6
+export const PROJECTION_VERSION = 7
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
@@ -67,6 +68,18 @@ export const indexedAliasSchema = z.object({
 })
 export type IndexedAlias = z.infer<typeof indexedAliasSchema>
 
+export const indexedTaskSchema = z.object({
+  /** Source index of `[ ]` or `[x]` in UTF-16 code units. */
+  markerOffset: z.number(),
+  /** Inline task text rendered without markdown syntax. */
+  text: z.string(),
+  /** Exact source slice guarded before marker write-back. */
+  raw: z.string(),
+  /** Completion state derived from the markdown marker. */
+  checked: z.boolean(),
+})
+export type IndexedTask = z.infer<typeof indexedTaskSchema>
+
 export const indexedNoteSchema = z.object({
   path: z.string(),
   id: z.string().nullable(),
@@ -92,6 +105,7 @@ export const indexedNoteSchema = z.object({
   tags: z.array(indexedTagSchema),
   aliases: z.array(indexedAliasSchema),
   assets: z.array(z.string()),
+  tasks: z.array(indexedTaskSchema),
 })
 export type IndexedNote = z.infer<typeof indexedNoteSchema>
 
@@ -149,5 +163,11 @@ export function buildIndexedNote(
       aliasKey: foldKey(alias),
     })),
     assets: parsed.assets.map((asset) => asset.path),
+    tasks: parsed.tasks.map((task) => ({
+      markerOffset: task.markerOffset,
+      text: task.text,
+      raw: task.raw,
+      checked: task.checked,
+    })),
   }
 }

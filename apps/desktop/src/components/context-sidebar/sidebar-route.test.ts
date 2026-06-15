@@ -34,7 +34,8 @@ describe('contextSidebarTarget', () => {
     })
   })
 
-  it('shows no context sidebar on search and settings routes', () => {
+  it('shows no context sidebar on non-note routes', () => {
+    expect(contextSidebarTarget({ kind: 'tasks' }, TODAY)).toBeNull()
     expect(contextSidebarTarget({ kind: 'search', query: 'rust' }, TODAY)).toBeNull()
     expect(contextSidebarTarget({ kind: 'settings' }, TODAY)).toBeNull()
   })

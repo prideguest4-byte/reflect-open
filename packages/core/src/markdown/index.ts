@@ -16,6 +16,7 @@ export {
   type MarkdownLink,
   type Heading,
   type AssetRef,
+  type ParsedTask,
   type ParsedNote,
 } from './model'
 export {
@@ -33,7 +34,13 @@ export {
   type InlineWikiLink,
   type InlineImage,
 } from './scan'
-export { appendBlock, appendUnderHeading, renameWikiLink } from './edit'
+export {
+  TaskStaleError,
+  appendBlock,
+  appendUnderHeading,
+  renameWikiLink,
+  toggleTaskMarker,
+} from './edit'
 export {
   detectConflictMarkers,
   resolveConflictMarkers,

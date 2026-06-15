@@ -124,3 +124,67 @@ describe('parseNote — links, assets, tags, text', () => {
     expect(note.tags).toEqual(['tag'])
   })
 })
+
+describe('parseNote — tasks', () => {
+  it('extracts unchecked and checked GFM tasks with raw source and marker offsets', () => {
+    const source = '- [ ] buy milk\n- [x] call mum\n'
+    const note = parse(source)
+    expect(note.tasks).toEqual([
+      {
+        text: 'buy milk',
+        raw: '[ ] buy milk',
+        checked: false,
+        markerOffset: 2,
+      },
+      {
+        text: 'call mum',
+        raw: '[x] call mum',
+        checked: true,
+        markerOffset: source.indexOf('[x]'),
+      },
+    ])
+  })
+
+  it('uses original-file offsets when frontmatter is present', () => {
+    const source = '---\nprivate: true\n---\n- [ ] secret local task\n'
+    const note = parse(source)
+    expect(note.frontmatter.private).toBe(true)
+    expect(note.tasks).toEqual([
+      expect.objectContaining({
+        text: 'secret local task',
+        raw: '[ ] secret local task',
+        checked: false,
+        markerOffset: source.indexOf('[ ]'),
+      }),
+    ])
+  })
+
+  it('renders task text without inline markdown syntax', () => {
+    const note = parse('- [ ] buy **milk** for [[Home]] #errand and [site](https://example.com)\n')
+    expect(note.tasks).toEqual([
+      expect.objectContaining({
+        text: 'buy milk for Home #errand and site',
+        raw: '[ ] buy **milk** for [[Home]] #errand and [site](https://example.com)',
+      }),
+    ])
+  })
+
+  it('keeps task markers in code blocks out of the task projection', () => {
+    const note = parse('```\n- [ ] not a task\n```\n\n- [ ] real task\n')
+    expect(note.tasks).toEqual([
+      expect.objectContaining({
+        text: 'real task',
+        raw: '[ ] real task',
+      }),
+    ])
+  })
+
+  it('extracts tasks from daily and regular notes without scheduling', () => {
+    expect(parse('- [ ] daily task\n', 'daily/2026-06-12.md').tasks[0]).toEqual(
+      expect.objectContaining({ text: 'daily task' }),
+    )
+    expect(parse('- [ ] note task\n', 'notes/project.md').tasks[0]).toEqual(
+      expect.objectContaining({ text: 'note task' }),
+    )
+  })
+})

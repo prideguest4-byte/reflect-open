@@ -47,6 +47,13 @@ const APP_COMMANDS: AppCommand[] = [
     run: (context) => context.navigate({ kind: 'allNotes', tag: null }),
   },
   {
+    id: 'nav.tasks',
+    title: 'Tasks',
+    keywords: ['todo', 'checkbox', 'task list'],
+    keybinding: 'Mod-t',
+    run: (context) => context.navigate({ kind: 'tasks' }),
+  },
+  {
     id: 'note.new',
     title: 'New note',
     keywords: ['create'],

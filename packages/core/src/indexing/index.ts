@@ -34,11 +34,13 @@ export {
   indexedLinkSchema,
   indexedTagSchema,
   indexedAliasSchema,
+  indexedTaskSchema,
   PROJECTION_VERSION,
   type IndexedNote,
   type IndexedLink,
   type IndexedTag,
   type IndexedAlias,
+  type IndexedTask,
 } from './indexed-note'
 export {
   indexNote,
@@ -84,6 +86,14 @@ export {
   type RecentNoteRow,
   type RecentNotesOptions,
 } from './note-list'
+export {
+  listTaskGroups,
+  toggleIndexedTask,
+  type TaskGroupKind,
+  type TaskListEntry,
+  type TaskListGroup,
+  type ToggleTaskOptions,
+} from './tasks'
 export { rankWikiSuggestions, type WikiSuggestion } from './suggest'
 export {
   parseHighlights,

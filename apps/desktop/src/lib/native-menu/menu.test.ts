@@ -21,7 +21,7 @@ describe('appMenuLayout', () => {
   it('surfaces every ported V1 menu shortcut', () => {
     const referenced = new Set(referencedCommandIds())
     // The V1 Electron menu items that have a V2 command: Preferences ⌘,
-    // New Note ⌘N, Search ⌘K, Select Daily Note ⌘D, All Notes ⌘⇧A,
+    // New Note ⌘N, Search ⌘K, Select Daily Note ⌘D, All Notes ⌘⇧A, Tasks ⌘T,
     // Back ⌘[, Forward ⌘], Open Shortcuts ⌘/.
     for (const commandId of [
       'settings.open',
@@ -29,6 +29,7 @@ describe('appMenuLayout', () => {
       'palette.open',
       'nav.today',
       'nav.allNotes',
+      'nav.tasks',
       'history.back',
       'history.forward',
       'shortcuts.show',
@@ -36,6 +37,7 @@ describe('appMenuLayout', () => {
       expect(referenced).toContain(commandId)
     }
     expect(keybindingFor('nav.allNotes')).toBe('Mod-Shift-a')
+    expect(keybindingFor('nav.tasks')).toBe('Mod-t')
   })
 
   it('lists each command at most once across the whole menu', () => {

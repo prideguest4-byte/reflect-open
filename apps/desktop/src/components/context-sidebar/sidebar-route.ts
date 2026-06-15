@@ -9,7 +9,7 @@ export type ContextSidebarTarget =
  * The subject of the context sidebar for `route`, or `null` when the route
  * gets none: the `today` route follows the live clock, a `daily/:date` route
  * uses its date (real by the router's `normalizeRoute` invariant), a `note`
- * route uses its path, and `allNotes`/`search`/`chat`/`settings` routes show
+ * route uses its path, and `allNotes`/`tasks`/`search`/`chat`/`settings` routes show
  * no note context.
  */
 export function contextSidebarTarget(route: Route, today: string): ContextSidebarTarget | null {
@@ -21,6 +21,7 @@ export function contextSidebarTarget(route: Route, today: string): ContextSideba
     case 'note':
       return { kind: 'note', path: route.path }
     case 'allNotes':
+    case 'tasks':
     case 'search':
     case 'chat':
     case 'settings':

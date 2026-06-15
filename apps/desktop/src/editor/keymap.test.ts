@@ -35,6 +35,7 @@ describe('keymap registry', () => {
     expect(bindings.get('Mod-b')).toBe('editor')
     expect(bindings.get('Mod-i')).toBe('editor')
     expect(bindings.get('Mod-e')).toBe('editor')
+    expect(bindings.get('Mod-Enter')).toBe('editor')
   })
 })
 
@@ -46,5 +47,20 @@ describe('heading toggles', () => {
     expect(runBinding(stateWithSelection('# hello', 2, 2), 'Mod-2')).toBe('## hello')
     expect(runBinding(stateWithSelection('hello', 2, 2), 'Mod-3')).toBe('### hello')
     expect(runBinding(stateWithSelection('### hello', 2, 2), 'Mod-3')).toBe('hello')
+  })
+})
+
+describe('task toggles', () => {
+  it('toggles the task under the cursor', () => {
+    expect(runBinding(stateWithSelection('- [ ] buy milk', 4, 4), 'Mod-Enter')).toBe(
+      '- [x] buy milk',
+    )
+    expect(runBinding(stateWithSelection('- [x] buy milk', 4, 4), 'Mod-Enter')).toBe(
+      '- [ ] buy milk',
+    )
+  })
+
+  it('converts a plain bullet under the cursor into an unchecked task', () => {
+    expect(runBinding(stateWithSelection('- buy milk', 3, 3), 'Mod-Enter')).toBe('- [ ] buy milk')
   })
 })

@@ -14,6 +14,14 @@ interface Splice {
   text: string
 }
 
+/** The indexed task slice no longer matches the markdown source. */
+export class TaskStaleError extends Error {
+  constructor(message = 'Task changed before it could be toggled. Reindex and try again.') {
+    super(message)
+    this.name = 'TaskStaleError'
+  }
+}
+
 /** Apply non-overlapping splices, right-to-left so earlier offsets stay valid. */
 function applySplices(source: string, splices: Splice[]): string {
   let result = source
@@ -44,6 +52,31 @@ export function renameWikiLink(source: string, from: string, to: string): string
       text: link.alias ? `[[${to}|${link.alias}]]` : `[[${to}]]`,
     }))
   return applySplices(source, splices)
+}
+
+/**
+ * Toggle exactly one GFM task marker (`[ ]` ↔ `[x]`) at `markerOffset`.
+ * `expectedRaw` is the indexed source slice from the marker through the task
+ * node; if it no longer matches, the caller is looking at a stale projection
+ * and must reindex rather than editing the wrong bytes.
+ */
+export function toggleTaskMarker(
+  source: string,
+  markerOffset: number,
+  expectedRaw: string,
+): { source: string; checked: boolean } {
+  const marker = source.slice(markerOffset, markerOffset + 3)
+  if (marker !== '[ ]' && marker.toLowerCase() !== '[x]') {
+    throw new TaskStaleError()
+  }
+  if (source.slice(markerOffset, markerOffset + expectedRaw.length) !== expectedRaw) {
+    throw new TaskStaleError()
+  }
+  const checked = marker === '[ ]'
+  return {
+    source: `${source.slice(0, markerOffset)}${checked ? '[x]' : '[ ]'}${source.slice(markerOffset + 3)}`,
+    checked,
+  }
 }
 
 function nextSectionStart(headings: Heading[], target: Heading, eof: number): number {

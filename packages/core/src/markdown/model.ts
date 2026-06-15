@@ -142,6 +142,17 @@ export interface AssetRef extends Span {
   path: string
 }
 
+/** One GFM checkbox task (`- [ ]` / `- [x]`) extracted from markdown. */
+export interface ParsedTask {
+  /** Inline text rendered without markdown syntax. */
+  text: string
+  /** Exact source slice from the marker through the task node, used as the write guard. */
+  raw: string
+  checked: boolean
+  /** Source index of `[ ]` or `[x]` in UTF-16 code units. */
+  markerOffset: number
+}
+
 /** Version of the extraction contract; bump on breaking shape changes. */
 export const PARSED_NOTE_VERSION = 1
 
@@ -162,6 +173,7 @@ export interface ParsedNote {
   tags: string[]
   headings: Heading[]
   assets: AssetRef[]
+  tasks: ParsedTask[]
   /** Plain-text rendering of the body for FTS (Plan 08) + AI context (Plan 10). */
   text: string
 }

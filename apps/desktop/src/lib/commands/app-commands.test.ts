@@ -94,6 +94,7 @@ describe('keybindingFor', () => {
   it('returns the binding UI hints derive from', () => {
     expect(keybindingFor('nav.today')).toBe('Mod-d')
     expect(keybindingFor('nav.allNotes')).toBe('Mod-Shift-a')
+    expect(keybindingFor('nav.tasks')).toBe('Mod-t')
     expect(keybindingFor('palette.open')).toBe('Mod-k')
   })
 
@@ -112,10 +113,11 @@ describe('keybindingFor', () => {
 })
 
 describe('app commands', () => {
-  it('nav.today, history, palette, theme, and sidebar commands hit their capabilities', async () => {
+  it('nav, history, palette, theme, and sidebar commands hit their capabilities', async () => {
     const { context, navigated } = fakeContext()
     await command('nav.today').run(context)
-    expect(navigated).toEqual([{ kind: 'today' }])
+    await command('nav.tasks').run(context)
+    expect(navigated).toEqual([{ kind: 'today' }, { kind: 'tasks' }])
     await command('history.back').run(context)
     expect(context.back).toHaveBeenCalled()
     await command('history.forward').run(context)

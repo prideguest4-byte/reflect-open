@@ -9,6 +9,7 @@ import type {
   Heading,
   MarkdownLink,
   ParsedNote,
+  ParsedTask,
   Span,
   WikiLink,
 } from './model'
@@ -206,6 +207,52 @@ function collectTags(body: string, excluded: Span[], into: Map<string, string>):
   }
 }
 
+interface PendingTask {
+  from: number
+  to: number
+  markerFrom: number
+  markerTo: number
+}
+
+function taskText(
+  body: string,
+  task: PendingTask,
+  cuts: Span[],
+  literalRanges: Span[],
+): string {
+  const bodyFrom = task.markerTo
+  return buildPlainText(
+    body.slice(bodyFrom, task.to),
+    cuts
+      .filter((cut) => cut.to > bodyFrom && cut.from < task.to)
+      .map((cut) => ({
+        from: Math.max(cut.from, bodyFrom) - bodyFrom,
+        to: Math.min(cut.to, task.to) - bodyFrom,
+      })),
+    literalRanges
+      .filter((range) => range.to > bodyFrom && range.from < task.to)
+      .map((range) => ({
+        from: Math.max(range.from, bodyFrom) - bodyFrom,
+        to: Math.min(range.to, task.to) - bodyFrom,
+      })),
+  )
+}
+
+function buildTasks(
+  body: string,
+  tasks: PendingTask[],
+  cuts: Span[],
+  literalRanges: Span[],
+  offset: number,
+): ParsedTask[] {
+  return tasks.map((task) => ({
+    text: taskText(body, task, cuts, literalRanges),
+    raw: body.slice(task.from, task.to),
+    checked: body.slice(task.markerFrom, task.markerTo).toLowerCase() === '[x]',
+    markerOffset: task.markerFrom + offset,
+  }))
+}
+
 /**
  * The title the note's *content* authors — explicit frontmatter `title:`,
  * else the first non-empty H1 — or `null` when {@link deriveTitle} would fall
@@ -256,6 +303,8 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   const links: MarkdownLink[] = []
   const headings: Heading[] = []
   const assets: AssetRef[] = []
+  const tasks: PendingTask[] = []
+  const taskStack: PendingTask[] = []
   const cuts: Span[] = [] // body coords — syntax to drop from plain text
   const tagExcluded: Span[] = [] // body coords — regions that don't yield tags
   const literalPlainText: Span[] = [] // body coords — regions that render backslashes literally
@@ -279,6 +328,20 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
         return false
       }
 
+      if (name === 'Task') {
+        taskStack.push({ from, to, markerFrom: -1, markerTo: -1 })
+        return true
+      }
+
+      if (name === 'TaskMarker') {
+        const current = taskStack.at(-1)
+        if (current) {
+          current.markerFrom = from
+          current.markerTo = to
+        }
+        return true
+      }
+
       const headingLevel = headingLevelOf(name)
       if (headingLevel) {
         const text = cleanHeadingText(body.slice(from, to))
@@ -300,6 +363,15 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
 
       return true
     },
+    leave: (node) => {
+      if (node.name !== 'Task') {
+        return
+      }
+      const task = taskStack.pop()
+      if (task && task.markerFrom !== -1 && task.markerTo !== -1) {
+        tasks.push(task)
+      }
+    },
   })
 
   const tags = new Map<string, string>()
@@ -316,6 +388,7 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
     tags: [...tags.values()],
     headings,
     assets,
+    tasks: buildTasks(body, tasks, cuts, literalPlainText, bodyOffset),
     text: buildPlainText(body, cuts, literalPlainText),
   }
 }

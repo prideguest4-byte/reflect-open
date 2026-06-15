@@ -114,6 +114,14 @@ export interface Tags {
   tagKey: Generated<string>;
 }
 
+export interface Tasks {
+  checked: number;
+  markerOffset: number;
+  notePath: string;
+  raw: string;
+  text: string;
+}
+
 export interface DB {
   aliases: Aliases;
   assets: Assets;
@@ -128,4 +136,5 @@ export interface DB {
   noteText: NoteText;
   searchFts: SearchFts;
   tags: Tags;
+  tasks: Tasks;
 }

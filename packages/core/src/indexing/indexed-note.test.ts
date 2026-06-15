@@ -7,7 +7,7 @@ describe('buildIndexedNote', () => {
     const source =
       '---\nid: 01H\naliases: [PJX, "Proj X"]\nprivate: true\npinned: true\n---\n' +
       '# Project X\n\nLinks [[Charlotte]] and [[Note|alias]] and #status. ' +
-      'See [site](https://x.com) and ![p](assets/p.png).'
+      'See [site](https://x.com) and ![p](assets/p.png).\n\n- [ ] Follow up'
     const indexed = buildIndexedNote(parseNote({ path: 'notes/project-x.md', source }), {
       fileHash: 'abc',
       mtime: 123,
@@ -40,6 +40,14 @@ describe('buildIndexedNote', () => {
       true,
     )
     expect(indexed.assets).toEqual(['assets/p.png'])
+    expect(indexed.tasks).toEqual([
+      {
+        markerOffset: source.indexOf('[ ]'),
+        text: 'Follow up',
+        raw: '[ ] Follow up',
+        checked: false,
+      },
+    ])
   })
 
   it('derives the list preview and folded tag keys at index time', () => {

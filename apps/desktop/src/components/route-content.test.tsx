@@ -1,8 +1,10 @@
 import { act, render, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { setBridge } from '@reflect/core'
+import type { TaskListGroup } from '@reflect/core'
 import { PaletteProvider, usePalette } from '@/components/command-palette/palette-provider'
 import { flushOpenDocuments } from '@/editor/open-documents'
 import type { NoteEditorHandle } from '@/editor/note-editor'
@@ -55,17 +57,24 @@ vi.mock('@/editor/note-editor', async () => {
 
 const indexFns = vi.hoisted(() => ({
   getBacklinksWithContext: vi.fn(async () => []),
+  listTaskGroups: vi.fn<() => Promise<TaskListGroup[]>>(async () => [
+    { key: 'current', kind: 'current', title: 'Current', notePath: null, tasks: [] },
+  ]),
   relatedNotes: vi.fn(async () => []),
+  toggleIndexedTask: vi.fn(async () => true),
 }))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   getBacklinksWithContext: indexFns.getBacklinksWithContext,
+  listTaskGroups: indexFns.listTaskGroups,
   relatedNotes: indexFns.relatedNotes,
+  toggleIndexedTask: indexFns.toggleIndexedTask,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({
     graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 },
+    indexGeneration: 2,
     indexing: false,
   }),
 }))
@@ -108,6 +117,12 @@ beforeEach(() => {
   writes = []
   editorProbe.onChange = null
   editorProbe.focusCalls.length = 0
+  indexFns.listTaskGroups.mockReset()
+  indexFns.listTaskGroups.mockResolvedValue([
+    { key: 'current', kind: 'current', title: 'Current', notePath: null, tasks: [] },
+  ])
+  indexFns.toggleIndexedTask.mockReset()
+  indexFns.toggleIndexedTask.mockResolvedValue(true)
   mockInvoke.mockReset()
   mockInvoke.mockImplementation(async (command, args) => {
     if (command === 'note_read') {
@@ -237,6 +252,52 @@ describe('RouteContent', () => {
     expect(view.getByRole('button', { name: '#book' })).toBeDefined()
     await view.findByText('Subject')
     expect(view.getByText('No notes yet.')).toBeDefined()
+    view.unmount()
+  })
+
+  it('renders the Tasks screen for the tasks route, not the stream', async () => {
+    const view = renderRoute({ kind: 'tasks' })
+    expect(view.getByLabelText('Tasks')).toBeDefined()
+    expect(view.queryByTestId('daily-stream')).toBeNull()
+    await view.findByText('Current')
+    view.unmount()
+  })
+
+  it('toggles a task from the Tasks screen through the guarded core action', async () => {
+    indexFns.listTaskGroups.mockResolvedValue([
+      {
+        key: 'current',
+        kind: 'current',
+        title: 'Current',
+        notePath: null,
+        tasks: [
+          {
+            notePath: 'daily/2026-06-15.md',
+            markerOffset: 2,
+            text: 'Ship tasks',
+            raw: '[ ] Ship tasks',
+            checked: false,
+            noteTitle: '2026-06-15',
+            dailyDate: '2026-06-15',
+            isPinned: false,
+          },
+        ],
+      },
+    ])
+
+    const view = renderRoute({ kind: 'tasks' })
+    await view.findByText('Ship tasks')
+    await userEvent.click(view.getByRole('checkbox', { name: 'Mark task complete' }))
+
+    await waitFor(() =>
+      expect(indexFns.toggleIndexedTask).toHaveBeenCalledWith({
+        notePath: 'daily/2026-06-15.md',
+        markerOffset: 2,
+        raw: '[ ] Ship tasks',
+        graphGeneration: 1,
+        indexGeneration: 2,
+      }),
+    )
     view.unmount()
   })
 

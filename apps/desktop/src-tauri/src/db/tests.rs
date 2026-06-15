@@ -9,7 +9,9 @@ use super::chat_write::{delete_conversation, save_message, ChatConversation, Cha
 use super::embed_write::{apply_chunks, remove_chunks, EmbeddedChunk};
 use super::migrations::{migrate, migrate_to, open_in_memory, open_index_at, validate_migrations};
 use super::query::run_query;
-use super::write::{apply_note, clear_index, move_note, IndexedLink, IndexedNote, IndexedTag};
+use super::write::{
+    apply_note, clear_index, move_note, IndexedLink, IndexedNote, IndexedTag, IndexedTask,
+};
 
 fn migrated() -> Connection {
     // Registers sqlite-vec before migrating — the 0002 migration creates a
@@ -41,6 +43,7 @@ fn note(path: &str, title: &str, links: Vec<IndexedLink>) -> IndexedNote {
         tags: vec![],
         aliases: vec![],
         assets: vec![],
+        tasks: vec![],
     }
 }
 
@@ -63,7 +66,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10); // applied migrations (0001 through 0010)
+    assert_eq!(version, 11); // applied migrations (0001 through 0011)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -138,6 +141,58 @@ fn preview_and_tag_keys_round_trip() {
     let tags = run_query(&conn, "SELECT tag, tag_key FROM tags", &[]).unwrap();
     assert_eq!(tags[0]["tag"], Value::from("Café"));
     assert_eq!(tags[0]["tag_key"], Value::from("café"));
+}
+
+#[test]
+fn tasks_round_trip_and_reindex_replaces_rows() {
+    let conn = migrated();
+    let mut with_tasks = note("notes/a.md", "A", vec![]);
+    with_tasks.tasks = vec![
+        IndexedTask {
+            marker_offset: 2,
+            text: "buy milk".to_string(),
+            raw: "[ ] buy milk".to_string(),
+            checked: false,
+        },
+        IndexedTask {
+            marker_offset: 17,
+            text: "done".to_string(),
+            raw: "[x] done".to_string(),
+            checked: true,
+        },
+    ];
+    apply_note(&conn, &with_tasks).unwrap();
+
+    let rows = run_query(
+        &conn,
+        "SELECT note_path, marker_offset, text, raw, checked FROM tasks ORDER BY marker_offset",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["note_path"], Value::from("notes/a.md"));
+    assert_eq!(rows[0]["marker_offset"], Value::from(2));
+    assert_eq!(rows[0]["text"], Value::from("buy milk"));
+    assert_eq!(rows[0]["raw"], Value::from("[ ] buy milk"));
+    assert_eq!(rows[0]["checked"], Value::from(0));
+    assert_eq!(rows[1]["checked"], Value::from(1));
+
+    let mut changed = note("notes/a.md", "A", vec![]);
+    changed.tasks = vec![IndexedTask {
+        marker_offset: 2,
+        text: "changed".to_string(),
+        raw: "[ ] changed".to_string(),
+        checked: false,
+    }];
+    apply_note(&conn, &changed).unwrap();
+    let rows = run_query(
+        &conn,
+        "SELECT marker_offset, text FROM tasks ORDER BY marker_offset",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["text"], Value::from("changed"));
 }
 
 #[test]
@@ -386,7 +441,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10);
+    assert_eq!(version, 11);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
@@ -842,6 +897,12 @@ fn move_note_migrates_every_row_and_preserves_derived_state() {
     moved.is_pinned = true;
     moved.pinned_order = Some(2.5);
     moved.has_conflict = true;
+    moved.tasks = vec![IndexedTask {
+        marker_offset: 2,
+        text: "move me".to_string(),
+        raw: "[ ] move me".to_string(),
+        checked: false,
+    }];
     apply_note(&conn, &moved).unwrap();
     apply_note(
         &conn,
@@ -883,6 +944,10 @@ fn move_note_migrates_every_row_and_preserves_derived_state() {
         ),
         (
             "SELECT count(*) AS n FROM search_fts WHERE path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM tasks WHERE note_path = 'notes/kept-title.md'",
             1,
         ),
         (

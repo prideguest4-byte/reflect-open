@@ -1,6 +1,7 @@
 import { defineKeymap, type PlainExtension } from '@prosekit/core'
 import { setBlockType } from '@prosekit/pm/commands'
-import type { Command } from '@prosekit/pm/state'
+import type { Command, EditorState } from '@prosekit/pm/state'
+import type { Node as ProseMirrorNode } from '@prosekit/pm/model'
 import { MEOWDOWN_BINDING_DESCRIPTIONS } from './meowdown'
 
 /**
@@ -58,6 +59,41 @@ function toggleHeading(level: number): Command {
   }
 }
 
+interface ListNodeAtSelection {
+  node: ProseMirrorNode
+  pos: number
+}
+
+function listNodeAtSelection(state: EditorState): ListNodeAtSelection | null {
+  const { $from } = state.selection
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const node = $from.node(depth)
+    if (node.type.name === 'list') {
+      return { node, pos: $from.before(depth) }
+    }
+  }
+  return null
+}
+
+const toggleTaskAtSelection: Command = (state, dispatch) => {
+  const target = listNodeAtSelection(state)
+  if (!target) {
+    return false
+  }
+  const { node, pos } = target
+  if (node.attrs.kind !== 'task' && node.attrs.kind !== 'bullet') {
+    return false
+  }
+  const attrs =
+    node.attrs.kind === 'task'
+      ? { ...node.attrs, checked: !node.attrs.checked }
+      : { ...node.attrs, kind: 'task', checked: false }
+  if (dispatch) {
+    dispatch(state.tr.setNodeMarkup(pos, undefined, attrs))
+  }
+  return true
+}
+
 interface EditorBindingDefinition {
   /** The keybinding (ProseMirror key string, e.g. `Mod-1`). */
   binding: string
@@ -76,6 +112,7 @@ const EDITOR_BINDING_DEFINITIONS: EditorBindingDefinition[] = [
   { binding: 'Mod-1', description: 'Heading 1', command: toggleHeading(1) },
   { binding: 'Mod-2', description: 'Heading 2', command: toggleHeading(2) },
   { binding: 'Mod-3', description: 'Heading 3', command: toggleHeading(3) },
+  { binding: 'Mod-Enter', description: 'Toggle task', command: toggleTaskAtSelection },
 ]
 
 /** Display descriptions for the editor-scope bindings (the shortcuts UI). */

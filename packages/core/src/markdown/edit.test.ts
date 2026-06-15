@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { appendBlock, appendUnderHeading, renameWikiLink } from './edit'
+import {
+  TaskStaleError,
+  appendBlock,
+  appendUnderHeading,
+  renameWikiLink,
+  toggleTaskMarker,
+} from './edit'
 
 describe('renameWikiLink', () => {
   it('rewrites matching targets, preserves aliases, skips code and non-matches', () => {
@@ -68,5 +74,42 @@ describe('appendBlock', () => {
 
   it('trims the block itself', () => {
     expect(appendBlock('alpha', '  new text \n')).toBe('alpha\n\nnew text\n')
+  })
+})
+
+describe('toggleTaskMarker', () => {
+  it('toggles an unchecked task by changing only the marker', () => {
+    const source = '- [ ] buy milk\n'
+    expect(toggleTaskMarker(source, source.indexOf('[ ]'), '[ ] buy milk')).toEqual({
+      source: '- [x] buy milk\n',
+      checked: true,
+    })
+  })
+
+  it('toggles a checked task back to unchecked', () => {
+    const source = '- [x] buy milk\n'
+    expect(toggleTaskMarker(source, source.indexOf('[x]'), '[x] buy milk')).toEqual({
+      source: '- [ ] buy milk\n',
+      checked: false,
+    })
+  })
+
+  it('accepts uppercase checked markers from externally-authored markdown', () => {
+    const source = '- [X] buy milk\n'
+    expect(toggleTaskMarker(source, source.indexOf('[X]'), '[X] buy milk')).toEqual({
+      source: '- [ ] buy milk\n',
+      checked: false,
+    })
+  })
+
+  it('refuses when the indexed raw task no longer matches the source', () => {
+    const source = '- [ ] buy oat milk\n'
+    expect(() => toggleTaskMarker(source, source.indexOf('[ ]'), '[ ] buy milk')).toThrow(
+      TaskStaleError,
+    )
+  })
+
+  it('refuses when the offset no longer points at a task marker', () => {
+    expect(() => toggleTaskMarker('- [ ] buy milk\n', 0, '[ ] buy milk')).toThrow(TaskStaleError)
   })
 })
