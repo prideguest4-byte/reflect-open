@@ -51,21 +51,35 @@ describe('asCompleted', () => {
 
 describe('taskRawWithContent', () => {
   it('keeps an open marker', () => {
-    expect(taskRawWithContent(task({ checked: false }), 'buy oat milk')).toBe('[ ] buy oat milk')
+    expect(taskRawWithContent(task({ raw: '[ ] old' }), 'buy oat milk')).toBe('[ ] buy oat milk')
   })
 
   it('keeps a checked marker', () => {
-    expect(taskRawWithContent(task({ checked: true }), 'really done')).toBe('[x] really done')
+    expect(taskRawWithContent(task({ checked: true, raw: '[x] old' }), 'really done')).toBe(
+      '[x] really done',
+    )
+  })
+
+  it('preserves the indexed line’s exact marker casing (GitHub `[X]`)', () => {
+    expect(taskRawWithContent(task({ checked: true, raw: '[X] old' }), 'edited')).toBe('[X] edited')
   })
 
   it('clears to a bare marker when content is empty', () => {
-    expect(taskRawWithContent(task({ checked: false }), '')).toBe('[ ]')
+    expect(taskRawWithContent(task({ raw: '[ ] old' }), '')).toBe('[ ]')
   })
 })
 
 describe('withEditedTask', () => {
   it('rewrites the matching row’s text and raw, leaving others', () => {
     expect(withEditedTask([a, b], b, 'edited')).toEqual([a, { ...b, raw: '[ ] edited', text: 'edited' }])
+  })
+
+  it('stores plain text (markdown stripped) while raw keeps the markup', () => {
+    const [edited] = withEditedTask([a], a, 'see [[Foo]] now') ?? []
+    expect(edited?.raw).toBe('[ ] see [[Foo]] now')
+    // `text` drives search + the row label, so it must be the plain rendering.
+    expect(edited?.text).not.toContain('[[')
+    expect(edited?.text).toContain('Foo')
   })
 
   it('leaves an undefined list untouched', () => {

@@ -1,4 +1,4 @@
-import { type OpenTask } from '@reflect/core'
+import { parseNote, type OpenTask } from '@reflect/core'
 import { sameTask } from '@/lib/tasks/task-identity'
 
 /**
@@ -37,20 +37,34 @@ export function asCompleted(
 }
 
 /**
- * The `raw` line a task would have after an inline edit: its marker (and so the
- * checked state) kept, the content after it replaced. Empty content clears to a
- * bare marker, matching the disk edit ({@link editTaskLine}).
+ * The `raw` line a task would have after an inline edit: the indexed line's exact
+ * marker kept, the content after it replaced. The marker is taken verbatim from
+ * `raw` (not rebuilt from `checked`), so GitHub's `[X]` survives — otherwise the
+ * cached `raw` wouldn't match disk and a follow-up edit/delete's staleness guard
+ * would fail until the reindex. Empty content clears to a bare marker, matching
+ * the disk edit ({@link editTaskLine}).
  */
 export function taskRawWithContent(task: OpenTask, content: string): string {
-  const marker = task.checked ? '[x]' : '[ ]'
+  const marker = task.raw.slice(0, 3) // `[ ]` / `[x]` / `[X]` — raw always begins with it
   return content === '' ? marker : `${marker} ${content}`
+}
+
+/**
+ * The plain text the indexer would derive for a task line — markdown stripped,
+ * wiki links flattened — by reparsing the rebuilt line through the same path the
+ * projection uses. So the optimistic `text` (search + a11y) matches what the
+ * reindex will store, not the raw markdown the editor produced.
+ */
+function plainTextOfTaskLine(raw: string): string {
+  return parseNote({ path: '', source: `- ${raw}` }).tasks[0]?.text ?? ''
 }
 
 /**
  * Rewrite one task's content (and its `raw`) in a cached list before the reindex
  * re-derives it. The row keeps its place — the bucket only moves once the index
- * re-reads any due date — but shows the new text, and its rebuilt `raw` keeps the
- * next edit's staleness guard honest.
+ * re-reads any due date — but shows the new text, with its rebuilt `raw` keeping
+ * the next edit's staleness guard honest and its `text` carrying the *plain*
+ * rendering (so search and the row label never see raw `[[…]]`/markup).
  */
 export function withEditedTask(
   rows: OpenTask[] | undefined,
@@ -58,5 +72,6 @@ export function withEditedTask(
   content: string,
 ): OpenTask[] | undefined {
   const raw = taskRawWithContent(task, content)
-  return rows?.map((row) => (sameTask(row, task) ? { ...row, raw, text: content } : row))
+  const text = plainTextOfTaskLine(raw)
+  return rows?.map((row) => (sameTask(row, task) ? { ...row, raw, text } : row))
 }
