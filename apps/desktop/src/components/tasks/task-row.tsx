@@ -5,6 +5,7 @@ import { formatDayLabel } from '@/lib/dates'
 import { useCompleteTask } from '@/lib/tasks/use-complete-task'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/providers/settings-provider'
+import { TaskEditor } from './task-editor'
 import { TaskText } from './task-text'
 
 interface TaskRowProps {
@@ -13,8 +14,16 @@ interface TaskRowProps {
   showSource: boolean
   /** Whether this row is part of the current multi-selection (Plan 18). */
   selected: boolean
+  /** Whether this row is the sole selection — it shows the inline editor. */
+  editing: boolean
   /** Select the row, honoring ⌘/Ctrl (toggle) and Shift (range) modifiers. */
   onSelect: (event: MouseEvent) => void
+  /** Persist an inline edit (content after the marker) and exit edit mode. */
+  onEditCommit: (content: string) => void
+  /** Delete the task from the inline editor (emptied) and exit edit mode. */
+  onEditDelete: () => void
+  /** Exit edit mode without writing (Escape / unchanged). */
+  onEditCancel: () => void
   onOpen: (notePath: string) => void
 }
 
@@ -27,7 +36,17 @@ interface TaskRowProps {
  * extends a range. Completing optimistically drops the row; an archived
  * (completed) row shows struck through.
  */
-export function TaskRow({ task, showSource, selected, onSelect, onOpen }: TaskRowProps): ReactElement {
+export function TaskRow({
+  task,
+  showSource,
+  selected,
+  editing,
+  onSelect,
+  onEditCommit,
+  onEditDelete,
+  onEditCancel,
+  onOpen,
+}: TaskRowProps): ReactElement {
   const { settings } = useSettings()
   const { complete, isPending } = useCompleteTask(task)
   const done = task.checked || isPending
@@ -54,24 +73,33 @@ export function TaskRow({ task, showSource, selected, onSelect, onOpen }: TaskRo
           <Circle aria-hidden className="size-[18px]" strokeWidth={2} />
         )}
       </button>
-      <button
-        type="button"
-        aria-pressed={selected}
-        onClick={(event) => {
-          // Shift-click selects a range; stop the browser turning that into a
-          // text selection across the rows.
-          if (event.shiftKey) {
-            event.preventDefault()
-          }
-          onSelect(event)
-        }}
-        className={cn(
-          'min-w-0 flex-1 break-words text-left text-sm leading-6 text-text focus-visible:outline-none',
-          task.checked && 'text-text-muted line-through',
-        )}
-      >
-        <TaskText task={task} />
-      </button>
+      {editing ? (
+        <TaskEditor
+          task={task}
+          onCommit={onEditCommit}
+          onDelete={onEditDelete}
+          onCancel={onEditCancel}
+        />
+      ) : (
+        <button
+          type="button"
+          aria-pressed={selected}
+          onClick={(event) => {
+            // Shift-click selects a range; stop the browser turning that into a
+            // text selection across the rows.
+            if (event.shiftKey) {
+              event.preventDefault()
+            }
+            onSelect(event)
+          }}
+          className={cn(
+            'min-w-0 flex-1 break-words text-left text-sm leading-6 text-text focus-visible:outline-none',
+            task.checked && 'text-text-muted line-through',
+          )}
+        >
+          <TaskText task={task} />
+        </button>
+      )}
       {showSource && task.dailyDate !== null ? (
         <span className="mt-0.5 shrink-0 whitespace-nowrap text-xs text-text-muted">
           {formatDayLabel(task.dailyDate, settings.dateFormat)}

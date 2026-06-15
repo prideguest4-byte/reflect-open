@@ -208,6 +208,7 @@ export function TasksScreen(): ReactElement {
               key={group.kind === 'note' ? `note:${group.notePath}` : group.kind}
               group={group}
               selection={selection}
+              actions={actions}
               onOpen={(path) => navigate(routeForPath(path))}
             />
           ))

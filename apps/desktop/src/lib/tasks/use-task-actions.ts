@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { errorMessage, type OpenTask } from '@reflect/core'
-import { deleteTask, toggleTask } from '@/lib/note-task'
+import { deleteTask, editTask, toggleTask } from '@/lib/note-task'
 import { startOperation } from '@/lib/operations'
 import { sameTask } from '@/lib/tasks/task-identity'
 import { completedTasksQueryKey, tasksQueryKey } from '@/lib/tasks/tasks-query'
@@ -21,6 +21,8 @@ import { useGraph } from '@/providers/graph-provider'
 export interface TaskActions {
   complete: (tasks: OpenTask[]) => void
   remove: (tasks: OpenTask[]) => void
+  /** Replace one task's content from the inline editor (Plan 18). */
+  edit: (task: OpenTask, content: string) => void
   isPending: boolean
 }
 
@@ -110,8 +112,33 @@ export function useTaskActions(): TaskActions {
     onError: (cause, _tasks, context) => rollback(context, 'Deleting tasks', cause),
   })
 
+  const editMutation = useMutation({
+    mutationFn: ({ task, content }: { task: OpenTask; content: string }) => {
+      const generation = graph?.generation
+      if (generation === undefined) {
+        throw new Error('No graph is open.')
+      }
+      return editTask(task, content, generation)
+    },
+    onMutate: async ({ task, content }: { task: OpenTask; content: string }) => {
+      const context = await snapshot()
+      // Rebuild the row's `raw` from its (unchanged) marker so the display and
+      // the next edit's staleness guard track the new text before the reindex.
+      // The bucket may change once the index re-derives the due date; until then
+      // the row stays put with its new text.
+      const marker = task.checked ? '[x]' : '[ ]'
+      const raw = content === '' ? marker : `${marker} ${content}`
+      const patch = (rows: OpenTask[] | undefined): OpenTask[] | undefined =>
+        rows?.map((row) => (sameTask(row, task) ? { ...row, raw, text: content } : row))
+      queryClient.setQueryData<OpenTask[]>(openKey, patch)
+      queryClient.setQueryData<OpenTask[]>(completedKey, patch)
+      return context
+    },
+    onError: (cause, _vars, context) => rollback(context, 'Editing task', cause),
+  })
+
   return {
-    isPending: completeMutation.isPending || deleteMutation.isPending,
+    isPending: completeMutation.isPending || deleteMutation.isPending || editMutation.isPending,
     complete: (tasks) => {
       if (tasks.length > 0 && graph?.generation !== undefined && !completeMutation.isPending) {
         completeMutation.mutate(tasks)
@@ -120,6 +147,11 @@ export function useTaskActions(): TaskActions {
     remove: (tasks) => {
       if (tasks.length > 0 && graph?.generation !== undefined && !deleteMutation.isPending) {
         deleteMutation.mutate(tasks)
+      }
+    },
+    edit: (task, content) => {
+      if (graph?.generation !== undefined) {
+        editMutation.mutate({ task, content })
       }
     },
   }

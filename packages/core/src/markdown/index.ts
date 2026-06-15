@@ -45,6 +45,7 @@ export {
   toggleTaskMarker,
   TaskStaleError,
 } from './edit'
+export { parseTaskMarker } from './task-marker'
 export {
   detectConflictMarkers,
   resolveConflictMarkers,

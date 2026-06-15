@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 import { AlarmClock, Calendar, FileText, Pin, Star } from 'lucide-react'
 import type { TaskGroup } from '@reflect/core'
 import { taskKey } from '@/lib/tasks/task-identity'
+import type { TaskActions } from '@/lib/tasks/use-task-actions'
 import type { TaskSelection } from '@/lib/tasks/use-task-selection'
 import { cn } from '@/lib/utils'
 import { TaskRow } from './task-row'
@@ -9,6 +10,7 @@ import { TaskRow } from './task-row'
 interface TaskGroupSectionProps {
   group: TaskGroup
   selection: TaskSelection
+  actions: TaskActions
   onOpen: (notePath: string) => void
 }
 
@@ -34,7 +36,12 @@ function headerStyle(group: TaskGroup): { icon: ReactElement; colorClass: string
  * header sticks to the top of the scroll container, so the next group's header
  * pushes the previous one up as you scroll. A note group's header opens the note.
  */
-export function TaskGroupSection({ group, selection, onOpen }: TaskGroupSectionProps): ReactElement {
+export function TaskGroupSection({
+  group,
+  selection,
+  actions,
+  onOpen,
+}: TaskGroupSectionProps): ReactElement {
   const showSource = group.kind !== 'note'
   const { notePath } = group
   const { icon, colorClass } = headerStyle(group)
@@ -69,7 +76,17 @@ export function TaskGroupSection({ group, selection, onOpen }: TaskGroupSectionP
               task={task}
               showSource={showSource}
               selected={selection.isSelected(key)}
+              editing={selection.isSoleSelected(key)}
               onSelect={(event) => selection.clickSelect(key, event)}
+              onEditCommit={(content) => {
+                actions.edit(task, content)
+                selection.clear()
+              }}
+              onEditDelete={() => {
+                actions.remove([task])
+                selection.clear()
+              }}
+              onEditCancel={() => selection.clear()}
               onOpen={onOpen}
             />
           )

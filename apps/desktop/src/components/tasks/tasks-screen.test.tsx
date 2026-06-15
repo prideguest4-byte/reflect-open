@@ -25,7 +25,39 @@ vi.mock('@/providers/settings-provider', () => ({
 
 const toggleTask = vi.hoisted(() => vi.fn())
 const deleteTask = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/note-task', () => ({ toggleTask, deleteTask }))
+const editTask = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/note-task', () => ({ toggleTask, deleteTask, editTask }))
+
+// The real inline editor mounts ProseKit, which jsdom can't render (no
+// getClientRects/getAnimations). Stub it with the callback surface the row
+// wires up, so selection + edit/delete/cancel routing is testable here; the
+// editor's own commit/cancel decision is unit-tested via resolveTaskEdit.
+vi.mock('./task-editor', () => ({
+  TaskEditor: ({
+    task,
+    onCommit,
+    onDelete,
+    onCancel,
+  }: {
+    task: { text: string }
+    onCommit: (content: string) => void
+    onDelete: () => void
+    onCancel: () => void
+  }) => (
+    <div data-task-editor data-testid="task-editor">
+      <span>editing: {task.text}</span>
+      <button type="button" onClick={() => onCommit('edited content')}>
+        commit-edit
+      </button>
+      <button type="button" onClick={() => onDelete()}>
+        delete-edit
+      </button>
+      <button type="button" onClick={() => onCancel()}>
+        cancel-edit
+      </button>
+    </div>
+  ),
+}))
 
 const fail = vi.hoisted(() => vi.fn())
 const startOperation = vi.hoisted(() => vi.fn(() => ({ fail })))
@@ -78,6 +110,7 @@ beforeEach(() => {
   getCompletedTasks.mockResolvedValue([])
   toggleTask.mockReset()
   deleteTask.mockReset()
+  editTask.mockReset()
   startOperation.mockClear()
   fail.mockReset()
 })
@@ -180,24 +213,58 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
-  it('selects a row on click, exclusively, and clears it with Escape', async () => {
+  it('opens the inline editor on a sole selection, and Escape exits it', async () => {
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/p.md', markerOffset: 2, text: 'first', noteTitle: 'Project' }),
       task({ notePath: 'notes/p.md', markerOffset: 3, text: 'second', noteTitle: 'Project' }),
     ])
     const view = renderScreen()
 
+    // A single click selects exclusively → that row swaps to the inline editor.
     await userEvent.click(await view.findByRole('button', { name: 'first' }))
-    expect(view.getByRole('button', { name: 'first' }).getAttribute('aria-pressed')).toBe('true')
+    expect(view.getByTestId('task-editor').textContent).toContain('first')
     expect(view.getByRole('button', { name: 'second' }).getAttribute('aria-pressed')).toBe('false')
 
-    // A plain click on another row replaces the selection.
+    // Clicking another row moves the sole selection (and the editor) to it.
     await userEvent.click(view.getByRole('button', { name: 'second' }))
-    expect(view.getByRole('button', { name: 'first' }).getAttribute('aria-pressed')).toBe('false')
-    expect(view.getByRole('button', { name: 'second' }).getAttribute('aria-pressed')).toBe('true')
+    expect(view.getByTestId('task-editor').textContent).toContain('second')
 
     await userEvent.keyboard('{Escape}')
-    expect(view.getByRole('button', { name: 'second' }).getAttribute('aria-pressed')).toBe('false')
+    expect(view.queryByTestId('task-editor')).toBeNull()
+    expect(view.getByRole('button', { name: 'first' }).getAttribute('aria-pressed')).toBe('false')
+    view.unmount()
+  })
+
+  it('commits, deletes, or cancels an inline edit through the editor', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    editTask.mockResolvedValue(undefined)
+    deleteTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'P' }),
+    ])
+    const view = renderScreen()
+
+    // Commit → editTask with the new content, and edit mode exits.
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByText('commit-edit'))
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 2 }),
+        'edited content',
+        1,
+      ),
+    )
+    await waitFor(() => expect(view.queryByTestId('task-editor')).toBeNull())
+
+    // Re-select and cancel → no further write, edit mode exits.
+    await userEvent.click(view.getByRole('button', { name: 'edited content' }))
+    await userEvent.click(view.getByText('cancel-edit'))
+    expect(view.queryByTestId('task-editor')).toBeNull()
+
+    // Re-select and delete → deleteTask, row gone.
+    await userEvent.click(view.getByRole('button', { name: 'edited content' }))
+    await userEvent.click(view.getByText('delete-edit'))
+    await waitFor(() => expect(deleteTask).toHaveBeenCalled())
     view.unmount()
   })
 
@@ -234,13 +301,14 @@ describe('TasksScreen', () => {
 
     await view.findByRole('button', { name: 'first' })
     await userEvent.keyboard('{Meta>}a{/Meta}')
+    // Two selected → both stay buttons (the editor only opens for a sole row).
     expect([pressed('first'), pressed('second')]).toEqual([true, true])
 
-    // ↓ collapses to a single moving selection.
+    // ↓ collapses to a single moving selection → that row opens the editor.
     await userEvent.keyboard('{ArrowDown}')
-    expect([pressed('first'), pressed('second')]).toEqual([false, true])
+    expect(view.getByTestId('task-editor').textContent).toContain('second')
     await userEvent.keyboard('{ArrowUp}')
-    expect([pressed('first'), pressed('second')]).toEqual([true, false])
+    expect(view.getByTestId('task-editor').textContent).toContain('first')
     view.unmount()
   })
 
