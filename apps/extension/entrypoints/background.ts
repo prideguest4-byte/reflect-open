@@ -1,18 +1,39 @@
 import { browser } from 'wxt/browser'
 import { defineBackground } from '#imports'
+import { SAVE_CURRENT_PAGE_COMMAND } from '@/lib/commands'
 import { flushQueue } from '@/lib/flush'
 import { isFlushRequest } from '@/lib/messages'
+import { saveCapture } from '@/lib/save-capture'
+import { snapshotActiveTab } from '@/lib/snapshot-active-tab'
 
 /**
- * The MV3 service worker: flushes the capture queue to the native host. It
- * never composes captures — the popup persists them to storage first and
- * pings `flush`, so nothing depends on this worker's (or the popup's)
- * lifetime. Retries ride three triggers: every flush ping, browser startup,
- * and a coarse alarm for the "Reflect installed an hour later" case.
+ * The MV3 service worker owns retries and the shortcut fast path. Every
+ * capture is persisted before a flush starts, so nothing depends on this
+ * worker's (or the popup's) lifetime. Retries ride four triggers: every flush
+ * ping, the keyboard shortcut, browser startup, and a coarse alarm for the
+ * "Reflect installed an hour later" case.
  */
 
 const RETRY_ALARM = 'capture-retry'
 const RETRY_PERIOD_MINUTES = 15
+
+async function saveActiveTabWithDefaults(): Promise<void> {
+  const captured = await snapshotActiveTab()
+  if (captured.status !== 'ready') {
+    return
+  }
+  const outcome = await saveCapture(
+    {
+      ...captured.page,
+      id: crypto.randomUUID(),
+      capturedAt: new Date(),
+    },
+    flushQueue,
+  )
+  if (outcome.fate === 'rejected') {
+    console.error('shortcut capture rejected by Reflect host')
+  }
+}
 
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -24,6 +45,14 @@ export default defineBackground(() => {
       return true // responding asynchronously
     }
     return false
+  })
+
+  browser.commands.onCommand.addListener((command) => {
+    if (command === SAVE_CURRENT_PAGE_COMMAND) {
+      void saveActiveTabWithDefaults().catch((cause: unknown) => {
+        console.error('shortcut capture failed:', cause)
+      })
+    }
   })
 
   browser.runtime.onInstalled.addListener(() => {

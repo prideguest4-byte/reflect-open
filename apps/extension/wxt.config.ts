@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'wxt'
+import { SAVE_CURRENT_PAGE_COMMAND } from './lib/commands'
 
 /**
  * Pins the extension ID (`dlbliojklpickgimjdmjjdnbjdiomjik`) for unpacked dev
@@ -31,9 +32,9 @@ export default defineConfig({
       'alarms',
     ],
     commands: {
-      _execute_action: {
+      [SAVE_CURRENT_PAGE_COMMAND]: {
         suggested_key: { default: 'Ctrl+Shift+K', mac: 'Command+Shift+K' },
-        description: 'Capture the current page',
+        description: 'Save the current page to Reflect',
       },
     },
   },
