@@ -4,6 +4,7 @@ import {
   errorMessage,
   hasBridge,
   listTaskGroups,
+  TaskStaleError,
   toggleIndexedTask,
   type TaskListEntry,
 } from '@reflect/core'
@@ -38,6 +39,7 @@ export function TasksScreen(): ReactElement {
     }
     const key = taskKey(task)
     setPendingKey(key)
+    let shouldInvalidate = false
     try {
       await toggleIndexedTask({
         notePath: task.notePath,
@@ -46,11 +48,17 @@ export function TasksScreen(): ReactElement {
         graphGeneration: graph.generation,
         indexGeneration,
       })
-      invalidateIndexQueries()
+      shouldInvalidate = true
     } catch (cause) {
+      if (cause instanceof TaskStaleError) {
+        shouldInvalidate = true
+      }
       startOperation('Updating task').fail(errorMessage(cause))
     } finally {
-      setPendingKey(null)
+      if (shouldInvalidate) {
+        invalidateIndexQueries()
+      }
+      setPendingKey((current) => (current === key ? null : current))
     }
   }
 

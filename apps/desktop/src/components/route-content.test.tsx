@@ -3,8 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
-import { setBridge } from '@reflect/core'
+import { setBridge, TaskStaleError } from '@reflect/core'
 import type { TaskListGroup } from '@reflect/core'
+import { INDEX_QUERY_SCOPE, queryClient } from '@/lib/query-client'
 import { PaletteProvider, usePalette } from '@/components/command-palette/palette-provider'
 import { flushOpenDocuments } from '@/editor/open-documents'
 import type { NoteEditorHandle } from '@/editor/note-editor'
@@ -298,6 +299,41 @@ describe('RouteContent', () => {
         indexGeneration: 2,
       }),
     )
+    view.unmount()
+  })
+
+  it('refreshes task queries when a stale toggle refusal reindexes the note', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue()
+    indexFns.listTaskGroups.mockResolvedValue([
+      {
+        key: 'current',
+        kind: 'current',
+        title: 'Current',
+        notePath: null,
+        tasks: [
+          {
+            notePath: 'daily/2026-06-15.md',
+            markerOffset: 2,
+            text: 'Ship tasks',
+            raw: '[ ] Ship tasks',
+            checked: false,
+            noteTitle: '2026-06-15',
+            dailyDate: '2026-06-15',
+            isPinned: false,
+          },
+        ],
+      },
+    ])
+    indexFns.toggleIndexedTask.mockRejectedValue(new TaskStaleError())
+
+    const view = renderRoute({ kind: 'tasks' })
+    await view.findByText('Ship tasks')
+    await userEvent.click(view.getByRole('checkbox', { name: 'Mark task complete' }))
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [INDEX_QUERY_SCOPE] }),
+    )
+    invalidateSpy.mockRestore()
     view.unmount()
   })
 
