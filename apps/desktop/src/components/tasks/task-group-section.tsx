@@ -88,7 +88,13 @@ export function TaskGroupSection({
               }}
               onEditCancel={() => selection.clear()}
               onEditComplete={(content) => {
-                if (content === null) {
+                if (task.checked) {
+                  // Already complete (editing an archived row) — ⌘↵ saves an
+                  // edit but never flips the marker back to open.
+                  if (content !== null) {
+                    actions.edit(task, content)
+                  }
+                } else if (content === null) {
                   actions.complete([task])
                 } else {
                   actions.editAndComplete(task, content)

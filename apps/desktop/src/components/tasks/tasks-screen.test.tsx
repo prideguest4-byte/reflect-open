@@ -329,6 +329,31 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('editing an already-completed task with ⌘↵ saves the text, never reopens it', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    editTask.mockResolvedValue(undefined)
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([])
+    getCompletedTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        raw: '[x] done task',
+        text: 'done task',
+        checked: true,
+        noteTitle: 'P',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'done task' }))
+    await userEvent.click(view.getByText('complete-edited'))
+    await waitFor(() => expect(editTask).toHaveBeenCalled())
+    // The marker stays `[x]` — no toggle back to open.
+    expect(toggleTask).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
   it('completes from the editor: an unchanged task just toggles, no edit', async () => {
     toggleTask.mockResolvedValue(undefined)
     getOpenTasks.mockResolvedValue([
