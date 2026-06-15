@@ -1,5 +1,6 @@
 import { useCallback, useRef, type ReactElement } from 'react'
-import { isDaily } from '@reflect/core'
+import { type WikilinkItem } from '@meowdown/react'
+import { hasBridge, isDaily, suggestWikiTargets } from '@reflect/core'
 import { BacklinksPanel } from '@/components/backlinks-panel'
 import { InlineAlert } from '@/components/inline-alert'
 import { NoteConflictBanner } from '@/components/note-conflict-banner'
@@ -9,8 +10,9 @@ import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
-import { WikiAutocomplete } from '@/editor/wiki-autocomplete'
+import { buildAutocompleteEntries } from '@/editor/wiki-autocomplete-entries'
 import { createNoteWithTitle, untitledNoteSeed } from '@/lib/create-note'
+import { formatDayLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
@@ -97,13 +99,15 @@ export function NotePane({
     // notes stay unseeded — the date is their identity.
     missingSeed,
   })
-  const { options: images, saveError: imageSaveError } = useImagePersistence(
-    graphRoot,
-    generation,
-  )
+  const {
+    resolveImageUrl,
+    saveImage,
+    onImageSaveError,
+    saveError: imageSaveError,
+  } = useImagePersistence(graphRoot, generation)
   const onWikiLinkClick = useWikiLinkNavigation(generation)
 
-  // The `[[` autocomplete's create row: make the file; the popover inserts the
+  // The `[[` autocomplete's create row: make the file; the menu inserts the
   // link text either way (a failed create just leaves an unresolved link).
   const createFromAutocomplete = useCallback(
     async (title: string) => {
@@ -112,6 +116,42 @@ export function NotePane({
       }
     },
     [generation],
+  )
+
+  // The `[[` menu's rows: ranked index suggestions plus a trailing "Create"
+  // row. meowdown owns the menu UI and gives us the (lowercased, punctuation
+  // stripped) query; ranking stays the index's job, so the menu never re-sorts.
+  const onWikilinkSearch = useCallback(
+    async (query: string): Promise<WikilinkItem[]> => {
+      if (!hasBridge() || graph === null) {
+        return []
+      }
+      const suggestions = await suggestWikiTargets(query)
+      return buildAutocompleteEntries(query, suggestions, { offerCreate: true }).map((entry) => {
+        if (entry.kind === 'create') {
+          return {
+            target: entry.title,
+            label: `Create “${entry.title}”`,
+            // Insert happens in the menu; create the note in the background.
+            onSelect: () => {
+              void createFromAutocomplete(entry.title)
+            },
+          }
+        }
+        const { target, title, alias, date, path } = entry.suggestion
+        const label = date !== null ? formatDayLabel(date, settings.dateFormat) : title
+        const detail =
+          alias !== null
+            ? `${alias} → ${title}`
+            : date !== null
+              ? path === null
+                ? `${date} · new`
+                : date
+              : undefined
+        return { target, label, detail }
+      })
+    },
+    [graph, settings.dateFormat, createFromAutocomplete],
   )
 
   const bindEditor = document.bindEditor
@@ -209,16 +249,17 @@ export function NotePane({
         onChange={document.onEditorChange}
         markMode={settings.editorMarkdownSyntax}
         spellCheck={settings.editorSpellCheck}
-        images={images}
+        resolveImageUrl={resolveImageUrl}
+        saveImage={saveImage}
+        onImageSaveError={onImageSaveError}
         onWikiLinkClick={onWikiLinkClick}
+        onWikilinkSearch={onWikilinkSearch}
         // Daily notes carry no title semantics (the date is their subject),
         // so an empty leading H1 there is just an empty heading.
         titlePlaceholder={dailyNote ? undefined : 'Untitled'}
         className={cn(gutterClassName, editorClassName)}
         handleRef={handleRef}
-      >
-        <WikiAutocomplete onCreate={createFromAutocomplete} />
-      </NoteEditor>
+      />
 
       <div className={gutterClassName}>
         <BacklinksPanel path={path} />

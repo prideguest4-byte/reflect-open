@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { assetPath, errorMessage, writeAsset } from '@reflect/core'
 import { base64Of } from '@/lib/base64'
-import type { ImageOptions } from './images'
 
 /** Asset file extension for each image MIME type the editor accepts on paste/drop. */
 const EXTENSION_BY_MIME: Record<string, string> = {
@@ -33,8 +32,12 @@ function isSafeAssetSource(sourcePath: string): boolean {
 }
 
 export interface ImagePersistence {
-  /** Wiring for the editor's image extension (resolve, save, error reporting). */
-  options: ImageOptions
+  /** Resolve an image source to a displayable URL (or null to skip). */
+  resolveImageUrl: (src: string) => string | null
+  /** Persist a pasted/dropped image, returning its graph-relative path (or null). */
+  saveImage: (file: File) => Promise<string | null>
+  /** Report a failed image save. */
+  onImageSaveError: (error: unknown) => void
   /** Message of the most recent failed image save; cleared by the next success. */
   saveError: string | null
 }
@@ -88,10 +91,13 @@ export function useImagePersistence(
     setSaveError(errorMessage(error))
   }, [])
 
-  const options = useMemo<ImageOptions>(
-    () => ({ resolveUrl, saveImage, onSaveError }),
-    [resolveUrl, saveImage, onSaveError],
+  return useMemo<ImagePersistence>(
+    () => ({
+      resolveImageUrl: resolveUrl,
+      saveImage,
+      onImageSaveError: onSaveError,
+      saveError,
+    }),
+    [resolveUrl, saveImage, onSaveError, saveError],
   )
-
-  return useMemo<ImagePersistence>(() => ({ options, saveError }), [options, saveError])
 }
