@@ -9,6 +9,7 @@ import type {
   Heading,
   MarkdownLink,
   ParsedNote,
+  ParsedTask,
   Span,
   WikiLink,
 } from './model'
@@ -172,20 +173,75 @@ function appendPlainTextChunk(
   return kept
 }
 
-/** Body text minus the cut (syntax) ranges, with wiki brackets/pipes flattened. */
-function buildPlainText(body: string, cuts: Span[], literalRanges: Span[]): string {
+/**
+ * Plain text of `[start, end)` minus the cut (syntax) ranges, with wiki
+ * brackets/pipes flattened. Shared by the whole-body plain text and per-task
+ * text so a task renders exactly as the note's body does (emphasis marks and
+ * the `[ ]` TaskMarker dropped, code kept literal).
+ */
+function plainTextOfRange(
+  body: string,
+  start: number,
+  end: number,
+  cuts: Span[],
+  literalRanges: Span[],
+): string {
   const sorted = [...cuts].sort((a, b) => a.from - b.from)
   const sortedLiteralRanges = [...literalRanges].sort((a, b) => a.from - b.from)
   let kept = ''
-  let pos = 0
+  let pos = start
   for (const cut of sorted) {
-    if (cut.from > pos) {
-      kept += appendPlainTextChunk(body, pos, cut.from, sortedLiteralRanges)
+    if (cut.to <= start) {
+      continue
     }
-    pos = Math.max(pos, cut.to)
+    if (cut.from >= end) {
+      break
+    }
+    const cutFrom = Math.max(start, cut.from)
+    if (cutFrom > pos) {
+      kept += appendPlainTextChunk(body, pos, cutFrom, sortedLiteralRanges)
+    }
+    pos = Math.max(pos, Math.min(end, cut.to))
   }
-  kept += appendPlainTextChunk(body, pos, body.length, sortedLiteralRanges)
+  if (pos < end) {
+    kept += appendPlainTextChunk(body, pos, end, sortedLiteralRanges)
+  }
   return kept.replace(/\s+/g, ' ').trim()
+}
+
+/** Body text minus the cut (syntax) ranges, with wiki brackets/pipes flattened. */
+function buildPlainText(body: string, cuts: Span[], literalRanges: Span[]): string {
+  return plainTextOfRange(body, 0, body.length, cuts, literalRanges)
+}
+
+/**
+ * Resolve a `Task` Lezer node (the marker starts at `from`) into a
+ * {@link ParsedTask}, or `null` when the marker shape isn't a real GFM checkbox
+ * (a defensive guard against parser surprises). `text` is the marker line minus
+ * its syntax; `raw` is that physical line verbatim for the write-back guard.
+ */
+function readTask(
+  body: string,
+  from: number,
+  bodyOffset: number,
+  cuts: Span[],
+  literalRanges: Span[],
+): ParsedTask | null {
+  if (body[from] !== '[' || body[from + 2] !== ']') {
+    return null
+  }
+  const mark = body[from + 1]
+  if (mark !== ' ' && mark !== 'x' && mark !== 'X') {
+    return null
+  }
+  const newline = body.indexOf('\n', from)
+  const lineEnd = newline === -1 ? body.length : newline
+  return {
+    text: plainTextOfRange(body, from, lineEnd, cuts, literalRanges),
+    raw: body.slice(from, lineEnd),
+    checked: mark === 'x' || mark === 'X',
+    markerOffset: from + bodyOffset,
+  }
 }
 
 function inAnyRange(index: number, ranges: Span[]): boolean {
@@ -259,6 +315,7 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   const cuts: Span[] = [] // body coords — syntax to drop from plain text
   const tagExcluded: Span[] = [] // body coords — regions that don't yield tags
   const literalPlainText: Span[] = [] // body coords — regions that render backslashes literally
+  const taskFroms: number[] = [] // body coords — `Task` node starts, resolved after the walk
 
   tree.iterate({
     enter: (node) => {
@@ -266,6 +323,11 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
 
       if (isSyntaxNode(name)) {
         cuts.push({ from, to })
+      }
+      if (name === 'Task') {
+        // Resolve after the walk: the child `TaskMarker`/emphasis cuts this task
+        // needs to strip its text aren't collected until their own `enter`.
+        taskFroms.push(from)
       }
       if (isTagExcludedNode(name)) {
         tagExcluded.push({ from, to })
@@ -305,6 +367,14 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   const tags = new Map<string, string>()
   collectTags(body, tagExcluded, tags)
 
+  const tasks: ParsedTask[] = []
+  for (const from of taskFroms) {
+    const task = readTask(body, from, bodyOffset, cuts, literalPlainText)
+    if (task) {
+      tasks.push(task)
+    }
+  }
+
   return {
     path,
     id: stringField(frontmatter, 'id'),
@@ -316,6 +386,7 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
     tags: [...tags.values()],
     headings,
     assets,
+    tasks,
     text: buildPlainText(body, cuts, literalPlainText),
   }
 }

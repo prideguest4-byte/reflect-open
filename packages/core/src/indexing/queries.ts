@@ -83,6 +83,58 @@ export async function getBacklinksWithContext(path: string): Promise<BacklinkCon
   })
 }
 
+/**
+ * One open task plus the note context the Tasks view (Plan 18) groups and
+ * renders by. `dailyDate` is the source note's date — the view buckets
+ * Current/Overdue/Upcoming off it; `isPinned`/`pinnedOrder`/`updatedAt` order the
+ * per-note groups for tasks in regular (dateless) notes.
+ */
+export interface OpenTask {
+  notePath: string
+  /** Marker offset + raw line: the surgical write-back's coordinates (Plan 18 PR3). */
+  markerOffset: number
+  raw: string
+  /** Display text, markdown stripped. */
+  text: string
+  noteTitle: string
+  /** ISO date for daily-note tasks; null for tasks in regular notes. */
+  dailyDate: string | null
+  isPinned: number
+  pinnedOrder: number | null
+  updatedAt: number
+}
+
+/**
+ * Every open checkbox across the graph, with note context, for the Tasks view.
+ * Completed tasks are excluded (the view shows open work only) and so are
+ * `private: true` notes' tasks: the Tasks view is an always-visible global
+ * surface, and there is no per-note opt-out, so private content stays out of it.
+ * (To include them — they never leave the device here — drop the `isPrivate`
+ * predicate; grouping/ordering is finalised in the view, this read just gathers.)
+ */
+export function getOpenTasks(): Promise<OpenTask[]> {
+  return db
+    .selectFrom('tasks')
+    .innerJoin('notes', 'notes.path', 'tasks.notePath')
+    .where('tasks.checked', '=', 0)
+    .where('notes.isPrivate', '=', 0)
+    .select([
+      'tasks.notePath',
+      'tasks.markerOffset',
+      'tasks.raw',
+      'tasks.text',
+      'notes.title as noteTitle',
+      'notes.dailyDate',
+      'notes.isPinned',
+      'notes.pinnedOrder',
+      'notes.updatedAt',
+    ])
+    .orderBy('notes.dailyDate')
+    .orderBy('notes.updatedAt', 'desc')
+    .orderBy('tasks.markerOffset')
+    .execute()
+}
+
 /** Distinct source paths of links whose folded target key is `targetKey`. */
 export async function getLinkSources(targetKey: string): Promise<string[]> {
   const rows = await db

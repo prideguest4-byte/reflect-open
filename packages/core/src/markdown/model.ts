@@ -142,6 +142,29 @@ export interface AssetRef extends Span {
   path: string
 }
 
+/**
+ * A GFM checkbox item (`- [ ] text` / `- [x] text`) — the unit the Tasks view
+ * (Plan 18) projects across the graph. Every checkbox is a task; there is no
+ * invented syntax, so the files stay meaningful in any markdown tool.
+ */
+export interface ParsedTask {
+  /** Inline text of the item's marker line, markdown stripped, for display + search. */
+  text: string
+  /**
+   * Exact source of the marker's physical line — the write-back staleness guard.
+   * Begins with the three-character marker, so `raw.slice(0, 3)` is `[ ]`/`[x]`.
+   */
+  raw: string
+  /** `[x]`/`[X]` → true, `[ ]` → false. */
+  checked: boolean
+  /**
+   * Character offset of the marker's `[` in the **original** file (UTF-16 code
+   * units, the unit Lezer reports — never UTF-8 bytes). The toggle splices the
+   * three marker characters here after re-confirming {@link raw}.
+   */
+  markerOffset: number
+}
+
 /** Version of the extraction contract; bump on breaking shape changes. */
 export const PARSED_NOTE_VERSION = 1
 
@@ -162,6 +185,8 @@ export interface ParsedNote {
   tags: string[]
   headings: Heading[]
   assets: AssetRef[]
+  /** GFM checkbox items in document order — the Tasks projection (Plan 18). */
+  tasks: ParsedTask[]
   /** Plain-text rendering of the body for FTS (Plan 08) + AI context (Plan 10). */
   text: string
 }

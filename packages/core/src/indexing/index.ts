@@ -58,6 +58,7 @@ export {
   getLinkSources,
   getNote,
   getNotesByTag,
+  getOpenTasks,
   getPinnedNotes,
   searchNotes,
   suggestWikiTargets,
@@ -71,6 +72,7 @@ export {
   type DailyNotesRange,
   type DuplicateIdGroup,
   type NoteRow,
+  type OpenTask,
   type PinnedNote,
   type SearchHit,
 } from './queries'

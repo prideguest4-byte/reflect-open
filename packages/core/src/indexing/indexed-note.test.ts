@@ -124,6 +124,19 @@ describe('buildIndexedNote', () => {
     expect(indexed.gistStale).toBe(false)
   })
 
+  it('maps GFM checkboxes into task rows', () => {
+    const source = '# Todo\n\n- [ ] buy milk\n- [x] call mum\n'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/n.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
+    expect(indexed.tasks).toEqual([
+      { markerOffset: source.indexOf('[ ]'), text: 'buy milk', raw: '[ ] buy milk', checked: false },
+      { markerOffset: source.indexOf('[x]'), text: 'call mum', raw: '[x] call mum', checked: true },
+    ])
+  })
+
   it('flags notes carrying sync conflict markers', () => {
     const source =
       '# Shared\n\n<<<<<<< this device\nmine\n=======\ntheirs\n>>>>>>> other device\n'
