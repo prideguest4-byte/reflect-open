@@ -18,7 +18,6 @@ import {
   parseMarkdown,
   serializeMarkdown,
   type MarkMode,
-  type MeowdownEditorHandle,
 } from './meowdown'
 import { defineTitlePlaceholder } from './title-placeholder'
 import { defineWikiLinks } from './wiki-links'
@@ -40,7 +39,9 @@ import { defineWikiLinks } from './wiki-links'
  * meowdown's own handle contract (`getMarkdown`) with what Reflect's document
  * pipeline needs on top.
  */
-export interface NoteEditorHandle extends MeowdownEditorHandle {
+export interface NoteEditorHandle {
+  /** Serialize the current document to markdown. */
+  getMarkdown(): string
   /** Replace the document (note switch / external reload). */
   setMarkdown(markdown: string): void
   focus(): void
