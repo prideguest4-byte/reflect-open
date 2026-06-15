@@ -684,7 +684,7 @@ describe('commitTaskToggle', () => {
 
     // The user appends a line below the task — unsaved when the toggle arrives.
     h.session.editorChanged('# Todo\n\n- [ ] buy milk\n\njot\n')
-    expect(h.session.isDirty()).toBe(true)
+    expect(h.snapshots.at(-1)?.dirty).toBe(true)
 
     const applied = await h.session.commitTaskToggle(firstTask(source))
     expect(applied).toBe(true)

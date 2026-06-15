@@ -260,17 +260,16 @@ export interface NoteSession {
    * resolution instead (the rename alias), use `updateFrontmatter`.
    */
   commitFrontmatter: (patch: FrontmatterPatch) => Promise<boolean>
-  /** True when the buffer holds unsaved edits (the live document ≠ disk). */
-  isDirty: () => boolean
   /**
    * Toggle a GFM checkbox in the body from the Tasks view (Plan 18), applied to
-   * the live buffer so unsaved edits survive, then flushed now. The caller only
-   * routes here when the buffer is dirty — a clean note toggles byte-exactly on
-   * disk instead and this session reconciles via the watcher. Returns false when
-   * the session can't take it (loading, protected, disposed, or a parked
-   * conflict) so the caller refuses rather than clobber the buffer, and
-   * propagates `TaskStaleError` when the marker can't be located, like the disk
-   * path. An open note's toggle rides the editor, so it normalizes like any edit.
+   * the live buffer so unsaved edits survive, then flushed now. The caller routes
+   * here whenever the note is open — the buffer is read synchronously, so there
+   * is no read/write race with the editor. Returns false when the session can't
+   * take it (loading, protected, disposed, or a parked conflict) so the caller
+   * refuses rather than clobber the buffer, and propagates `TaskStaleError` when
+   * the marker can't be located, like the disk path. An open note's toggle rides
+   * the editor, so a normalizing-fidelity note normalizes like any edit (an
+   * exact-fidelity note stays byte-identical apart from the marker).
    */
   commitTaskToggle: (task: { markerOffset: number; raw: string }) => Promise<boolean>
   /** Flush pending edits and detach: no further snapshots are emitted. */
@@ -724,7 +723,6 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     liveContent: () => (status === 'ready' ? header + buffer : null),
     updateFrontmatter,
     commitFrontmatter,
-    isDirty: () => dirty,
     commitTaskToggle,
     dispose,
     discard,

@@ -32,20 +32,11 @@ describe('toggleTask', () => {
     expect(writeNote).toHaveBeenCalledWith('notes/a.md', '- [x] do it\n', 7)
   })
 
-  it('takes the disk path for an open but clean note', async () => {
-    const commitTaskToggle = vi.fn()
-    openSession.mockReturnValue({ isDirty: () => false, commitTaskToggle })
-    readNote.mockResolvedValue('- [ ] do it\n')
-    writeNote.mockResolvedValue(undefined)
-
-    await toggleTask(task, 7)
-    expect(commitTaskToggle).not.toHaveBeenCalled()
-    expect(writeNote).toHaveBeenCalledWith('notes/a.md', '- [x] do it\n', 7)
-  })
-
-  it('routes through the session for an open dirty note (no disk write)', async () => {
+  it('routes through the live session whenever the note is open — never disk', async () => {
+    // No isDirty gate: an open note always goes through the session, which reads
+    // its buffer synchronously, so there is no read/write race with the editor.
     const commitTaskToggle = vi.fn().mockResolvedValue(true)
-    openSession.mockReturnValue({ isDirty: () => true, commitTaskToggle })
+    openSession.mockReturnValue({ commitTaskToggle })
 
     await toggleTask(task, 7)
     expect(commitTaskToggle).toHaveBeenCalledWith({ markerOffset: 2, raw: '[ ] do it' })
@@ -53,9 +44,9 @@ describe('toggleTask', () => {
     expect(readNote).not.toHaveBeenCalled()
   })
 
-  it('throws NoteBusyError when a dirty session declines, never clobbering via disk', async () => {
+  it('throws NoteBusyError when the session declines, never clobbering via disk', async () => {
     const commitTaskToggle = vi.fn().mockResolvedValue(false)
-    openSession.mockReturnValue({ isDirty: () => true, commitTaskToggle })
+    openSession.mockReturnValue({ commitTaskToggle })
 
     await expect(toggleTask(task, 7)).rejects.toBeInstanceOf(NoteBusyError)
     expect(writeNote).not.toHaveBeenCalled()

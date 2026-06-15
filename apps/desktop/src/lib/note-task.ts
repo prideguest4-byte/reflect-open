@@ -29,24 +29,24 @@ export class NoteBusyError extends Error {
  * open-tasks view only ever flips `[ ]`→`[x]`, but the primitive toggles, hence
  * the name.
  *
- * A note open with **unsaved** edits is toggled through its live session, so
- * those edits survive and our write never parks a conflict. Every other case —
- * the note isn't open, or it's open but clean — takes the byte-exact disk path
- * (only the three marker characters change); an open clean session then
- * reconciles through the watcher. A stale or ambiguous index surfaces as
- * `TaskStaleError` (from {@link toggleTaskMarker}) rather than a silent wrong
- * write; an unsaveable dirty note surfaces as {@link NoteBusyError}.
+ * When the note is **open**, the toggle goes through its live session: the
+ * session toggles its own in-memory buffer synchronously, so any unsaved edits
+ * are preserved and there is no read-then-write gap for a concurrent keystroke
+ * to slip into. It declines — and we refuse rather than clobber via disk — only
+ * when it can't persist right now (still loading, protected/read-only, or a
+ * parked sync conflict), surfaced as {@link NoteBusyError}. When the note is
+ * **not** open, disk is the source of truth and the toggle is byte-exact (only
+ * the three marker characters change). A stale or ambiguous index surfaces as
+ * `TaskStaleError` (from {@link toggleTaskMarker}) rather than a silent wrong write.
  */
 export async function toggleTask(task: TaskRef, generation: number): Promise<void> {
   const marker = { markerOffset: task.markerOffset, raw: task.raw }
   const owner = openSession(task.notePath)
-  if (owner !== null && owner.isDirty()) {
+  if (owner !== null) {
     if (await owner.commitTaskToggle(marker)) {
       return
     }
-    throw new NoteBusyError(
-      'This note has unsaved edits that can’t be saved right now — resolve it, then try again.',
-    )
+    throw new NoteBusyError('This note can’t be updated right now — try again in a moment.')
   }
   const source = await readNote(task.notePath)
   const next = toggleTaskMarker(source, marker)
