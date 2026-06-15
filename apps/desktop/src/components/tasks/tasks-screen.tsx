@@ -128,6 +128,12 @@ export function TasksScreen(): ReactElement {
     [orderedTasks],
   )
   const selection = useTaskSelection(orderedKeys)
+  // Close the schedule popover when the selection it acts on goes away (e.g. a
+  // reindex prunes the selected row): the toolbar trigger and the calendar unmount
+  // together, so a lingering `scheduleOpen` would remount it open on re-select.
+  if (scheduleOpen && selection.selectedCount === 0) {
+    setScheduleOpen(false)
+  }
   const actions = useTaskActions()
   const scrollToKey = useCallback((key: string | null) => {
     if (key !== null) {

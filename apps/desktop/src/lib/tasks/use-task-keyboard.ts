@@ -114,10 +114,15 @@ export function useTaskKeyboard({
     const inSearch = target instanceof HTMLInputElement
     // The note a Return-inserted task lands in (V1 group-based): the active row's
     // group — Current → today's daily, a note → that note, Overdue/Upcoming refuse
-    // (`null`) — else, with nothing selected, today's daily.
+    // (`null`) — else, with nothing selected, today's daily. The pivot must still be
+    // *selected*: `activeKey()` keeps pointing at the last-touched row even after a
+    // ⌘-click deselects it (or all of them), so an unselected pivot falls to today.
     const insertTarget = (): InsertTaskTarget | null => {
       const activeKey = selection.activeKey()
-      const active = activeKey !== null ? tasksByKey.get(activeKey) : undefined
+      const active =
+        activeKey !== null && selection.selected.has(activeKey)
+          ? tasksByKey.get(activeKey)
+          : undefined
       return active !== undefined ? insertTargetForBucket(active, today) : todaysDailyTarget(today)
     }
     const selectExclusively = (key: string): void => {

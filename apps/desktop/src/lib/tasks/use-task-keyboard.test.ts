@@ -335,6 +335,33 @@ describe('useTaskKeyboard', () => {
     })
   })
 
+  it('Return falls to today’s daily when the pivot is no longer selected', () => {
+    const deselected = task({ notePath: 'notes/a.md', noteTitle: 'A' })
+    const insert = vi.fn().mockResolvedValue(null)
+    // The pivot still points at 'k' (last touched), but a ⌘-click deselected it —
+    // nothing is selected now, so Return adds to today's daily, not 'k'.
+    const selection = makeSelection({
+      selected: new Set(),
+      selectedCount: 0,
+      activeKey: () => 'k',
+    })
+    mount({
+      selection,
+      actions: makeActions({ insert }),
+      today: '2026-06-15',
+      tasksByKey: new Map([['k', deselected]]),
+    })
+
+    press(root, 'Enter')
+    expect(insert).toHaveBeenCalledWith({
+      notePath: 'daily/2026-06-15.md',
+      noteTitle: '2026-06-15',
+      dailyDate: '2026-06-15',
+      isPinned: false,
+      pinnedOrder: null,
+    })
+  })
+
   it('backs off entirely while the inline editor is focused', () => {
     const editor = document.createElement('div')
     editor.setAttribute('data-task-editor', '')
