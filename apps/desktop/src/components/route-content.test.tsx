@@ -7,8 +7,9 @@ import { setBridge, TaskStaleError } from '@reflect/core'
 import type { TaskListGroup } from '@reflect/core'
 import { INDEX_QUERY_SCOPE, queryClient } from '@/lib/query-client'
 import { PaletteProvider, usePalette } from '@/components/command-palette/palette-provider'
-import { flushOpenDocuments } from '@/editor/open-documents'
+import { flushOpenDocuments, registerOpenDocument } from '@/editor/open-documents'
 import type { NoteEditorHandle } from '@/editor/note-editor'
+import type { NoteSession } from '@/editor/note-session'
 import { RouterProvider } from '@/routing/router'
 import type { Route } from '@/routing/route'
 import { RouteContent } from './route-content'
@@ -165,6 +166,25 @@ function renderRoute(route: Route) {
   )
 }
 
+function fakeSession(path: string, flush: () => Promise<void>): NoteSession {
+  return {
+    path,
+    retarget: () => {},
+    load: () => {},
+    editorChanged: () => {},
+    externalChanged: () => {},
+    flush,
+    keepMine: () => {},
+    loadTheirs: () => {},
+    commitFrontmatter: async () => true,
+    content: () => '',
+    liveContent: () => '',
+    updateFrontmatter: () => true,
+    dispose: () => {},
+    discard: () => {},
+  }
+}
+
 describe('RouteContent', () => {
   it('renders the daily stream for the today route', () => {
     const view = renderRoute({ kind: 'today' })
@@ -300,6 +320,50 @@ describe('RouteContent', () => {
       }),
     )
     view.unmount()
+  })
+
+  it('flushes an open source note before toggling its task from disk', async () => {
+    indexFns.listTaskGroups.mockResolvedValue([
+      {
+        key: 'current',
+        kind: 'current',
+        title: 'Current',
+        notePath: null,
+        tasks: [
+          {
+            notePath: 'daily/2026-06-15.md',
+            markerOffset: 2,
+            text: 'Ship tasks',
+            raw: '[ ] Ship tasks',
+            checked: false,
+            noteTitle: '2026-06-15',
+            dailyDate: '2026-06-15',
+            isPinned: false,
+          },
+        ],
+      },
+    ])
+    const log: string[] = []
+    const unregister = registerOpenDocument({
+      session: fakeSession('daily/2026-06-15.md', async () => {
+        log.push('flush')
+      }),
+    })
+    indexFns.toggleIndexedTask.mockImplementation(async () => {
+      log.push('toggle')
+      return true
+    })
+
+    try {
+      const view = renderRoute({ kind: 'tasks' })
+      await view.findByText('Ship tasks')
+      await userEvent.click(view.getByRole('checkbox', { name: 'Mark task complete' }))
+
+      await waitFor(() => expect(log).toEqual(['flush', 'toggle']))
+      view.unmount()
+    } finally {
+      unregister()
+    }
   })
 
   it('refreshes task queries when a stale toggle refusal reindexes the note', async () => {

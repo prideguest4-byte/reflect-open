@@ -11,6 +11,7 @@ import {
 import { INDEX_QUERY_SCOPE, invalidateIndexQueries } from '@/lib/query-client'
 import { startOperation } from '@/lib/operations'
 import { todayIso } from '@/lib/dates'
+import { openSession } from '@/editor/open-documents'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -41,6 +42,7 @@ export function TasksScreen(): ReactElement {
     setPendingKey(key)
     let shouldInvalidate = false
     try {
+      await openSession(task.notePath)?.flush()
       await toggleIndexedTask({
         notePath: task.notePath,
         markerOffset: task.markerOffset,
