@@ -130,6 +130,8 @@ describe('SettingsProvider', () => {
         {
           editorMarkdownSyntax: 'focus',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
+          editorBulletAfterHeading: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -186,6 +188,8 @@ describe('SettingsProvider', () => {
         {
           editorMarkdownSyntax: 'show',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
+          editorBulletAfterHeading: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -227,6 +231,8 @@ describe('SettingsProvider', () => {
         {
           editorMarkdownSyntax: 'show',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
+          editorBulletAfterHeading: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -262,6 +268,8 @@ describe('SettingsProvider', () => {
         {
           editorMarkdownSyntax: 'focus',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
+          editorBulletAfterHeading: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -423,6 +431,8 @@ describe('SettingsProvider', () => {
         {
           editorMarkdownSyntax: 'show',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
+          editorBulletAfterHeading: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -461,6 +471,8 @@ describe('SettingsProvider', () => {
       {
         editorMarkdownSyntax: 'show',
         editorSpellCheck: true,
+        editorDefaultBullet: true,
+        editorBulletAfterHeading: true,
         semanticSearchEnabled: false,
         mobileOnboarded: false,
         theme: 'system',

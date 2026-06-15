@@ -109,6 +109,8 @@ export {
   settingsSchema,
   editorMarkdownSyntaxSchema,
   editorSpellCheckSchema,
+  editorDefaultBulletSchema,
+  editorBulletAfterHeadingSchema,
   semanticSearchEnabledSchema,
   themePreferenceSchema,
   timeFormatSchema,

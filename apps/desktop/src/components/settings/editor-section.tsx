@@ -83,6 +83,32 @@ export function EditorSection(): ReactElement {
           />
         </div>
       </SettingsField>
+
+      <SettingsField
+        legend="Start with a bullet"
+        description="New and empty notes open with a single bullet point, ready to type."
+      >
+        <div className="mt-3">
+          <Switch
+            aria-label="Start with a bullet"
+            checked={settings.editorDefaultBullet}
+            onCheckedChange={(checked) => updateSettings({ editorDefaultBullet: checked })}
+          />
+        </div>
+      </SettingsField>
+
+      <SettingsField
+        legend="Bullet after a heading"
+        description="Pressing Return at the end of a heading starts a new bullet."
+      >
+        <div className="mt-3">
+          <Switch
+            aria-label="Bullet after a heading"
+            checked={settings.editorBulletAfterHeading}
+            onCheckedChange={(checked) => updateSettings({ editorBulletAfterHeading: checked })}
+          />
+        </div>
+      </SettingsField>
     </SettingsSection>
   )
 }

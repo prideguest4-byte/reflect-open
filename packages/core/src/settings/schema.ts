@@ -31,6 +31,31 @@ export type EditorMarkdownSyntax = z.infer<typeof editorMarkdownSyntaxSchema>
 export const editorSpellCheckSchema = z.boolean().catch(true)
 
 /**
+ * Whether a note that opens with an empty body starts the editor on a single
+ * empty bullet — old Reflect's every-note default. On by default.
+ *
+ * The bullet is an **editor affordance only**, never persisted on its own: an
+ * empty list item serializes to nothing (`docToMarkdown` drops it), so an
+ * unedited note still writes an empty file — and a not-yet-created daily-note
+ * placeholder stays uncreated until the first real keystroke (the lazy
+ * no-litter contract). The seam lives at the editor (`note-pane.tsx`), not the
+ * save pipeline, because seeding the document model with the literal `- `
+ * markdown would classify lossy and open the note read-only.
+ */
+export const editorDefaultBulletSchema = z.boolean().catch(true)
+
+/**
+ * Whether pressing Return at the end of a heading starts a new bullet on the
+ * next line — old Reflect's "type a title, then bullet" capture flow. On by
+ * default.
+ *
+ * Independent of {@link editorDefaultBulletSchema}: that seeds an empty note's
+ * first line, this shapes what Enter *after a heading* produces. They are
+ * separate keys so each can be turned off on its own.
+ */
+export const editorBulletAfterHeadingSchema = z.boolean().catch(true)
+
+/**
  * The app color theme. `system` (the default) follows the OS preference;
  * `light`/`dark` pin it. Persisted here so the choice survives relaunch.
  */
@@ -210,6 +235,8 @@ export const settingsSchema = z
   .object({
     editorMarkdownSyntax: editorMarkdownSyntaxSchema,
     editorSpellCheck: editorSpellCheckSchema,
+    editorDefaultBullet: editorDefaultBulletSchema,
+    editorBulletAfterHeading: editorBulletAfterHeadingSchema,
     semanticSearchEnabled: semanticSearchEnabledSchema,
     mobileOnboarded: mobileOnboardedSchema,
     theme: themePreferenceSchema,
