@@ -1,4 +1,4 @@
-import { browser } from 'wxt/browser'
+import { browser, type Browser } from 'wxt/browser'
 import { isCapturableUrl, type CapturedPage } from './capture-message'
 
 /**
@@ -11,12 +11,11 @@ export type CapturedPageState =
 const SCREENSHOT_QUALITY = 85
 
 /**
- * Snapshot the active tab: URL + title from the tab, an optional screenshot,
+ * Snapshot a tab: URL + title from the tab, an optional screenshot,
  * and the page's current selection. Chrome-restricted pages degrade to URL +
  * title when possible, and non-http(s) pages are rejected.
  */
-export async function snapshotActiveTab(): Promise<CapturedPageState> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true })
+export async function snapshotTab(tab: Browser.tabs.Tab | undefined): Promise<CapturedPageState> {
   if (!tab || tab.id === undefined || !isCapturableUrl(tab.url)) {
     return { status: 'uncapturable' }
   }
@@ -47,4 +46,12 @@ export async function snapshotActiveTab(): Promise<CapturedPageState> {
     status: 'ready',
     page: { url: tab.url, title: tab.title ?? '', screenshotDataUrl, selection },
   }
+}
+
+/**
+ * Snapshot whichever tab is active when the async query runs.
+ */
+export async function snapshotActiveTab(): Promise<CapturedPageState> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true })
+  return snapshotTab(tab)
 }

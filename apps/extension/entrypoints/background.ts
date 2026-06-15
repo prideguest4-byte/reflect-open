@@ -4,7 +4,7 @@ import { SAVE_CURRENT_PAGE_COMMAND } from '@/lib/commands'
 import { flushQueue } from '@/lib/flush'
 import { isFlushRequest } from '@/lib/messages'
 import { saveCapture } from '@/lib/save-capture'
-import { snapshotActiveTab } from '@/lib/snapshot-active-tab'
+import { snapshotTab } from '@/lib/snapshot-active-tab'
 
 /**
  * The MV3 service worker owns retries and the shortcut fast path. Every
@@ -17,8 +17,8 @@ import { snapshotActiveTab } from '@/lib/snapshot-active-tab'
 const RETRY_ALARM = 'capture-retry'
 const RETRY_PERIOD_MINUTES = 15
 
-async function saveActiveTabWithDefaults(): Promise<void> {
-  const captured = await snapshotActiveTab()
+async function saveTabWithDefaults(tab: Parameters<typeof snapshotTab>[0]): Promise<void> {
+  const captured = await snapshotTab(tab)
   if (captured.status !== 'ready') {
     return
   }
@@ -47,9 +47,9 @@ export default defineBackground(() => {
     return false
   })
 
-  browser.commands.onCommand.addListener((command) => {
+  browser.commands.onCommand.addListener((command, tab) => {
     if (command === SAVE_CURRENT_PAGE_COMMAND) {
-      void saveActiveTabWithDefaults().catch((cause: unknown) => {
+      void saveTabWithDefaults(tab).catch((cause: unknown) => {
         console.error('shortcut capture failed:', cause)
       })
     }
