@@ -329,7 +329,7 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
-  it('deletes the selection with ⌘⌫', async () => {
+  it('deletes a multi-selection with ⌘⌫', async () => {
     deleteTask.mockResolvedValue(undefined)
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
@@ -337,15 +337,40 @@ describe('TasksScreen', () => {
     ])
     const view = renderScreen()
 
+    // ⌘⌫ deletes only outside the inline editor (a multi-selection mounts none);
+    // while editing a sole task it's a text edit, so it can't race the commit.
     await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    fireEvent.click(view.getByRole('button', { name: 'second' }), { metaKey: true })
     await userEvent.keyboard('{Meta>}{Backspace}{/Meta}')
-    await waitFor(() =>
-      expect(deleteTask).toHaveBeenCalledWith(
-        expect.objectContaining({ notePath: 'notes/a.md', markerOffset: 2 }),
-        1,
-      ),
-    )
+    await waitFor(() => expect(deleteTask).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(view.queryByText('first')).toBeNull())
+    view.unmount()
+  })
+
+  it('does not reopen an already-completed task when ⌘↵ hits the selection', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] open', text: 'open', noteTitle: 'A' }),
+    ])
+    getCompletedTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/b.md',
+        markerOffset: 2,
+        raw: '[x] done',
+        text: 'done',
+        checked: true,
+        noteTitle: 'B',
+      }),
+    ])
+    const view = renderScreen()
+
+    await view.findByRole('button', { name: 'open' })
+    await userEvent.keyboard('{Meta>}a{/Meta}') // selects the open and the completed row
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    // Only the open row toggles; the completed one is left untouched.
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(1))
+    expect(toggleTask).toHaveBeenCalledWith(expect.objectContaining({ notePath: 'notes/a.md' }), 1)
     view.unmount()
   })
 

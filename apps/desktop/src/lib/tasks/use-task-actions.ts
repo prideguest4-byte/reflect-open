@@ -140,8 +140,11 @@ export function useTaskActions(): TaskActions {
   return {
     isPending: completeMutation.isPending || deleteMutation.isPending || editMutation.isPending,
     complete: (tasks) => {
-      if (tasks.length > 0 && graph?.generation !== undefined && !completeMutation.isPending) {
-        completeMutation.mutate(tasks)
+      // ⌘↵ *completes*; with archived rows in the selection, toggling an
+      // already-checked task would reopen it on disk. Only act on open rows.
+      const open = tasks.filter((task) => !task.checked)
+      if (open.length > 0 && graph?.generation !== undefined && !completeMutation.isPending) {
+        completeMutation.mutate(open)
       }
     },
     remove: (tasks) => {

@@ -114,21 +114,10 @@ export function TasksScreen(): ReactElement {
     const selectedTasks = (): OpenTask[] =>
       [...selection.selected].map((key) => tasksByKey.get(key)).filter((t): t is OpenTask => !!t)
 
-    // Complete / delete act on the selection even while editing one task, but
-    // never while typing in the search box.
-    if (!inSearch && mod && event.key === 'Enter') {
-      event.preventDefault()
-      actions.complete(selectedTasks())
-      return
-    }
-    if (!inSearch && mod && event.key === 'Backspace') {
-      event.preventDefault()
-      actions.remove(selectedTasks())
-      selection.clear()
-      return
-    }
-    // The inline editor owns its remaining keys (typing, Enter to commit, ⌘A to
-    // select its text, Backspace) — so a sole selection's ⌘A targets the text.
+    // While editing a sole task the inline editor owns its keys — typing, ⌘A to
+    // select its text, and ⌘↵ commit / ⌘⌫ delete for that one task. The bulk
+    // shortcuts below must NOT also fire: a ⌘⌫ that both deletes here and lets
+    // the editor commit on unmount would race two writes to the same line.
     if (inEditor) {
       return
     }
@@ -140,7 +129,14 @@ export function TasksScreen(): ReactElement {
       }
       return
     }
-    if (mod && (event.key === 'a' || event.key === 'A')) {
+    if (mod && event.key === 'Enter') {
+      event.preventDefault()
+      actions.complete(selectedTasks())
+    } else if (mod && event.key === 'Backspace') {
+      event.preventDefault()
+      actions.remove(selectedTasks())
+      selection.clear()
+    } else if (mod && (event.key === 'a' || event.key === 'A')) {
       event.preventDefault()
       selection.selectAll()
     } else if (event.key === 'ArrowDown') {
