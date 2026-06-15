@@ -217,11 +217,12 @@ function captureNoteBody(
 }
 
 function capturePageTextFromBody(body: string): string | undefined {
-  const startAt = body.indexOf(PAGE_TEXT_START)
-  if (startAt === -1) {
+  const marker = `\n## Page Text\n\n${PAGE_TEXT_START}\n`
+  const markerAt = body.indexOf(marker)
+  if (markerAt === -1) {
     return undefined
   }
-  const contentStart = startAt + PAGE_TEXT_START.length
+  const contentStart = markerAt + marker.length
   const endAt = body.indexOf(PAGE_TEXT_END, contentStart)
   if (endAt === -1) {
     throw new Error('capture note is missing page text end marker')

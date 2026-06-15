@@ -479,7 +479,11 @@ describe('reconcileCaptureEnrichment', () => {
       'This is an article heading, not the capture image section.',
       'Second paragraph.',
     ].join('\n\n')
-    await drainOne({ selection: 'quoted text\n\n## Page Text\n\nnot actual page text', contentText })
+    await drainOne({
+      selection:
+        'quoted text\n\n<!-- reflect-capture-page-text:start -->\n\n## Page Text\n\nnot actual page text',
+      contentText,
+    })
     scrapeMock.mockResolvedValue({
       title: 'An article',
       description: 'A scraped description.',
