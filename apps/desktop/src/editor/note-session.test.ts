@@ -727,7 +727,7 @@ describe('commitTaskToggle', () => {
     expect(await h.session.commitTaskToggle(firstTask(source))).toBe(false)
   })
 
-  it('surfaces a write failure instead of reporting a phantom commit', async () => {
+  it('reverts the toggle and surfaces the error when the write fails', async () => {
     const source = '- [ ] x\n'
     const h = harness({ disk: source })
     h.session.load()
@@ -735,6 +735,11 @@ describe('commitTaskToggle', () => {
 
     h.failWrites('disk full')
     await expect(h.session.commitTaskToggle(firstTask(source))).rejects.toThrow('disk full')
+    // Transactional: nothing persisted, so the buffer and the editor revert to
+    // the un-toggled line (no divergence with the rolled-back Tasks list).
+    expect(h.session.content()).toBe('- [ ] x\n')
+    expect(h.applied.at(-1)).toBe('- [ ] x\n')
+    expect(h.snapshots.at(-1)?.error).toBeNull()
   })
 
   it('propagates TaskStaleError when the task line is gone', async () => {

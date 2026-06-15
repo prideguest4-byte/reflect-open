@@ -676,6 +676,9 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     if (io.write === null || disposed || isProtected || status !== 'ready' || conflict !== null) {
       return false
     }
+    // Snapshot the pre-toggle document so a failed write reverts cleanly.
+    const previousHeader = header
+    const previousBuffer = buffer
     // Toggle the live document — header plus the unsaved buffer — so concurrent
     // edits survive. `toggleTaskMarker` relocates by `raw` if the offset drifted
     // and throws TaskStaleError when it can't; that propagates to the caller.
@@ -687,10 +690,19 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     dirty = header + buffer !== disk
     emit()
     await flush() // land it now so the Tasks view refreshes promptly
-    // `flush()` resolves even when the write failed (the failure is captured in
-    // `error`, not thrown), so surface it rather than reporting a phantom commit.
+    // `flush()` resolves even when the write failed (captured in `error`, not
+    // thrown). Revert the in-memory toggle so the editor and the Tasks list can't
+    // diverge — the row stays open everywhere — then surface the failure. The
+    // toggle is transactional: it persists, or nothing changes.
     if (error !== null) {
-      throw new Error(error)
+      const message = error
+      header = previousHeader
+      buffer = previousBuffer
+      applyToEditor(previousBuffer)
+      dirty = header + buffer !== disk
+      error = null
+      emit()
+      throw new Error(message)
     }
     return true
   }
