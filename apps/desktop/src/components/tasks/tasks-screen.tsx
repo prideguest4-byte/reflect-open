@@ -59,6 +59,7 @@ export function TasksScreen(): ReactElement {
   const { filters, toggle } = useTaskFilters()
   const [query, setQuery] = useState('')
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const enabled = hasBridge() && graph !== null
 
   const { data: open, isError: openFailed } = useQuery({
@@ -107,7 +108,19 @@ export function TasksScreen(): ReactElement {
   // — a ref carries the latest closure so the listener stays stable.
   const handleKeyRef = useRef<(event: KeyboardEvent) => void>(() => {})
   handleKeyRef.current = (event) => {
+    // Respect anything a focused widget already handled (e.g. the filters menu's
+    // own arrow/Escape navigation).
+    if (event.defaultPrevented) {
+      return
+    }
     const target = event.target as HTMLElement | null
+    // Only the Tasks screen's own surface drives these shortcuts — or the body
+    // when nothing is focused. A portaled overlay (the filters menu, a future
+    // dialog) renders outside the root, so its keys are never hijacked.
+    const onSurface = target === document.body || (target !== null && (rootRef.current?.contains(target) ?? false))
+    if (!onSurface) {
+      return
+    }
     const inSearch = target instanceof HTMLInputElement
     const inEditor = target?.closest?.('[data-task-editor]') != null
     const mod = event.metaKey || event.ctrlKey
@@ -168,7 +181,7 @@ export function TasksScreen(): ReactElement {
   }, [])
 
   return (
-    <div aria-label="Tasks" className="flex h-full min-h-0 flex-col">
+    <div ref={rootRef} aria-label="Tasks" className="flex h-full min-h-0 flex-col">
       <header className="flex flex-none items-center gap-2 border-b border-border py-2.5 pl-2 pr-3 lg:pl-10">
         <div className="relative min-w-0 flex-1">
           <Search

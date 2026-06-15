@@ -374,6 +374,27 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('ignores task shortcuts when focus is outside the Tasks surface', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+    await view.findByRole('button', { name: 'first' })
+
+    // A portaled overlay (the filters menu, a future dialog) renders outside the
+    // Tasks root. A keydown from there must not drive the task selection.
+    const overlay = document.createElement('button')
+    document.body.appendChild(overlay)
+    overlay.focus()
+    fireEvent.keyDown(overlay, { key: 'ArrowDown' })
+
+    expect(view.queryByTestId('task-editor')).toBeNull()
+    expect(view.getByRole('button', { name: 'first' }).getAttribute('aria-pressed')).toBe('false')
+    overlay.remove()
+    view.unmount()
+  })
+
   it('completes a task when its checkbox is clicked', async () => {
     toggleTask.mockResolvedValue(undefined)
     getOpenTasks.mockResolvedValue([
