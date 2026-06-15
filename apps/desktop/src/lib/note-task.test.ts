@@ -1,6 +1,6 @@
 import { TaskStaleError } from '@reflect/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { NoteBusyError, toggleTask } from './note-task'
+import { deleteTask, editTask, NoteBusyError, toggleTask } from './note-task'
 
 const openSession = vi.hoisted(() => vi.fn())
 vi.mock('@/editor/open-documents', () => ({ openSession }))
@@ -57,6 +57,65 @@ describe('toggleTask', () => {
     readNote.mockResolvedValue('- [ ] something else entirely\n')
 
     await expect(toggleTask(task, 7)).rejects.toBeInstanceOf(TaskStaleError)
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+})
+
+describe('editTask', () => {
+  it('writes the rewritten content to disk when the note is not open', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] do it\n')
+    writeNote.mockResolvedValue(undefined)
+
+    await editTask(task, 'do it well', 7)
+    expect(writeNote).toHaveBeenCalledWith('notes/a.md', '- [ ] do it well\n', 7)
+  })
+
+  it('routes the new content through the live session when the note is open', async () => {
+    const commitTaskEdit = vi.fn().mockResolvedValue(true)
+    openSession.mockReturnValue({ commitTaskEdit })
+
+    await editTask(task, 'do it well', 7)
+    expect(commitTaskEdit).toHaveBeenCalledWith({ markerOffset: 2, raw: '[ ] do it' }, 'do it well')
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('throws NoteBusyError when the session declines, never clobbering via disk', async () => {
+    openSession.mockReturnValue({ commitTaskEdit: vi.fn().mockResolvedValue(false) })
+    await expect(editTask(task, 'x', 7)).rejects.toBeInstanceOf(NoteBusyError)
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('propagates TaskStaleError from the disk path when the index is stale', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] something else entirely\n')
+    await expect(editTask(task, 'x', 7)).rejects.toBeInstanceOf(TaskStaleError)
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+})
+
+describe('deleteTask', () => {
+  it('removes the task line on disk when the note is not open', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] do it\n- [ ] keep\n')
+    writeNote.mockResolvedValue(undefined)
+
+    await deleteTask(task, 7)
+    expect(writeNote).toHaveBeenCalledWith('notes/a.md', '- [ ] keep\n', 7)
+  })
+
+  it('routes through the live session when the note is open', async () => {
+    const commitTaskRemove = vi.fn().mockResolvedValue(true)
+    openSession.mockReturnValue({ commitTaskRemove })
+
+    await deleteTask(task, 7)
+    expect(commitTaskRemove).toHaveBeenCalledWith({ markerOffset: 2, raw: '[ ] do it' })
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('throws NoteBusyError when the session declines, never clobbering via disk', async () => {
+    openSession.mockReturnValue({ commitTaskRemove: vi.fn().mockResolvedValue(false) })
+    await expect(deleteTask(task, 7)).rejects.toBeInstanceOf(NoteBusyError)
     expect(writeNote).not.toHaveBeenCalled()
   })
 })
