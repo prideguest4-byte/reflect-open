@@ -624,6 +624,21 @@ describe('reconcileCaptureEnrichment', () => {
     expect(note).not.toContain('captureProvider')
   })
 
+  it('a provider refusal without scraped description does not stamp AI provenance', async () => {
+    await drainOne()
+    scrapeMock.mockResolvedValue({ title: 'An article', description: null, siteName: null })
+    describeMock.mockRejectedValue(new DescriptionRejectedError('image too large'))
+
+    const outcome = await reconcile()
+
+    expect(outcome.enriched).toBe(1)
+    const note = files.get(IDENTITY.notePath) ?? ''
+    expect(note).not.toContain('- Description:')
+    expect(note).toContain('captureStatus: done')
+    expect(note).not.toContain('captureProvider')
+    expect(note).not.toContain('captureModel')
+  })
+
   it('omits the description bullet when no description source exists', async () => {
     await drainOne()
     scrapeMock.mockResolvedValue({ title: 'An article', description: null, siteName: null })

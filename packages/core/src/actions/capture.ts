@@ -763,11 +763,11 @@ export async function reconcileCaptureEnrichment(
         }
       }
 
-      const text =
-        description && metadataValue(description) !== '' ? description : pageMeta?.description ?? null
+      const usedAi =
+        description !== null && metadataValue(description) !== '' && config !== null
+      const text = usedAi ? description : pageMeta?.description ?? null
       const newBody = text !== null ? withDescription(split.body, text) : split.body
       const reassembled = source.slice(0, split.bodyOffset) + newBody
-      const usedAi = text === description && config !== null
       await writeNote(
         identity.notePath,
         upsertFrontmatter(reassembled, {
