@@ -35,7 +35,7 @@ function extractPageText(): ExtractPageTextResponse {
   try {
     const clone = document.cloneNode(true)
     if (!(clone instanceof Document)) {
-      return { ok: false, message: 'Could not clone the page document.' }
+      return { ok: true, contentText: formatParagraphs(fallbackParagraphs()) }
     }
     const article = new Defuddle(clone, {
       url: document.location.href,
@@ -49,7 +49,11 @@ function extractPageText(): ExtractPageTextResponse {
     )
     return { ok: true, contentText }
   } catch (cause) {
-    return { ok: false, message: cause instanceof Error ? cause.message : String(cause) }
+    try {
+      return { ok: true, contentText: formatParagraphs(fallbackParagraphs()) }
+    } catch {
+      return { ok: false, message: cause instanceof Error ? cause.message : String(cause) }
+    }
   }
 }
 

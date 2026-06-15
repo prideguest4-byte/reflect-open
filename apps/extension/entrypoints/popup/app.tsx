@@ -67,6 +67,7 @@ export function CapturePopup(): ReactElement {
   const [note, setNote] = useState('')
   const [includePageText, setIncludePageText] = useState(false)
   const includePageTextTouched = useRef(false)
+  const [includePageTextPreferenceLoaded, setIncludePageTextPreferenceLoaded] = useState(false)
   const [save, setSave] = useState<SaveState>({ phase: 'idle' })
   const [heldCount, setHeldCount] = useState(0)
 
@@ -81,9 +82,15 @@ export function CapturePopup(): ReactElement {
         if (!cancelled && !includePageTextTouched.current) {
           setIncludePageText(preference)
         }
+        if (!cancelled) {
+          setIncludePageTextPreferenceLoaded(true)
+        }
       },
       (cause) => {
         console.warn('capture page text preference could not be read:', cause)
+        if (!cancelled) {
+          setIncludePageTextPreferenceLoaded(true)
+        }
       },
     )
     return () => {
@@ -101,7 +108,12 @@ export function CapturePopup(): ReactElement {
 
   async function onSubmit(event: FormEvent): Promise<void> {
     event.preventDefault()
-    if (captured.status !== 'ready' || save.phase === 'saving' || save.phase === 'queued') {
+    if (
+      captured.status !== 'ready' ||
+      !includePageTextPreferenceLoaded ||
+      save.phase === 'saving' ||
+      save.phase === 'queued'
+    ) {
       return
     }
     setSave({ phase: 'saving' })
@@ -136,10 +148,12 @@ export function CapturePopup(): ReactElement {
 
   const { page } = captured
   const host = new URL(page.url).host
-  const busy = save.phase === 'saving' || save.phase === 'queued'
+  const busy =
+    save.phase === 'saving' || save.phase === 'queued' || !includePageTextPreferenceLoaded
 
   function onIncludePageTextChange(checked: boolean): void {
     includePageTextTouched.current = true
+    setIncludePageTextPreferenceLoaded(true)
     setIncludePageText(checked)
     void writeIncludePageTextPreference(checked).catch((cause) => {
       console.warn('capture page text preference could not be saved:', cause)
