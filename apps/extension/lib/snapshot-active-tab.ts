@@ -6,7 +6,7 @@ import { isCapturableUrl, type CapturedPage } from './capture-message'
  */
 export type CapturedPageState =
   | { status: 'uncapturable' }
-  | { status: 'ready'; page: CapturedPage }
+  | { status: 'ready'; page: CapturedPage; tabId: number }
 
 const SCREENSHOT_QUALITY = 85
 
@@ -45,6 +45,7 @@ export async function snapshotTab(tab: Browser.tabs.Tab | undefined): Promise<Ca
   return {
     status: 'ready',
     page: { url: tab.url, title: tab.title ?? '', screenshotDataUrl, selection },
+    tabId: tab.id,
   }
 }
 

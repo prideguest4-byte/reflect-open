@@ -160,10 +160,10 @@ export interface FrontmatterPatch {
   private?: boolean
   /**
    * The published GitHub Gist block (id, url, file, hash of the published
-   * body) — written whole after every publish. Publishing is set-only in the
-   * first wave; there is no unpublish, so no delete encoding either.
+   * body) — written whole after every publish. `false` removes the block when
+   * the user unpublishes the link.
    */
-  gist?: GistFrontmatter
+  gist?: GistFrontmatter | false
 }
 
 /**
@@ -183,13 +183,17 @@ export function frontmatterPatchToYaml(patch: FrontmatterPatch): Record<string, 
     yaml.private = patch.private === false ? undefined : true
   }
   if (patch.gist !== undefined) {
-    // Spelled out key-by-key so the YAML block's shape (and key order) is
-    // this module's contract, not whatever object the caller happened to hold.
-    yaml.gist = {
-      id: patch.gist.id,
-      url: patch.gist.url,
-      file: patch.gist.file,
-      hash: patch.gist.hash,
+    if (patch.gist === false) {
+      yaml.gist = undefined
+    } else {
+      // Spelled out key-by-key so the YAML block's shape (and key order) is
+      // this module's contract, not whatever object the caller happened to hold.
+      yaml.gist = {
+        id: patch.gist.id,
+        url: patch.gist.url,
+        file: patch.gist.file,
+        hash: patch.gist.hash,
+      }
     }
   }
   return yaml

@@ -1,11 +1,14 @@
 import { useEffect, useState, type MouseEvent, type ReactElement } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, RefreshCw } from 'lucide-react'
 import { errorMessage } from '@reflect/core'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useNoteRow } from '@/hooks/use-note-row'
+import { runGistPublish } from '@/lib/note-gist'
 import { startOperation } from '@/lib/operations'
+import { cn } from '@/lib/utils'
+import { useGraph } from '@/providers/graph-provider'
 import { SidebarSection } from './sidebar-section'
 
 interface PublishedUrlSectionProps {
@@ -22,9 +25,11 @@ const COPY_RESET_MS = 1400
  * plus a compact copy affordance for sharing it again.
  */
 export function PublishedUrlSection({ path }: PublishedUrlSectionProps): ReactElement | null {
+  const { graph } = useGraph()
   const row = useNoteRow(path)
   const url = row?.gistUrl ?? null
   const [copyState, setCopyState] = useState<CopyState>('idle')
+  const [isUpdating, setIsUpdating] = useState(false)
 
   useEffect(() => {
     setCopyState('idle')
@@ -57,6 +62,19 @@ export function PublishedUrlSection({ path }: PublishedUrlSectionProps): ReactEl
     void openUrl(url)
   }
 
+  const updateGist = async (): Promise<void> => {
+    const generation = graph?.generation
+    if (generation === undefined) {
+      return
+    }
+    setIsUpdating(true)
+    try {
+      await runGistPublish(path, generation)
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
   const Icon = copyState === 'copied' ? Check : Copy
 
   return (
@@ -84,6 +102,24 @@ export function PublishedUrlSection({ path }: PublishedUrlSectionProps): ReactEl
             </Button>
           </TooltipTrigger>
           <TooltipContent>{copyState === 'copied' ? 'Copied' : 'Copy published URL'}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Update published gist"
+              onClick={() => void updateGist()}
+              disabled={isUpdating}
+              className={cn('text-text-muted hover:text-text', row?.gistStale === true && 'text-accent')}
+            >
+              <RefreshCw aria-hidden className={cn('size-3.5', isUpdating && 'animate-spin')} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {row?.gistStale === true ? 'Update gist with latest note' : 'Update published gist'}
+          </TooltipContent>
         </Tooltip>
       </div>
     </SidebarSection>
