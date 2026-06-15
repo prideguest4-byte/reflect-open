@@ -25,6 +25,8 @@ export interface TaskKeyboardOptions {
   rootRef: RefObject<HTMLElement | null>
   /** Bring a row into view after a keyboard move (V1 scrolls the selection). */
   scrollToKey: (key: string | null) => void
+  /** ⌘⇧E: open/close the "Task filters" menu (V1). */
+  onToggleFilters: () => void
 }
 
 /** Elements that own their own keyboard nav — the shortcuts back off entirely. */
@@ -66,12 +68,21 @@ export function useTaskKeyboard({
   today,
   rootRef,
   scrollToKey,
+  onToggleFilters,
 }: TaskKeyboardOptions): void {
   const handlerRef = useRef<(event: KeyboardEvent) => void>(() => {})
   handlerRef.current = (event) => {
     // Respect anything a focused widget already handled (e.g. the filters menu's
     // own arrow/Escape navigation).
     if (event.defaultPrevented) {
+      return
+    }
+    // ⌘⇧E toggles the filters menu (V1) — a screen-level chord that fires
+    // regardless of focus, before the surface-scoping bails, so the same keys
+    // open and close it (the open menu portals outside the surface).
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.key === 'e' || event.key === 'E')) {
+      event.preventDefault()
+      onToggleFilters()
       return
     }
     const target = event.target as HTMLElement | null
@@ -120,7 +131,7 @@ export function useTaskKeyboard({
       if (event.shiftKey) {
         actions.archive() // ⌘⇧↵ — hide the session's completed tasks
       } else {
-        actions.complete(selectedTasks())
+        actions.toggle(selectedTasks()) // ⌘↵ — complete, or reopen if all checked
       }
     } else if (event.key === 'Enter') {
       // Return adds a task (V1). A sole selection's editor owns Enter (it bailed
@@ -176,9 +187,10 @@ export function useTaskKeyboard({
       }
       scrollToKey(selection.activeKey())
     } else if (event.key === 'Escape') {
-      if (selection.selectedCount > 0) {
+      // V1 clears the selection and the search query together.
+      if (selection.selectedCount > 0 || query !== '') {
+        event.preventDefault()
         selection.clear()
-      } else if (query !== '') {
         setQuery('')
       }
     }

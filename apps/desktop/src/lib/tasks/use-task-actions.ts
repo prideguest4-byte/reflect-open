@@ -40,6 +40,12 @@ export interface InsertTaskTarget {
  */
 export interface TaskActions {
   complete: (tasks: OpenTask[]) => void
+  /**
+   * ⌘↵ on a selection (V1's `toggleChecked`): complete the open rows, or — when
+   * every selected row is already checked — reopen them all. So a just-completed
+   * row (still struck) can be un-done with the same chord.
+   */
+  toggle: (tasks: OpenTask[]) => void
   remove: (tasks: OpenTask[]) => void
   /** Replace one task's content from the inline editor (Plan 18). */
   edit: (task: OpenTask, content: string) => void
@@ -104,6 +110,36 @@ export function useTaskActions(): TaskActions {
       cache.reconcile('Completing tasks', cause)
       forgetRecentlyCompleted(root, tasks.map(taskKey))
     },
+  })
+
+  const reopenMutation = useMutation({
+    mutationFn: async (tasks: OpenTask[]) => {
+      const generation = graph?.generation
+      if (generation === undefined) {
+        throw new Error('No graph is open.')
+      }
+      for (const task of tasks) {
+        await toggleTask(task, generation) // [x] → [ ]
+      }
+    },
+    onMutate: async (tasks: OpenTask[]) => {
+      const snapshot = await cache.snapshot()
+      // Put them back in the open list (unchecked), drop them from the completed
+      // list and this session's struck set — the inverse of completing.
+      const reopened = tasks.map((task) => ({
+        ...task,
+        checked: false,
+        raw: `[ ]${task.raw.slice(3)}`,
+      }))
+      const reopenedKeys = new Set(reopened.map(taskKey))
+      cache.patch(
+        (rows) => [...(rows ?? []).filter((row) => !reopenedKeys.has(taskKey(row))), ...reopened],
+        (rows) => withoutTasks(rows, tasks),
+      )
+      forgetRecentlyCompleted(root, tasks.map(taskKey))
+      return snapshot
+    },
+    onError: (cause) => cache.reconcile('Reopening tasks', cause),
   })
 
   const deleteMutation = useMutation({
@@ -214,6 +250,7 @@ export function useTaskActions(): TaskActions {
   return {
     isPending:
       completeMutation.isPending ||
+      reopenMutation.isPending ||
       deleteMutation.isPending ||
       editMutation.isPending ||
       editAndCompleteMutation.isPending ||
@@ -224,6 +261,22 @@ export function useTaskActions(): TaskActions {
       const open = tasks.filter((task) => !task.checked)
       if (open.length > 0 && graph?.generation !== undefined && !completeMutation.isPending) {
         completeMutation.mutate(open)
+      }
+    },
+    toggle: (tasks) => {
+      if (tasks.length === 0 || graph?.generation === undefined) {
+        return
+      }
+      // V1: all checked → reopen them all; otherwise complete the open ones.
+      if (tasks.every((task) => task.checked)) {
+        if (!reopenMutation.isPending) {
+          reopenMutation.mutate(tasks)
+        }
+      } else {
+        const open = tasks.filter((task) => !task.checked)
+        if (open.length > 0 && !completeMutation.isPending) {
+          completeMutation.mutate(open)
+        }
       }
     },
     remove: (tasks) => {

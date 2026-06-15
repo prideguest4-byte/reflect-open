@@ -647,6 +647,25 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('⌘↵ reopens a selection that is already all checked (toggle both ways, V1)', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] one', text: 'one', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] two', text: 'two', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('one')
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select both (no editor)
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}') // complete both
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(2))
+
+    // The struck rows stay selected; ⌘↵ again reopens them (two more toggles).
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(4))
+    view.unmount()
+  })
+
   it('ignores task shortcuts coming from a portaled overlay (the filters menu)', async () => {
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/a.md', markerOffset: 2, text: 'first', noteTitle: 'A' }),

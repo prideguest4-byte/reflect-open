@@ -61,6 +61,7 @@ export function TasksScreen(): ReactElement {
   const today = useToday()
   const { filters, toggle } = useTaskFilters()
   const [query, setQuery] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const enabled = hasBridge() && graph !== null
@@ -157,6 +158,7 @@ export function TasksScreen(): ReactElement {
     today,
     rootRef,
     scrollToKey,
+    onToggleFilters: () => setFiltersOpen((open) => !open),
   })
 
   // Move focus into the Tasks surface on mount so the shortcuts work the moment
@@ -197,7 +199,12 @@ export function TasksScreen(): ReactElement {
             Archive ({recentlyCompleted.length})
           </button>
         ) : null}
-        <TaskFiltersMenu filters={filters} toggle={toggle} />
+        <TaskFiltersMenu
+          filters={filters}
+          toggle={toggle}
+          open={filtersOpen}
+          onOpenChange={setFiltersOpen}
+        />
       </header>
       <div
         ref={setScrollElement}

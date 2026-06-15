@@ -42,6 +42,7 @@ function makeSelection(over: Partial<TaskSelection> = {}): TaskSelection {
 function makeActions(over: Partial<TaskActions> = {}): TaskActions {
   return {
     complete: vi.fn(),
+    toggle: vi.fn(),
     remove: vi.fn(),
     edit: vi.fn(),
     insert: vi.fn().mockResolvedValue(null),
@@ -77,6 +78,7 @@ function mount(options: {
   const actions = options.actions ?? makeActions()
   const setQuery = vi.fn()
   const scrollToKey = vi.fn()
+  const onToggleFilters = vi.fn()
   renderHook(() =>
     useTaskKeyboard({
       selection,
@@ -88,9 +90,10 @@ function mount(options: {
       today: options.today ?? '2026-06-15',
       rootRef: { current: root },
       scrollToKey,
+      onToggleFilters,
     }),
   )
-  return { selection, actions, setQuery, scrollToKey }
+  return { selection, actions, setQuery, scrollToKey, onToggleFilters }
 }
 
 /** Let the `void insert(...).then(...)` microtask settle before asserting. */
@@ -133,24 +136,35 @@ describe('useTaskKeyboard', () => {
     expect(selection.selectAll).toHaveBeenCalled()
   })
 
-  it('completes the resolved selection on ⌘↵ and deletes it on ⌘⌫', () => {
+  it('toggles the resolved selection on ⌘↵ and deletes it on ⌘⌫', () => {
     const t = task({ notePath: 'notes/a.md', markerOffset: 2 })
     const selection = makeSelection({ selected: new Set(['k']), selectedCount: 1 })
     const { actions } = mount({ selection, tasksByKey: new Map([['k', t]]) })
 
     press(root, 'Enter', { metaKey: true })
-    expect(actions.complete).toHaveBeenCalledWith([t])
+    expect(actions.toggle).toHaveBeenCalledWith([t]) // complete, or reopen if checked
 
     press(root, 'Backspace', { metaKey: true })
     expect(actions.remove).toHaveBeenCalledWith([t])
     expect(selection.clear).toHaveBeenCalled()
   })
 
-  it('archives on ⌘⇧↵ instead of completing', () => {
+  it('archives on ⌘⇧↵ instead of toggling', () => {
     const { actions } = mount({})
     press(root, 'Enter', { metaKey: true, shiftKey: true })
     expect(actions.archive).toHaveBeenCalled()
-    expect(actions.complete).not.toHaveBeenCalled()
+    expect(actions.toggle).not.toHaveBeenCalled()
+  })
+
+  it('toggles the filters menu on ⌘⇧E, even from the search box', () => {
+    const input = document.createElement('input')
+    root.appendChild(input)
+    const { onToggleFilters } = mount({})
+    press(root, 'e', { metaKey: true, shiftKey: true })
+    expect(onToggleFilters).toHaveBeenCalledTimes(1)
+    // Fires regardless of focus (it's a screen-level chord).
+    press(input, 'e', { metaKey: true, shiftKey: true })
+    expect(onToggleFilters).toHaveBeenCalledTimes(2)
   })
 
   it('plain ⌫ removes a single empty row and selects the previous (V1)', () => {
@@ -197,15 +211,21 @@ describe('useTaskKeyboard', () => {
     expect(actions.remove).not.toHaveBeenCalled()
   })
 
-  it('Escape clears a selection, else clears the search query', () => {
-    const withSelection = mount({ selection: makeSelection({ selectedCount: 1 }) })
+  it('Escape clears the selection and the search query together (V1)', () => {
+    const { selection, setQuery } = mount({
+      selection: makeSelection({ selectedCount: 1 }),
+      query: 'milk',
+    })
     press(root, 'Escape')
-    expect(withSelection.selection.clear).toHaveBeenCalled()
-    expect(withSelection.setQuery).not.toHaveBeenCalled()
+    expect(selection.clear).toHaveBeenCalled()
+    expect(setQuery).toHaveBeenCalledWith('')
+  })
 
-    const withQuery = mount({ selection: makeSelection({ selectedCount: 0 }), query: 'milk' })
-    press(root, 'Escape')
-    expect(withQuery.setQuery).toHaveBeenCalledWith('')
+  it('leaves Escape for other handlers when nothing is selected and the query is empty', () => {
+    const { selection } = mount({ selection: makeSelection({ selectedCount: 0 }), query: '' })
+    const event = press(root, 'Escape')
+    expect(event.defaultPrevented).toBe(false)
+    expect(selection.clear).not.toHaveBeenCalled()
   })
 
   it('ignores keys a focused widget already handled (defaultPrevented)', () => {
