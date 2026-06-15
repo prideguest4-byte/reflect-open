@@ -250,7 +250,9 @@ describe('drainCaptureInbox', () => {
 
     expect(outcome).toEqual({ pending: 1, drained: 1, deduped: 0, invalid: 0, stopped: null })
     const note = files.get(IDENTITY.notePath)
-    expect(note).toContain('## Page Text\n\nFirst paragraph.\n\nSecond paragraph.')
+    expect(note).toContain(
+      '## Page Text\n\n<!-- reflect-capture-page-text:start -->\nFirst paragraph.\n\nSecond paragraph.\n<!-- reflect-capture-page-text:end -->',
+    )
   })
 
   it('removes the spool only after the note and daily entry are written', async () => {
@@ -477,7 +479,7 @@ describe('reconcileCaptureEnrichment', () => {
       'This is an article heading, not the capture image section.',
       'Second paragraph.',
     ].join('\n\n')
-    await drainOne({ selection: 'quoted text', contentText })
+    await drainOne({ selection: 'quoted text\n\n## Page Text\n\nnot actual page text', contentText })
     scrapeMock.mockResolvedValue({
       title: 'An article',
       description: 'A scraped description.',

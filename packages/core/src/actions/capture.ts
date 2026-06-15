@@ -178,6 +178,9 @@ function urlHost(url: string): string {
   }
 }
 
+const PAGE_TEXT_START = '<!-- reflect-capture-page-text:start -->'
+const PAGE_TEXT_END = '<!-- reflect-capture-page-text:end -->'
+
 /** The capture's display title: the page title, else the URL's host. */
 function displayTitle(envelope: CaptureEnvelope): string {
   const title = wikiLinkSafe(envelope.title)
@@ -205,7 +208,7 @@ function captureNoteBody(
   }
   const contentText = envelope.contentText?.trim()
   if (contentText) {
-    parts.push(`## Page Text\n\n${contentText}`)
+    parts.push(`## Page Text\n\n${PAGE_TEXT_START}\n${contentText}\n${PAGE_TEXT_END}`)
   }
   if (hasScreenshot) {
     parts.push(`## Screenshot\n\n![${title}](${identity.assetPath})`)
@@ -214,23 +217,16 @@ function captureNoteBody(
 }
 
 function capturePageTextFromBody(body: string): string | undefined {
-  const marker = '\n## Page Text\n\n'
-  const markerAt = body.indexOf(marker)
-  if (markerAt === -1) {
+  const startAt = body.indexOf(PAGE_TEXT_START)
+  if (startAt === -1) {
     return undefined
   }
-  const rest = body.slice(markerAt + marker.length)
-  const screenshotMarker = '\n\n## Screenshot\n\n'
-  const screenshotAt = rest.lastIndexOf(screenshotMarker)
-  const candidateImage =
-    screenshotAt === -1 ? null : rest.slice(screenshotAt + screenshotMarker.length).trim()
-  const content =
-    candidateImage !== null &&
-    candidateImage.startsWith('![') &&
-    candidateImage.includes('](assets/capture-') &&
-    candidateImage.endsWith('.jpg)')
-      ? rest.slice(0, screenshotAt).trim()
-      : rest.trim()
+  const contentStart = startAt + PAGE_TEXT_START.length
+  const endAt = body.indexOf(PAGE_TEXT_END, contentStart)
+  if (endAt === -1) {
+    throw new Error('capture note is missing page text end marker')
+  }
+  const content = body.slice(contentStart, endAt).trim()
   return content === '' ? undefined : content
 }
 
