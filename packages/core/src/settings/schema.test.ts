@@ -7,6 +7,7 @@ describe('settingsSchema', () => {
       editorMarkdownSyntax: 'focus',
       editorSpellCheck: true,
       editorDefaultBullet: true,
+      editorBulletAfterHeading: true,
       semanticSearchEnabled: false,
       mobileOnboarded: false,
       theme: 'system',
@@ -22,6 +23,7 @@ describe('settingsSchema', () => {
     expect(DEFAULT_SETTINGS.editorMarkdownSyntax).toBe('focus')
     expect(DEFAULT_SETTINGS.editorSpellCheck).toBe(true)
     expect(DEFAULT_SETTINGS.editorDefaultBullet).toBe(true)
+    expect(DEFAULT_SETTINGS.editorBulletAfterHeading).toBe(true)
     expect(DEFAULT_SETTINGS.semanticSearchEnabled).toBe(false)
     expect(DEFAULT_SETTINGS.mobileOnboarded).toBe(false)
     expect(DEFAULT_SETTINGS.theme).toBe('system')
@@ -42,6 +44,12 @@ describe('settingsSchema', () => {
     expect(settingsSchema.parse({ editorSpellCheck: true }).editorSpellCheck).toBe(true)
     expect(settingsSchema.parse({ editorDefaultBullet: false }).editorDefaultBullet).toBe(false)
     expect(settingsSchema.parse({ editorDefaultBullet: true }).editorDefaultBullet).toBe(true)
+    expect(
+      settingsSchema.parse({ editorBulletAfterHeading: false }).editorBulletAfterHeading,
+    ).toBe(false)
+    expect(
+      settingsSchema.parse({ editorBulletAfterHeading: true }).editorBulletAfterHeading,
+    ).toBe(true)
     expect(settingsSchema.parse({ theme: 'dark' }).theme).toBe('dark')
     expect(settingsSchema.parse({ theme: 'light' }).theme).toBe('light')
     expect(settingsSchema.parse({ theme: 'system' }).theme).toBe('system')
@@ -66,6 +74,10 @@ describe('settingsSchema', () => {
     expect(settingsSchema.parse({ editorSpellCheck: 0 }).editorSpellCheck).toBe(true)
     expect(settingsSchema.parse({ editorDefaultBullet: 'on' }).editorDefaultBullet).toBe(true)
     expect(settingsSchema.parse({ editorDefaultBullet: 0 }).editorDefaultBullet).toBe(true)
+    expect(
+      settingsSchema.parse({ editorBulletAfterHeading: 'on' }).editorBulletAfterHeading,
+    ).toBe(true)
+    expect(settingsSchema.parse({ editorBulletAfterHeading: 0 }).editorBulletAfterHeading).toBe(true)
     expect(settingsSchema.parse({ theme: 'sepia' }).theme).toBe('system')
     expect(settingsSchema.parse({ theme: 7 }).theme).toBe('system')
     expect(settingsSchema.parse({ timeFormat: '36h' }).timeFormat).toBe('12h')
@@ -94,6 +106,7 @@ describe('settingsSchema', () => {
       editorMarkdownSyntax: 'show',
       editorSpellCheck: true,
       editorDefaultBullet: true,
+      editorBulletAfterHeading: true,
       semanticSearchEnabled: false,
       mobileOnboarded: false,
       theme: 'system',

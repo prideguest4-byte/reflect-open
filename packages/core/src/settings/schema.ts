@@ -45,6 +45,17 @@ export const editorSpellCheckSchema = z.boolean().catch(true)
 export const editorDefaultBulletSchema = z.boolean().catch(true)
 
 /**
+ * Whether pressing Return at the end of a heading starts a new bullet on the
+ * next line — old Reflect's "type a title, then bullet" capture flow. On by
+ * default.
+ *
+ * Independent of {@link editorDefaultBulletSchema}: that seeds an empty note's
+ * first line, this shapes what Enter *after a heading* produces. They are
+ * separate keys so each can be turned off on its own.
+ */
+export const editorBulletAfterHeadingSchema = z.boolean().catch(true)
+
+/**
  * The app color theme. `system` (the default) follows the OS preference;
  * `light`/`dark` pin it. Persisted here so the choice survives relaunch.
  */
@@ -225,6 +236,7 @@ export const settingsSchema = z
     editorMarkdownSyntax: editorMarkdownSyntaxSchema,
     editorSpellCheck: editorSpellCheckSchema,
     editorDefaultBullet: editorDefaultBulletSchema,
+    editorBulletAfterHeading: editorBulletAfterHeadingSchema,
     semanticSearchEnabled: semanticSearchEnabledSchema,
     mobileOnboarded: mobileOnboardedSchema,
     theme: themePreferenceSchema,

@@ -258,6 +258,7 @@ export function NotePane({
         onChange={document.onEditorChange}
         markMode={settings.editorMarkdownSyntax}
         spellCheck={settings.editorSpellCheck}
+        bulletAfterHeading={settings.editorBulletAfterHeading}
         resolveImageUrl={resolveImageUrl}
         saveImage={saveImage}
         onImageSaveError={onImageSaveError}

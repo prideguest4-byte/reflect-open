@@ -96,6 +96,19 @@ export function EditorSection(): ReactElement {
           />
         </div>
       </SettingsField>
+
+      <SettingsField
+        legend="Bullet after a heading"
+        description="Pressing Return at the end of a heading starts a new bullet."
+      >
+        <div className="mt-3">
+          <Switch
+            aria-label="Bullet after a heading"
+            checked={settings.editorBulletAfterHeading}
+            onCheckedChange={(checked) => updateSettings({ editorBulletAfterHeading: checked })}
+          />
+        </div>
+      </SettingsField>
     </SettingsSection>
   )
 }

@@ -3,6 +3,7 @@ import { type MarkMode } from '@meowdown/core'
 import { MeowdownEditor, type EditorHandle, type WikilinkSearchHandler } from '@meowdown/react'
 import '@meowdown/core/style.css'
 import '@meowdown/react/style.css'
+import { BulletAfterHeadingKeymap } from '@/editor/bullet-after-heading-keymap'
 import { cn } from '@/lib/utils'
 
 /**
@@ -37,6 +38,11 @@ interface NoteEditorProps {
   markMode?: MarkMode
   /** Whether the browser underlines misspelled words (default on). */
   spellCheck?: boolean
+  /**
+   * Whether Enter at the end of a heading starts a bullet on the next line
+   * (the `editorBulletAfterHeading` setting). Off by default.
+   */
+  bulletAfterHeading?: boolean
   /** Resolve an image `![…](…)` source to a displayable URL; unresolved images are skipped. */
   resolveImageUrl?: (src: string) => string | null
   /** Persist a pasted/dropped image file and return its markdown `src`. */
@@ -67,6 +73,7 @@ export function NoteEditor({
   onChange,
   markMode = 'focus',
   spellCheck = true,
+  bulletAfterHeading = false,
   resolveImageUrl,
   saveImage,
   onImageSaveError,
@@ -136,6 +143,8 @@ export function NoteEditor({
       resolveImageUrl={handleResolveImageUrl}
       onImagePaste={handleImagePaste}
       onImageSaveError={handleImageSaveError}
-    />
+    >
+      <BulletAfterHeadingKeymap enabled={bulletAfterHeading} />
+    </MeowdownEditor>
   )
 }

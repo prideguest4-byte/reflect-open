@@ -110,6 +110,7 @@ export {
   editorMarkdownSyntaxSchema,
   editorSpellCheckSchema,
   editorDefaultBulletSchema,
+  editorBulletAfterHeadingSchema,
   semanticSearchEnabledSchema,
   themePreferenceSchema,
   timeFormatSchema,
