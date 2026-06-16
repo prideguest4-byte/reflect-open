@@ -25,6 +25,17 @@ vi.mock('@/providers/sync-provider', () => ({
     backUpNow: async () => {},
   }),
 }))
+vi.mock('@/providers/asset-description-provider', () => ({
+  useAssetDescriptions: () => ({
+    available: false,
+    running: false,
+    backfilling: false,
+    progress: null,
+    lastResult: null,
+    error: null,
+    backfill: async () => {},
+  }),
+}))
 
 // jsdom doesn't implement this; Radix Select scrolls the selected option into
 // view when the listbox opens.
@@ -50,6 +61,8 @@ function installFakeBridge(): void {
         case 'embed_status':
         case 'embed_ensure':
           return embedStatus
+        case 'db_query':
+          return []
         case 'list_files':
           return []
         default:

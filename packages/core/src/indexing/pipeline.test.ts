@@ -100,6 +100,9 @@ describe('rebuildIndex', () => {
         }
         return null
       }
+      if (command === 'db_query') {
+        return []
+      }
       return null
     })
 
@@ -128,6 +131,9 @@ describe('rebuildIndex', () => {
       }
       if (command === 'index_apply_batch') {
         throw { kind: 'parse', message: 'unexpected end of hex escape' }
+      }
+      if (command === 'db_query') {
+        return []
       }
       return null
     })
