@@ -114,6 +114,7 @@ export {
   editorDefaultBulletSchema,
   editorBulletAfterHeadingSchema,
   semanticSearchEnabledSchema,
+  describeAssetsSchema,
   themePreferenceSchema,
   timeFormatSchema,
   dateFormatSchema,

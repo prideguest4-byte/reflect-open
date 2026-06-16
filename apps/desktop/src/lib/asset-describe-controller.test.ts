@@ -233,4 +233,16 @@ describe('createAssetDescribeController', () => {
     await flush()
     expect(reconcileAssetDescriptions).not.toHaveBeenCalled()
   })
+
+  it('start is idempotent — repeated calls do not duplicate subscriptions or passes', async () => {
+    const handle = create()
+    handle.start()
+    handle.start() // second call must be a no-op
+    await flush()
+
+    expect(subscribeFileChanges).toHaveBeenCalledTimes(1)
+    onFileChanges?.([upsert('assets/a.png')])
+    await flush()
+    expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1) // one pass, not two
+  })
 })

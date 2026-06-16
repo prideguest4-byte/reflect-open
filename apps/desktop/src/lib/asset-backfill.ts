@@ -38,13 +38,22 @@ async function runBackfill(
   providers: AiProvidersState,
 ): Promise<ReconcileAssetDescriptionsOutcome> {
   const operation = startOperation('Describing assets')
-  const outcome = await reconcileAssetDescriptions({
-    providers,
-    generation,
-    mode: 'backfill',
-    fetchFn: providerFetch,
-    onProgress: (done, total) => operation.progress(done, total),
-  })
+  let outcome: ReconcileAssetDescriptionsOutcome
+  try {
+    outcome = await reconcileAssetDescriptions({
+      providers,
+      generation,
+      mode: 'backfill',
+      fetchFn: providerFetch,
+      onProgress: (done, total) => operation.progress(done, total),
+    })
+  } catch (cause) {
+    // reconcileAssetDescriptions is contracted not to throw, but finalize the
+    // operation defensively so an unexpected failure never strands a "running"
+    // entry in the operations UI.
+    operation.fail('Failed to describe assets.')
+    throw cause
+  }
   // Make the new descriptions searchable: re-index the notes that reference the
   // assets we just described (Plan 20 search integration). A failure here must
   // not fail the backfill — the descriptions are written; search folds them on

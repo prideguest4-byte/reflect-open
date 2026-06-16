@@ -49,6 +49,7 @@ export function createAssetDescribeController(
   options: AssetDescribeControllerOptions,
 ): AssetDescribeController {
   let disposed = false
+  let started = false
   let running = false
   /** A trigger landed mid-pass; run exactly one follow-up after it. */
   let queued = false
@@ -186,9 +187,10 @@ export function createAssetDescribeController(
   }
 
   function start(): void {
-    if (disposed) {
-      return
+    if (disposed || started) {
+      return // idempotent: never register the DOM/watcher listeners twice
     }
+    started = true
     const onWake = (): void => {
       schedule() // retry any assets a prior pass left dirty after coming back online
     }

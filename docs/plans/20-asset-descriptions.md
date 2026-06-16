@@ -186,14 +186,19 @@ Implementation (reusing the established live-recheck pattern from
    `skip-unreferenced`; else `send`.
 
 The index is used only to find *candidates* cheaply; the privacy decision is made
-from **live** markdown, never the (laggy) index. **Residual race + mitigation:** a
-private note that references the asset but isn't yet in the index could be missed.
-Mitigation: the asset pass is sequenced *after* the indexer reconciles the
-triggering change batch (both consume the same `index:changed` events; the asset
-controller debounces behind the indexer), and any asset reference must have been
-written via a note change that itself triggers indexing — so a private reference
-cannot persist unindexed across passes. This is flagged as **Decision D5**
-(accept index-candidate + live-recheck vs. full live corpus scan).
+from **live** markdown, never the (laggy) index. **Known residual race (not yet
+closed):** a private note that references the asset but isn't yet in the index can
+be missed — the controller and the indexer both subscribe to the same
+`index:changed` stream independently, so ordering is *not* currently enforced; the
+asset pass can run before the indexer has applied the triggering batch. Two things
+narrow it: the encoding half is closed (asset hrefs are decoded at index-write, so
+an alternate spelling can't hide a referer; the Phase 2 `PROJECTION_VERSION` bump
+rebuilds legacy rows into the decoded form), and any asset reference is written via
+a note change that itself triggers indexing, so a private reference doesn't persist
+unindexed indefinitely. The sound closure is **Decision D5's** alternative: drive
+the asset pass off the indexer's post-apply hook (`subscribeIndexChanges`'
+`onApplied`) or a full live corpus scan, so the gate always reads a settled index.
+Deferred to a follow-up (tracked in the PR), not implemented here.
 
 ### Reconcile action — `packages/core/src/actions/asset-description.ts`
 
@@ -360,11 +365,12 @@ assets" button that runs the backfill with a cost warning and progress.
 - **D4 — Size cap.** Cap source bytes (propose 20 MB) and skip oversize assets
   with a logged reason; downscaling images via the Rust `image` crate (as capture
   does) is deferred. *Open: confirm cap + whether to downscale large images.*
-- **D5 — Privacy completeness. RESOLVED: index-candidate + live-recheck**
-  (sequenced after indexing, fail-closed). Chosen over a full live corpus scan for
-  cost; the residual race is mitigated by ordering behind the indexer and by the
-  fact that any asset reference is written via a note change that itself triggers
-  indexing. The full-scan remains the documented fallback if the race proves real.
+- **D5 — Privacy completeness. PARTIAL: index-candidate + live-recheck**
+  (fail-closed), with hrefs canonicalized at index-write so encoding variants
+  can't hide a referer. The discovery step still trusts the index, and the
+  controller does **not** currently sequence behind the indexer — see the "Known
+  residual race" above. Closing it (drive off `onApplied`, or a full live corpus
+  scan) is a tracked follow-up, not done here.
 - **D6 — Refusal re-attempts.** No failure description means a refused asset is
   retried on its next change (incremental) or on every backfill. Acceptable;
   passes are change-triggered, not continuous (no loop).

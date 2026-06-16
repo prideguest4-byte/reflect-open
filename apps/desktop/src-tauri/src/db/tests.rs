@@ -211,11 +211,16 @@ fn asset_description_text_is_searchable_but_stays_out_of_preview_and_note_text()
 
     // The asset text never leaks into the preview or the AI-reachable note_text.
     let preview: String = conn
-        .query_row("SELECT preview FROM notes WHERE path = 'notes/a.md'", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT preview FROM notes WHERE path = 'notes/a.md'",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
-    assert!(!preview.contains("waterfall"), "preview must not carry asset text");
+    assert!(
+        !preview.contains("waterfall"),
+        "preview must not carry asset text"
+    );
     let note_body: String = conn
         .query_row(
             "SELECT text FROM note_text WHERE note_path = 'notes/a.md'",
@@ -223,7 +228,10 @@ fn asset_description_text_is_searchable_but_stays_out_of_preview_and_note_text()
             |row| row.get(0),
         )
         .unwrap();
-    assert!(!note_body.contains("waterfall"), "note_text must not carry asset text");
+    assert!(
+        !note_body.contains("waterfall"),
+        "note_text must not carry asset text"
+    );
 }
 
 #[test]
