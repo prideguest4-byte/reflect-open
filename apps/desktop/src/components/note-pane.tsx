@@ -105,7 +105,7 @@ export function NotePane({
     saveError: imageSaveError,
   } = useImagePersistence(graphRoot, generation)
   const onWikiLinkClick = useWikiLinkNavigation(generation)
-  const { onWikilinkSearch } = useEditorAutocomplete()
+  const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
 
   const bindEditor = document.bindEditor
   const handleRef = useCallback(
@@ -217,6 +217,7 @@ export function NotePane({
         onImageSaveError={onImageSaveError}
         onWikiLinkClick={onWikiLinkClick}
         onWikilinkSearch={onWikilinkSearch}
+        onTagSearch={onTagSearch}
         // Daily notes carry no title semantics (the date is their subject),
         // so an empty leading H1 there is just an empty heading.
         titlePlaceholder={dailyNote ? undefined : 'Untitled'}
