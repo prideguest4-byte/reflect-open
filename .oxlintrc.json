@@ -4,7 +4,8 @@
   "rules": {
     "typescript/no-explicit-any": "error",
     "import/no-default-export": "error",
-    "import/no-namespace": "error"
+    "import/no-namespace": "error",
+    "eslint/max-lines": ["warn", 500]
   },
   "overrides": [
     {
@@ -17,6 +18,12 @@
       "files": ["apps/desktop/src/components/ui/**", "**/scripts/**"],
       "rules": {
         "import/no-namespace": "off"
+      }
+    },
+    {
+      "files": ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}"],
+      "rules": {
+        "eslint/max-lines": "off"
       }
     }
   ]
