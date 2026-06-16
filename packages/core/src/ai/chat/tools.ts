@@ -61,6 +61,14 @@ export interface NoteToolDeps {
   listDailyNotesFn?: (range: DailyNotesRange) => Promise<DailyNoteRow[]>
 }
 
+export interface BuildNoteToolsOptions extends NoteToolDeps {
+  /**
+   * Whether note search can use embeddings for meaning-based recall. When
+   * false, `search_notes` stays lexical so disabled semantic search is honored.
+   */
+  semanticSearchEnabled?: boolean
+}
+
 export interface SearchNotesOutput {
   hits: CloudSafe<CloudSearchHit>[]
 }
@@ -156,14 +164,17 @@ function listingCandidate(
 }
 
 /**
- * Build the chat tool set. `deps` is a test seam; production callers omit it
- * and the tools run over the shared retrieval layer and the live filesystem.
+ * Build the chat tool set. Optional effect overrides are a test seam;
+ * production callers omit them and the tools run over the shared retrieval
+ * layer and the live filesystem.
  */
-export function buildNoteTools(deps: NoteToolDeps = {}) {
-  const retrieveFn = deps.retrieveFn ?? retrieve
-  const readNoteFn = deps.readNoteFn ?? readNote
-  const listRecentNotesFn = deps.listRecentNotesFn ?? listRecentNotes
-  const listDailyNotesFn = deps.listDailyNotesFn ?? listDailyNotes
+export function buildNoteTools(options: BuildNoteToolsOptions = {}) {
+  const retrieveFn = options.retrieveFn ?? retrieve
+  const readNoteFn = options.readNoteFn ?? readNote
+  const listRecentNotesFn = options.listRecentNotesFn ?? listRecentNotes
+  const listDailyNotesFn = options.listDailyNotesFn ?? listDailyNotes
+  const searchMode: RetrieveOptions['mode'] =
+    options.semanticSearchEnabled === false ? 'lexical' : 'hybrid'
 
   // The gate's live privacy probe: the index flag on a hit can lag a
   // just-saved `private: true`, so each candidate's frontmatter is re-read
@@ -215,14 +226,12 @@ export function buildNoteTools(deps: NoteToolDeps = {}) {
 
   return {
     search_notes: tool({
-      description:
-        'Search the user’s notes by meaning and keywords. Returns the best-matching ' +
-        'notes with short snippets. Queries are plain language — there is no wildcard ' +
-        'or operator syntax. Private notes are excluded.',
+      description: searchNotesDescription(options.semanticSearchEnabled !== false),
       inputSchema: searchNotesInput,
       execute: async ({ query, limit }): Promise<SearchNotesOutput> => {
         const hits = await retrieveFn(query, {
           limit: limit ?? DEFAULT_SEARCH_LIMIT,
+          mode: searchMode,
           excludePrivateContent: true,
         })
         return { hits: await cloudSafeSearchHits(hits, isPrivateLive) }
@@ -280,6 +289,16 @@ export function buildNoteTools(deps: NoteToolDeps = {}) {
       },
     }),
   }
+}
+
+/** Tool description for the active search mode. */
+function searchNotesDescription(semanticSearchEnabled: boolean): string {
+  const suffix =
+    'Returns the best-matching notes with short snippets. Queries are plain language — there is no wildcard or operator syntax. Private notes are excluded.'
+  if (semanticSearchEnabled) {
+    return `Search the user’s notes by meaning and keywords. ${suffix}`
+  }
+  return `Search the user’s notes with lexical full-text search over titles and note bodies. ${suffix}`
 }
 
 /** The tool set type, for typed stream parts in the chat engine. */

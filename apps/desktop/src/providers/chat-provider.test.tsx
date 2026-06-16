@@ -41,6 +41,7 @@ const settingsState = vi.hoisted(() => ({
   models: [] as AiProviderConfig[],
   defaultId: null as string | null,
   selection: null as ChatModelSelection | null,
+  semanticSearchEnabled: false,
 }))
 const updateSettings = vi.hoisted(() => vi.fn<(patch: Partial<Settings>) => void>())
 // Stateful like the real provider: a chatModelSelection patch re-renders with
@@ -55,6 +56,7 @@ vi.mock('@/providers/settings-provider', async () => {
           aiProviders: settingsState.models,
           defaultAiProviderId: settingsState.defaultId,
           chatModelSelection: selection,
+          semanticSearchEnabled: settingsState.semanticSearchEnabled,
         },
         updateSettings: (patch: Partial<Settings>) => {
           updateSettings(patch)
@@ -121,6 +123,7 @@ beforeEach(() => {
   settingsState.models = [MODEL]
   settingsState.defaultId = 'm1'
   settingsState.selection = null
+  settingsState.semanticSearchEnabled = false
   core.hasBridge.mockReturnValue(true)
   core.getSecret.mockResolvedValue('sk-test')
   core.loadChatGraphContext.mockResolvedValue(null)
@@ -214,6 +217,19 @@ describe('ChatProvider persistence', () => {
       conversation: { id: 'conv-1', title: 'what did I write yesterday?' },
       turn: { userText: 'and today?' },
     })
+  })
+
+  it('passes the semantic search setting into chat turns', async () => {
+    settingsState.semanticSearchEnabled = true
+    scriptTurn([{ type: 'complete', messages: [{ role: 'assistant', content: 'Hi.' }] }])
+    renderProvider()
+    await waitFor(() => expect(core.listChatConversations).toHaveBeenCalled())
+
+    await act(() => session?.send('hello'))
+
+    expect(core.streamChat).toHaveBeenCalledWith(
+      expect.objectContaining({ semanticSearchEnabled: true }),
+    )
   })
 
   it('opens a past conversation and switches the active id', async () => {

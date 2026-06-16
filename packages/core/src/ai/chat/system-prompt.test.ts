@@ -20,22 +20,45 @@ function context(overrides: Partial<CloudGraphContext> = {}) {
 
 describe('chatSystemPrompt', () => {
   it('renders the date and grounding rules without an overview when context is null', () => {
-    const prompt = chatSystemPrompt({ today: '2026-06-12', context: null })
+    const prompt = chatSystemPrompt({
+      today: '2026-06-12',
+      context: null,
+      semanticSearchEnabled: true,
+    })
     expect(prompt).toContain('Today’s date is 2026-06-12.')
     expect(prompt).toContain('Grounding rules:')
     expect(prompt).not.toContain('Graph overview')
   })
 
   it('steers the model away from redundant searches and serial reads', () => {
-    const prompt = chatSystemPrompt({ today: '2026-06-12', context: null })
+    const prompt = chatSystemPrompt({
+      today: '2026-06-12',
+      context: null,
+      semanticSearchEnabled: true,
+    })
     expect(prompt).toContain('search_notes matches on both keywords and meaning')
     expect(prompt).toContain('raise its “limit” (up to 20) in one call')
     expect(prompt).toContain('pass all their paths to read_notes in one call')
     expect(prompt).toContain('limited number of tool rounds')
   })
 
+  it('describes lexical search when semantic search is disabled', () => {
+    const prompt = chatSystemPrompt({
+      today: '2026-06-12',
+      context: null,
+      semanticSearchEnabled: false,
+    })
+    expect(prompt).toContain('search_notes uses lexical full-text search')
+    expect(prompt).toContain('try one broader lexical query')
+    expect(prompt).not.toContain('search_notes matches on both keywords and meaning')
+  })
+
   it('renders the graph name, sizes, daily span, and the full tag vocabulary', () => {
-    const prompt = chatSystemPrompt({ today: '2026-06-12', context: context() })
+    const prompt = chatSystemPrompt({
+      today: '2026-06-12',
+      context: context(),
+      semanticSearchEnabled: true,
+    })
     expect(prompt).toContain('Graph overview (private notes are excluded from every figure):')
     expect(prompt).toContain('“atlas-graph” — 12 notes and 4 daily notes')
     expect(prompt).toContain('Daily notes span 2026-01-02 to 2026-06-10.')
@@ -48,6 +71,7 @@ describe('chatSystemPrompt', () => {
     const prompt = chatSystemPrompt({
       today: '2026-06-12',
       context: context({ tagsTruncated: true }),
+      semanticSearchEnabled: true,
     })
     expect(prompt).toContain('Most-used tags')
     expect(prompt).toContain('More tags exist beyond these.')
@@ -55,7 +79,11 @@ describe('chatSystemPrompt', () => {
   })
 
   it('tells the model outright when no tags exist', () => {
-    const prompt = chatSystemPrompt({ today: '2026-06-12', context: context({ tags: [] }) })
+    const prompt = chatSystemPrompt({
+      today: '2026-06-12',
+      context: context({ tags: [] }),
+      semanticSearchEnabled: true,
+    })
     expect(prompt).toContain('No tags are in use — never pass a tag filter.')
   })
 
@@ -63,6 +91,7 @@ describe('chatSystemPrompt', () => {
     const prompt = chatSystemPrompt({
       today: '2026-06-12',
       context: context({ dailyNoteCount: 0, earliestDailyDate: null, latestDailyDate: null }),
+      semanticSearchEnabled: true,
     })
     expect(prompt).toContain('0 daily notes')
     expect(prompt).not.toContain('Daily notes span')

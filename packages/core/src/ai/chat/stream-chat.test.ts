@@ -102,6 +102,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'where is the launch plan?' }],
         today: '2026-06-11',
+        semanticSearchEnabled: true,
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
@@ -140,6 +141,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'what do my notes say?' }],
         today: '2026-06-11',
+        semanticSearchEnabled: true,
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
@@ -160,6 +162,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'hi' }],
         today: '2026-06-11',
+        semanticSearchEnabled: true,
         context: cloudSafeGraphContext({
           graphName: 'atlas-graph',
           noteCount: 7,
@@ -191,6 +194,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'hi' }],
         today: '2026-06-11',
+        semanticSearchEnabled: true,
         context: null,
       }),
     )
@@ -214,6 +218,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'where is the launch plan?' }],
         today: '2026-06-11',
+        semanticSearchEnabled: true,
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
@@ -251,6 +256,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'plan and budget?' }],
         today: '2026-06-11',
+        semanticSearchEnabled: true,
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
@@ -286,6 +292,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'summarize everything' }],
         today: '2026-06-11',
+        semanticSearchEnabled: true,
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'body\n' },
       }),
