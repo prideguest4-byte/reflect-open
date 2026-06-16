@@ -30,9 +30,16 @@ export interface ChatConversation {
 
 const hitSummarySchema = z.object({ path: z.string(), title: z.string() })
 
+/** One note's outcome in a persisted read_notes chip. */
+const readNoteSummarySchema = z.object({
+  path: z.string(),
+  title: z.string().nullable(),
+  error: z.string().nullable(),
+})
+
 const toolCallSchema = z.discriminatedUnion('tool', [
   z.object({ tool: z.literal('search'), toolCallId: z.string(), query: z.string() }),
-  z.object({ tool: z.literal('read'), toolCallId: z.string(), path: z.string() }),
+  z.object({ tool: z.literal('read'), toolCallId: z.string(), paths: z.array(z.string()) }),
   z.object({ tool: z.literal('recents'), toolCallId: z.string(), tag: z.string().nullable() }),
   z.object({
     tool: z.literal('dailies'),
@@ -52,9 +59,7 @@ const toolResultSchema = z.discriminatedUnion('tool', [
   z.object({
     tool: z.literal('read'),
     toolCallId: z.string(),
-    path: z.string(),
-    title: z.string().nullable(),
-    error: z.string().nullable(),
+    notes: z.array(readNoteSummarySchema),
   }),
   z.object({
     tool: z.literal('recents'),
@@ -72,17 +77,53 @@ const toolResultSchema = z.discriminatedUnion('tool', [
   }),
 ])
 
+const partSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('text'), text: z.string() }),
+  z.object({
+    kind: z.literal('tool'),
+    call: toolCallSchema,
+    result: toolResultSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+  z.object({ kind: z.literal('notice'), tone: z.enum(['error', 'info']), text: z.string() }),
+])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/**
+ * Upgrade an assistant part persisted before read_notes (Plan 10 first wave):
+ * the read tool was single-note — call `{ path }`, result `{ path, title,
+ * error }` — and is now a batch — call `{ paths }`, result `{ notes: [...] }`.
+ * Rewrites those legacy shapes so old chat history still loads; a part already
+ * in the current shape passes through untouched.
+ */
+function upgradeLegacyReadPart(part: unknown): unknown {
+  if (!isRecord(part) || part['kind'] !== 'tool') {
+    return part
+  }
+  const upgraded: Record<string, unknown> = { ...part }
+  const rawCall = part['call']
+  const rawResult = part['result']
+  if (isRecord(rawCall) && rawCall['tool'] === 'read' && 'path' in rawCall && !('paths' in rawCall)) {
+    const { path, ...rest } = rawCall
+    upgraded['call'] = { ...rest, paths: [path] }
+  }
+  if (
+    isRecord(rawResult) &&
+    rawResult['tool'] === 'read' &&
+    'path' in rawResult &&
+    !('notes' in rawResult)
+  ) {
+    const { path, title, error, ...rest } = rawResult
+    upgraded['result'] = { ...rest, notes: [{ path, title: title ?? null, error: error ?? null }] }
+  }
+  return upgraded
+}
+
 const partsSchema: z.ZodType<AssistantPart[]> = z.array(
-  z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('text'), text: z.string() }),
-    z.object({
-      kind: z.literal('tool'),
-      call: toolCallSchema,
-      result: toolResultSchema.nullable(),
-      error: z.string().nullable(),
-    }),
-    z.object({ kind: z.literal('notice'), tone: z.enum(['error', 'info']), text: z.string() }),
-  ]),
+  z.preprocess(upgradeLegacyReadPart, partSchema),
 )
 
 const attachmentsSchema = z.array(

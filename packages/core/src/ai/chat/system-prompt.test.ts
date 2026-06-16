@@ -30,7 +30,7 @@ describe('chatSystemPrompt', () => {
     const prompt = chatSystemPrompt({ today: '2026-06-12', context: null })
     expect(prompt).toContain('search_notes matches on both keywords and meaning')
     expect(prompt).toContain('raise its “limit” (up to 20) in one call')
-    expect(prompt).toContain('read them in the same round')
+    expect(prompt).toContain('pass all their paths to read_notes in one call')
     expect(prompt).toContain('limited number of tool rounds')
   })
 

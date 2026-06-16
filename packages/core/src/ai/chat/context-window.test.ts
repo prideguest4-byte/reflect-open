@@ -24,7 +24,7 @@ function toolExchange(callId: string, outputChars: number): ModelMessage[] {
     {
       role: 'assistant',
       content: [
-        { type: 'tool-call', toolCallId: callId, toolName: 'read_note', input: { path: 'notes/a.md' } },
+        { type: 'tool-call', toolCallId: callId, toolName: 'read_notes', input: { paths: ['notes/a.md'] } },
       ],
     },
     {
@@ -33,8 +33,8 @@ function toolExchange(callId: string, outputChars: number): ModelMessage[] {
         {
           type: 'tool-result',
           toolCallId: callId,
-          toolName: 'read_note',
-          output: { type: 'json', value: { content: 'n'.repeat(outputChars) } },
+          toolName: 'read_notes',
+          output: { type: 'json', value: { notes: [{ content: 'n'.repeat(outputChars) }] } },
         },
       ],
     },

@@ -58,12 +58,12 @@ describe('appendEvent', () => {
 
   it('tracks a read from pending call to settled result', () => {
     const pending = fold([
-      { type: 'tool-call', call: { tool: 'read', toolCallId: 'tool-2', path: 'notes/a.md' } },
+      { type: 'tool-call', call: { tool: 'read', toolCallId: 'tool-2', paths: ['notes/a.md'] } },
     ])
     expect(pending).toEqual([
       {
         kind: 'tool',
-        call: { tool: 'read', toolCallId: 'tool-2', path: 'notes/a.md' },
+        call: { tool: 'read', toolCallId: 'tool-2', paths: ['notes/a.md'] },
         result: null,
         error: null,
       },
@@ -71,23 +71,27 @@ describe('appendEvent', () => {
 
     const settled = appendEvent(pending, {
       type: 'tool-result',
-      result: { tool: 'read', toolCallId: 'tool-2', path: 'notes/a.md', title: 'Atlas', error: null },
+      result: {
+        tool: 'read',
+        toolCallId: 'tool-2',
+        notes: [{ path: 'notes/a.md', title: 'Atlas', error: null }],
+      },
     })
     expect(settled[0]).toMatchObject({
       kind: 'tool',
-      result: { tool: 'read', title: 'Atlas', error: null },
+      result: { tool: 'read', notes: [{ path: 'notes/a.md', title: 'Atlas', error: null }] },
     })
   })
 
   it('a tool error settles the in-flight call with its failure and a notice', () => {
     const parts = fold([
-      { type: 'tool-call', call: { tool: 'read', toolCallId: 'tool-4', path: 'notes/a.md' } },
+      { type: 'tool-call', call: { tool: 'read', toolCallId: 'tool-4', paths: ['notes/a.md'] } },
       { type: 'tool-error', toolCallId: 'tool-4', message: 'file unreadable' },
     ])
     expect(parts).toEqual([
       {
         kind: 'tool',
-        call: { tool: 'read', toolCallId: 'tool-4', path: 'notes/a.md' },
+        call: { tool: 'read', toolCallId: 'tool-4', paths: ['notes/a.md'] },
         result: null,
         error: 'file unreadable',
       },
@@ -112,10 +116,14 @@ describe('appendEvent', () => {
     // The step-ceiling dead end: tools ran, the model never synthesized, and
     // the turn settles. The user must see a notice, not silent tool chips.
     const parts = fold([
-      { type: 'tool-call', call: { tool: 'read', toolCallId: 'tool-7', path: 'notes/a.md' } },
+      { type: 'tool-call', call: { tool: 'read', toolCallId: 'tool-7', paths: ['notes/a.md'] } },
       {
         type: 'tool-result',
-        result: { tool: 'read', toolCallId: 'tool-7', path: 'notes/a.md', title: 'Atlas', error: null },
+        result: {
+          tool: 'read',
+          toolCallId: 'tool-7',
+          notes: [{ path: 'notes/a.md', title: 'Atlas', error: null }],
+        },
       },
       { type: 'complete', messages: [] },
     ])
@@ -132,7 +140,7 @@ describe('appendEvent', () => {
 
   it('a terminal event settles tool calls still in flight — no eternal spinners', () => {
     const aborted = fold([
-      { type: 'tool-call', call: { tool: 'read', toolCallId: 'tool-5', path: 'notes/a.md' } },
+      { type: 'tool-call', call: { tool: 'read', toolCallId: 'tool-5', paths: ['notes/a.md'] } },
       { type: 'aborted', messages: [] },
     ])
     expect(aborted[0]).toMatchObject({ kind: 'tool', result: null, error: 'Stopped.' })

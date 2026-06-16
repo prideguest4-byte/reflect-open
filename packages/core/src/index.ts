@@ -190,6 +190,7 @@ export {
   buildNoteTools,
   MAX_DAILY_NOTE_DAYS,
   MAX_NOTE_CONTENT_CHARS,
+  MAX_READ_NOTES,
   type ListDailyNotesOutput,
   type ListRecentNotesOutput,
   type NoteHitSummary,
@@ -197,7 +198,9 @@ export {
   type NoteToolDeps,
   type NoteToolResult,
   type NoteTools,
-  type ReadNoteOutput,
+  type ReadNoteResult,
+  type ReadNoteSummary,
+  type ReadNotesOutput,
   type SearchNotesOutput,
 } from './ai/chat/tools'
 export { chatSystemPrompt, type SystemPromptInput } from './ai/chat/system-prompt'

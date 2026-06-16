@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react'
+import { Fragment, type ReactElement, type ReactNode } from 'react'
 import { CalendarDays, FileText, History, Search } from 'lucide-react'
 import { isTagName, isToolPending, type AssistantPart } from '@reflect/core'
 import { routeForPath } from '@/routing/route'
@@ -94,24 +94,47 @@ export function ChatToolChip({ part }: ChatToolChipProps): ReactElement {
     )
   }
 
+  // read_notes: one chip for the whole batch. A tool-level error fails it as a
+  // unit; otherwise each note links through on its own, or shows its refusal.
   const result = part.result?.tool === 'read' ? part.result : null
-  const error = part.error ?? result?.error ?? null
+  if (part.error !== null) {
+    return (
+      <ChipFrame pending={false} icon={<FileText aria-hidden className="size-3.5" />}>
+        <span className="truncate">
+          {call.paths.join(', ')} — {part.error}
+        </span>
+      </ChipFrame>
+    )
+  }
+  // Settled, we know each note's title/error; pending, only the requested paths.
+  const notes = result?.notes ?? call.paths.map((path) => ({ path, title: null, error: null }))
   return (
     <ChipFrame pending={pending} icon={<FileText aria-hidden className="size-3.5" />}>
-      {!pending && error === null ? (
-        <button
-          type="button"
-          onClick={() => navigate(routeForPath(call.path))}
-          className="truncate underline-offset-2 hover:text-text hover:underline"
-        >
-          Read {result?.title ?? call.path}
-        </button>
-      ) : (
-        <span className="truncate">
-          {call.path}
-          {error !== null ? ` — ${error}` : ''}
-        </span>
-      )}
+      <span className="truncate">
+        Read{' '}
+        {notes.map((note, index) => {
+          const label = note.title ?? note.path
+          return (
+            <Fragment key={`${note.path}-${index}`}>
+              {index > 0 ? ', ' : ''}
+              {!pending && note.error === null ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(routeForPath(note.path))}
+                  className="underline-offset-2 hover:text-text hover:underline"
+                >
+                  {label}
+                </button>
+              ) : (
+                <span>
+                  {label}
+                  {note.error !== null ? ` — ${note.error}` : ''}
+                </span>
+              )}
+            </Fragment>
+          )
+        })}
+      </span>
     </ChipFrame>
   )
 }

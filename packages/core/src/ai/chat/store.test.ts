@@ -106,4 +106,31 @@ describe('loadChatMessages', () => {
     ])
     expect(await loadChatMessages('conv-1')).toEqual([])
   })
+
+  it('upgrades a legacy single-note read part to the batch shape', async () => {
+    // History persisted before read_notes stored read as a single note; it must
+    // still load, rewritten to the current paths/notes shape rather than dropped.
+    const legacyParts = [
+      {
+        kind: 'tool',
+        call: { tool: 'read', toolCallId: 'tool-2', path: 'notes/a.md' },
+        result: { tool: 'read', toolCallId: 'tool-2', path: 'notes/a.md', title: 'Cats', error: null },
+        error: null,
+      },
+    ]
+    invoke.mockResolvedValue([messageRow({ parts: JSON.stringify(legacyParts) })])
+    const [restored] = await loadChatMessages('conv-1')
+    expect(restored?.parts).toEqual([
+      {
+        kind: 'tool',
+        call: { tool: 'read', toolCallId: 'tool-2', paths: ['notes/a.md'] },
+        result: {
+          tool: 'read',
+          toolCallId: 'tool-2',
+          notes: [{ path: 'notes/a.md', title: 'Cats', error: null }],
+        },
+        error: null,
+      },
+    ])
+  })
 })
