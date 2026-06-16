@@ -43,13 +43,26 @@ export function AllNotesTrashDialog({
 }: AllNotesTrashDialogProps): ReactElement {
   const { trash, isTrashing } = useNoteTrash()
   const confirmButtonRef = useRef<HTMLButtonElement>(null)
+  // Guards against a double-submit: the button's `disabled={isTrashing}` only
+  // takes effect after a re-render, so a fast second click/Return could start a
+  // second trash pass on the same snapshot before it disables. The ref flips
+  // synchronously, so the second call is dropped.
+  const submittingRef = useRef(false)
   const count = paths.length
 
   const onConfirm = async (): Promise<void> => {
-    const trashed = await trash(paths)
-    onOpenChange(false)
-    if (trashed) {
-      onTrashed()
+    if (submittingRef.current) {
+      return
+    }
+    submittingRef.current = true
+    try {
+      const trashed = await trash(paths)
+      if (trashed) {
+        onTrashed()
+      }
+      onOpenChange(false)
+    } finally {
+      submittingRef.current = false
     }
   }
 

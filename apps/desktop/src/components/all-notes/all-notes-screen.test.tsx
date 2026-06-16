@@ -591,4 +591,24 @@ describe('AllNotesScreen — selection and bulk trash', () => {
     expect(view.getByRole('button', { name: /Trash \(1\)/ })).toBeDefined()
     view.unmount()
   })
+
+  it('ignores a second confirm click while a trash is in flight', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.click(view.getByRole('button', { name: /Trash \(1\)/ }))
+    await view.findByText('Trash 1 note?')
+
+    const confirm = view.getByRole('button', { name: 'Trash' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm) // a rapid second click must not double-delete
+
+    await waitFor(() => expect(view.queryByText('Trash 1 note?')).toBeNull())
+    const healthDeletes = mockInvoke.mock.calls.filter(
+      ([command, args]) => command === 'note_delete' && args['path'] === 'notes/health.md',
+    )
+    expect(healthDeletes).toHaveLength(1)
+    view.unmount()
+  })
 })
