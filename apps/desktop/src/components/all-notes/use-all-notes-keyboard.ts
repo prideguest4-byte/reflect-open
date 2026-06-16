@@ -94,6 +94,13 @@ export function useAllNotesKeyboard({
         event.preventDefault()
         selection.selectAll()
       } else if (event.key === 'Enter') {
+        // A focused control owns Return (the New note / Trash buttons, a filter
+        // tab, a row's own indicator/subject) — let it activate, don't also open
+        // a note. The surface root and the list body aren't controls, so the
+        // keyboard flow (arrow to a row, Return to open) still works.
+        if (target?.closest?.('button, a, [role="button"], [role="link"]') != null) {
+          return
+        }
         // V1: Return / ⌘Return open the first selected note (render order).
         const firstSelected = orderedPaths.find((path) => selection.isSelected(path))
         if (firstSelected !== undefined) {

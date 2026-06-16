@@ -77,13 +77,21 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   const selection = useListSelection(orderedPaths)
   const { trash, isTrashing } = useNoteTrash()
   const [confirmingTrash, setConfirmingTrash] = useState(false)
+  // The paths to trash, snapshotted when the confirm opens. The delete prunes
+  // the live selection (optimistic removal drops the rows), so the dialog drives
+  // off this stable copy: its title can't flip to "0 notes", and a failure
+  // message isn't yanked away the instant the selection empties.
+  const [pendingPaths, setPendingPaths] = useState<readonly string[]>([])
   const [trashError, setTrashError] = useState<string | null>(null)
   const confirmButtonRef = useRef<HTMLButtonElement>(null)
-  // Close the confirm if the selection it acts on goes away (a reindex pruned
-  // the selected rows) — mirrors the Tasks view's schedule-popover guard.
-  if (confirmingTrash && selection.selectedCount === 0 && !isTrashing) {
-    setConfirmingTrash(false)
-  }
+  const openTrashConfirm = useCallback(() => {
+    if (selection.selectedCount === 0) {
+      return
+    }
+    setPendingPaths([...selection.selected])
+    setTrashError(null) // a fresh open never inherits a prior failure's message
+    setConfirmingTrash(true)
+  }, [selection])
 
   // The table owns the virtualizer; it registers its scroll-to-index here so the
   // keyboard nav can pull an off-screen (unmounted) row into view.
@@ -97,7 +105,7 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
     selection,
     orderedPaths,
     onOpen: (path) => navigate(routeForPath(path)),
-    onRequestTrash: () => setConfirmingTrash(true),
+    onRequestTrash: openTrashConfirm,
     rootRef,
     scrollToIndex,
   })
@@ -109,12 +117,13 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   }, [])
 
   const onConfirmTrash = async (): Promise<void> => {
-    setTrashError(null)
     try {
-      await trash([...selection.selected])
+      await trash(pendingPaths)
       selection.clear()
       setConfirmingTrash(false)
     } catch (cause) {
+      // Keep the dialog open with the reason; the rows reappear as the failed
+      // delete reconciles, and the selection has already been pruned.
       setTrashError(errorMessage(cause))
     }
   }
@@ -137,7 +146,7 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
           {selection.selectedCount > 0 ? (
             <button
               type="button"
-              onClick={() => setConfirmingTrash(true)}
+              onClick={openTrashConfirm}
               className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text-secondary shadow-sm transition-colors duration-100 hover:bg-surface-hover hover:text-destructive"
             >
               <Trash2 aria-hidden className="size-4" />
@@ -165,7 +174,15 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
 
       <Dialog
         open={confirmingTrash}
-        onOpenChange={(open) => !isTrashing && setConfirmingTrash(open)}
+        onOpenChange={(open) => {
+          if (isTrashing) {
+            return
+          }
+          setConfirmingTrash(open)
+          if (!open) {
+            setTrashError(null) // don't carry a failure message into the next open
+          }
+        }}
       >
         <DialogContent
           onOpenAutoFocus={(event) => {
@@ -175,10 +192,11 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
           }}
         >
           <DialogTitle>
-            Trash {selection.selectedCount} {selection.selectedCount === 1 ? 'note' : 'notes'}?
+            Trash {pendingPaths.length} {pendingPaths.length === 1 ? 'note' : 'notes'}?
           </DialogTitle>
           <DialogDescription>
-            They move to your system Trash, where you can restore them.
+            {pendingPaths.length === 1 ? 'It moves' : 'They move'} to your system Trash, where you
+            can restore {pendingPaths.length === 1 ? 'it' : 'them'}.
           </DialogDescription>
           {trashError !== null ? <p className="text-sm text-destructive">{trashError}</p> : null}
           <DialogFooter>

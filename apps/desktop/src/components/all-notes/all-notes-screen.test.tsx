@@ -453,4 +453,52 @@ describe('AllNotesScreen — selection and bulk trash', () => {
     expect(await view.findByText('Trash 1 note?')).toBeDefined()
     view.unmount()
   })
+
+  it('does not open a note when Return activates a focused header button', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    // Select a note, then send Return to the New note button: a focused control
+    // owns Return, so the document-level shortcut must back off and not open.
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.keyDown(view.getByRole('button', { name: /New note/ }), { key: 'Enter' })
+
+    expect(probedRoute(view)).toEqual({ kind: 'allNotes', tag: null })
+    view.unmount()
+  })
+
+  it('keeps the confirm open with the error when a delete fails', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'note_delete') {
+        throw new Error('disk on fire')
+      }
+      if (command !== 'db_query') {
+        return null
+      }
+      const sql = String(args.sql)
+      if (sql.includes('group by')) {
+        return facetRows
+      }
+      if (sql.includes('"preview"')) {
+        return sql.includes('from "tags"') ? [] : noteRows
+      }
+      if (sql.includes('from "tags"')) {
+        return tagRows
+      }
+      return []
+    })
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.click(view.getByRole('button', { name: /Trash \(1\)/ }))
+    await view.findByText('Trash 1 note?')
+    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
+
+    // The failure message shows and the dialog stays open — the optimistic
+    // removal pruning the selection to zero must not auto-dismiss it.
+    expect(await view.findByText('disk on fire')).toBeDefined()
+    expect(view.getByText('Trash 1 note?')).toBeDefined()
+    view.unmount()
+  })
 })
