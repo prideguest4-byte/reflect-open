@@ -23,7 +23,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const KEYCHAIN_SERVICE = 'reflect-notary'
 const UPDATER_KEYCHAIN_SERVICE = 'reflect-updater'
@@ -435,6 +435,28 @@ function ensureTagMatchesCommit(tag, commit) {
   }
 }
 
+/** Build the GitHub CLI args that publish the release and upload artifacts. */
+export function createReleaseArgs({ assets, commit, draft, prerelease, productName, tag, version }) {
+  const releaseArgs = [
+    'release',
+    'create',
+    tag,
+    ...assets,
+    '--title',
+    `${productName} ${version}`,
+    '--target',
+    commit,
+    '--generate-notes',
+  ]
+  if (prerelease) {
+    releaseArgs.push('--prerelease', '--latest=false')
+  } else {
+    releaseArgs.push('--latest')
+  }
+  if (draft) releaseArgs.push('--draft')
+  return releaseArgs
+}
+
 /**
  * Build a signed + notarized DMG and upload it to a new GitHub release tagged
  * v<version> (from tauri.conf.json). A version with a prerelease segment
@@ -458,22 +480,15 @@ function publish({ draft }) {
   // endpoint — so installed stable apps never see a beta.
   const prerelease = version.includes('-')
   log(`creating GitHub ${prerelease ? 'pre-release' : 'release'} ${tag} from commit ${commit.slice(0, 7)}…`)
-  const releaseArgs = [
-    'release',
-    'create',
-    tag,
-    dmg,
-    updaterArchive,
-    updaterSignature,
-    manifestPath,
-    '--title',
-    `${productName} ${version}`,
-    '--target',
+  const releaseArgs = createReleaseArgs({
+    assets: [dmg, updaterArchive, updaterSignature, manifestPath],
     commit,
-    '--generate-notes',
-  ]
-  if (prerelease) releaseArgs.push('--prerelease')
-  if (draft) releaseArgs.push('--draft')
+    draft,
+    prerelease,
+    productName,
+    tag,
+    version,
+  })
   const result = spawnSync('gh', releaseArgs, { encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'] })
   if (result.status !== 0) fail(`creating the GitHub release failed${result.stdout ? `\n${result.stdout.trim()}` : ''}`)
   log(`${draft ? 'draft release created' : 'release published'}: ${result.stdout.trim()}`)
@@ -598,4 +613,6 @@ async function main() {
   }
 }
 
-await main()
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main()
+}
