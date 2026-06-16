@@ -11,6 +11,7 @@ import type {
   Settings,
   StreamChatOptions,
 } from '@reflect/core'
+import { NO_REPLY_NOTICE } from '@reflect/core'
 import { ChatProvider, useChatSession } from '@/providers/chat-provider'
 
 /**
@@ -176,6 +177,29 @@ describe('ChatProvider persistence', () => {
         parts: [{ kind: 'text', text: 'Hi.' }],
       },
     })
+  })
+
+  it('backstops a reply-less turn with a notice, on screen and in the save', async () => {
+    // Regression: the forced final step can still yield no text. The provider
+    // must fold `complete` so a turn that ends on tool activity shows a notice
+    // instead of silent chips — and persists it, not a notice-less parts list.
+    scriptTurn([
+      { type: 'tool-call', call: { tool: 'read', toolCallId: 't1', paths: ['notes/a.md'] } },
+      {
+        type: 'tool-result',
+        result: { tool: 'read', toolCallId: 't1', notes: [{ path: 'notes/a.md', title: 'A', error: null }] },
+      },
+      { type: 'complete', messages: [{ role: 'assistant', content: 'noop' }] },
+    ])
+    renderProvider()
+    await waitFor(() => expect(core.listChatConversations).toHaveBeenCalled())
+
+    await act(() => session?.send('summarize my notes'))
+
+    const notice = { kind: 'notice', tone: 'info', text: NO_REPLY_NOTICE }
+    expect(session?.turns.at(-1)?.parts.at(-1)).toEqual(notice)
+    const saved = core.saveChatMessage.mock.calls.at(-1)![0] as { turn: ChatTurn }
+    expect(saved.turn.parts.at(-1)).toEqual(notice)
   })
 
   it('saves later turns into the restored conversation', async () => {

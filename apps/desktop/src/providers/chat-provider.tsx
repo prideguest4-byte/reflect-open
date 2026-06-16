@@ -298,7 +298,12 @@ export function ChatProvider({ graph, children }: ChatProviderProps): ReactEleme
         updateTurn((turn) => ({ ...turn, parts: appendEvent(turn.parts, event) }))
       }
 
-      setTurns((current) => [...current, localTurn])
+      // Snapshot the turn as first rendered. This add runs at React's next
+      // flush, by which point `localTurn` may already point at folded state;
+      // closing over the mutable binding would add that folded turn and then
+      // re-fold it through updateTurn, duplicating appended parts.
+      const initialTurn = localTurn
+      setTurns((current) => [...current, initialTurn])
       // The user half lands immediately, so a crash mid-stream keeps the
       // question (restored with an empty response, which the model history
       // derivation already omits).
@@ -343,9 +348,9 @@ export function ChatProvider({ graph, children }: ChatProviderProps): ReactEleme
           if (event.type === 'complete' || event.type === 'aborted' || event.type === 'error') {
             updateTurn((turn) => ({ ...turn, responseMessages: event.messages }))
           }
-          if (event.type !== 'complete') {
-            applyEvent(event)
-          }
+          // `complete` is folded too: appendEvent backstops a reply-less turn
+          // with a notice, so the chips never settle into silence.
+          applyEvent(event)
         }
       } catch (cause) {
         // streamChat normalizes its own failures; this guards the seams around
