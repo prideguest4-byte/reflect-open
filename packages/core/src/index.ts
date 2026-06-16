@@ -296,6 +296,28 @@ export {
   type DescribePageRequest,
 } from './ai/describe-page'
 
+// Asset description sidecars (Plan 20)
+export {
+  isAssetDescriptionRejected,
+  AssetDescriptionRejectedError,
+  type AssetKind,
+  type DescribeAssetRequest,
+} from './ai/describe-asset'
+export {
+  buildSidecarSource,
+  classifyAsset,
+  isEligibleAssetPath,
+  reconcileAssetSidecars,
+  readManagedSidecar,
+  sidecarPathFor,
+  SIDECAR_SUFFIX,
+  type AssetSidecarMeta,
+  type AssetSidecarMode,
+  type AssetVerdict,
+  type ReconcileAssetSidecarsInput,
+  type ReconcileAssetSidecarsOutcome,
+} from './actions/asset-sidecar'
+
 // Backup & sync (Plan 12)
 export {
   gitStatus,

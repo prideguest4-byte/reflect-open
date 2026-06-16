@@ -1,0 +1,57 @@
+import {
+  reconcileAssetSidecars,
+  type AiProvidersState,
+  type ReconcileAssetSidecarsOutcome,
+} from '@reflect/core'
+import { startOperation } from '@/lib/operations'
+import { providerFetch } from '@/lib/provider-fetch'
+
+let inFlight: { generation: number; promise: Promise<ReconcileAssetSidecarsOutcome> } | null = null
+
+/**
+ * Describe every existing eligible asset with user-visible status (Plan 20):
+ * the explicit backfill behind the Settings button + cost warning. Unlike the
+ * automatic path it enumerates all of `assets/`, but obeys the same privacy and
+ * idempotency rules — already-described assets are skipped, and private or
+ * unreferenced ones are never sent. Coalesces while a run is in flight (the
+ * generation is the file-write generation, `GraphInfo.generation`).
+ */
+export function backfillAssetSidecarsVisibly(
+  generation: number,
+  providers: AiProvidersState,
+): Promise<ReconcileAssetSidecarsOutcome> {
+  if (inFlight !== null && inFlight.generation === generation) {
+    return inFlight.promise
+  }
+  const promise = runBackfill(generation, providers).finally(() => {
+    if (inFlight !== null && inFlight.promise === promise) {
+      inFlight = null
+    }
+  })
+  inFlight = { generation, promise }
+  return promise
+}
+
+async function runBackfill(
+  generation: number,
+  providers: AiProvidersState,
+): Promise<ReconcileAssetSidecarsOutcome> {
+  const operation = startOperation('Describing assets')
+  const outcome = await reconcileAssetSidecars({
+    providers,
+    generation,
+    mode: 'backfill',
+    fetchFn: providerFetch,
+    onProgress: (done, total) => operation.progress(done, total),
+  })
+  if (outcome.stopped === null || outcome.stopped.reason === 'stale') {
+    operation.done()
+  } else if (outcome.stopped.reason === 'config') {
+    operation.warn('Add an AI provider in Settings to describe assets.')
+  } else if (outcome.stopped.reason === 'network') {
+    operation.warn('Some assets could not be described — check your connection and try again.')
+  } else {
+    operation.fail(outcome.stopped.message)
+  }
+  return outcome
+}

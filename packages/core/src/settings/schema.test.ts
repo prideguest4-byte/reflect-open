@@ -9,6 +9,7 @@ describe('settingsSchema', () => {
       editorDefaultBullet: true,
       editorBulletAfterHeading: true,
       semanticSearchEnabled: false,
+      describeAssets: true,
       mobileOnboarded: false,
       theme: 'system',
       timeFormat: '12h',
@@ -25,6 +26,7 @@ describe('settingsSchema', () => {
     expect(DEFAULT_SETTINGS.editorDefaultBullet).toBe(true)
     expect(DEFAULT_SETTINGS.editorBulletAfterHeading).toBe(true)
     expect(DEFAULT_SETTINGS.semanticSearchEnabled).toBe(false)
+    expect(DEFAULT_SETTINGS.describeAssets).toBe(true)
     expect(DEFAULT_SETTINGS.mobileOnboarded).toBe(false)
     expect(DEFAULT_SETTINGS.theme).toBe('system')
     expect(DEFAULT_SETTINGS.timeFormat).toBe('12h')
@@ -108,6 +110,7 @@ describe('settingsSchema', () => {
       editorDefaultBullet: true,
       editorBulletAfterHeading: true,
       semanticSearchEnabled: false,
+      describeAssets: true,
       mobileOnboarded: false,
       theme: 'system',
       timeFormat: '12h',
