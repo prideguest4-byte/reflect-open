@@ -6,7 +6,7 @@ import {
   readNote,
   reconcileAssetDescriptions,
   reindexNotesReferencing,
-  subscribeFileChanges,
+  subscribeIndexApplied,
   type AiProvidersState,
   type ReconcileStop,
   type Unlisten,
@@ -15,18 +15,21 @@ import { providerFetch } from '@/lib/provider-fetch'
 
 /**
  * The asset-description lifecycle for one graph session (Plan 20). Mirrors
- * `createCaptureController`: the trigger plumbing (watcher events, focus/online
- * retries) lives in one object with one `dispose()`.
+ * `createCaptureController`: the trigger plumbing (the indexer's post-apply
+ * signal, plus focus/online retries) lives in one object with one `dispose()`.
  *
- * It describes **new** eligible assets only — there is no launch backfill (the
- * explicit Settings action handles existing assets). Eligible asset upserts
- * reported by the watcher accumulate in a dirty set; each pass reconciles that
- * set. A transient (auth/network) stop leaves the set intact so the next
- * trigger retries; a clean pass clears it. Re-describing an unchanged asset is
- * cheap — its managed description's hash matches, so no provider call is made.
+ * Triggers fire off `subscribeIndexApplied` — the indexer's POST-APPLY signal —
+ * not the raw watcher stream, so the privacy gate always reads a settled index
+ * and can't race a just-written private note's indexing. It describes **new**
+ * eligible assets only — there is no launch backfill (the explicit Settings
+ * action handles existing assets). Observed assets accumulate in a dirty set;
+ * each pass reconciles it. A transient (auth/network) stop leaves the set intact
+ * so the next trigger retries; a clean pass clears it. Re-describing an
+ * unchanged asset is cheap — its managed description's hash matches, so no
+ * provider call is made.
  */
 export interface AssetDescribeController {
-  /** Attach the triggers (watcher, focus, online). No launch backfill. */
+  /** Attach the triggers (index-applied, focus, online). No launch backfill. */
   start(): void
   /** Request a pass; coalesces while one runs (at most one follow-up). */
   schedule(): void
@@ -201,9 +204,14 @@ export function createAssetDescribeController(
       () => window.removeEventListener('online', onWake),
     )
     if (!hasBridge()) {
-      return // browser dev: no watcher to follow
+      return // browser dev: no indexer to follow
     }
-    void subscribeFileChanges((changes) => {
+    // Drive off the indexer's POST-APPLY signal, not the raw watcher stream: when
+    // this fires the batch's note rows (privacy flags, `assets` projection) are
+    // already in the index, so the privacy gate can't race a just-written private
+    // note's indexing. Carries the full batch — asset-file upserts (a dropped
+    // image) and note upserts (which may newly reference an asset).
+    unlisten = subscribeIndexApplied((changes) => {
       const newAssets: string[] = []
       const changedNotes: string[] = []
       for (const change of changes) {
@@ -223,18 +231,6 @@ export function createAssetDescribeController(
         void markAssetsFromNotes(changedNotes)
       }
     })
-      .then((stop) => {
-        if (disposed) {
-          stop() // teardown won the race against the subscribe
-        } else {
-          unlisten = stop
-        }
-      })
-      .catch((cause: unknown) => {
-        // Degrades to the focus/online triggers; surfaced for diagnosis rather
-        // than left as an unhandled rejection.
-        console.error('asset-description file-change subscription failed:', cause)
-      })
   }
 
   return {

@@ -61,6 +61,16 @@ export function descriptionPathFor(assetPath: string): string {
   return `${assetPath}${DESCRIPTION_SUFFIX}`
 }
 
+/**
+ * Is this graph-relative path an asset under `assets/` (and not a managed
+ * description sidecar)? A coarse predicate — it does not check the file
+ * extension — used to decide whether a watcher batch is relevant to the
+ * asset-description pass; precise eligibility is `isEligibleAssetPath`.
+ */
+export function isAssetPath(path: string): boolean {
+  return path.startsWith(`${ASSETS_DIR}/`) && !path.endsWith(DESCRIPTION_SUFFIX)
+}
+
 /** Is this graph-relative path a daily note (`daily/YYYY-MM-DD.md`)? */
 export function isDaily(path: string): boolean {
   return DAILY_PATH_RE.test(path)

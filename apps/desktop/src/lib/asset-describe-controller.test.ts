@@ -13,8 +13,8 @@ import {
 const reconcileAssetDescriptions = vi.hoisted(() =>
   vi.fn<(input: ReconcileAssetDescriptionsInput) => Promise<ReconcileAssetDescriptionsOutcome>>(),
 )
-const subscribeFileChanges = vi.hoisted(() =>
-  vi.fn<(handler: (changes: FileChange[]) => void) => Promise<() => void>>(),
+const subscribeIndexApplied = vi.hoisted(() =>
+  vi.fn<(handler: (changes: readonly FileChange[]) => void) => () => void>(),
 )
 const readNote = vi.hoisted(() => vi.fn<(path: string, generation?: number) => Promise<string>>())
 const reindexNotesReferencing = vi.hoisted(() =>
@@ -25,7 +25,7 @@ const failOperation = vi.hoisted(() => vi.fn<(message: string) => void>())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   reconcileAssetDescriptions,
-  subscribeFileChanges,
+  subscribeIndexApplied,
   readNote,
   reindexNotesReferencing,
   hasBridge: () => true,
@@ -70,7 +70,7 @@ function upsert(path: string): FileChange {
   return { path, kind: 'upsert', modifiedMs: 1 }
 }
 
-let onFileChanges: ((changes: FileChange[]) => void) | null = null
+let onApplied: ((changes: readonly FileChange[]) => void) | null = null
 const unlisten = vi.fn()
 let controller: AssetDescribeController | null = null
 
@@ -85,12 +85,12 @@ function flush(): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  onFileChanges = null
+  onApplied = null
   reconcileAssetDescriptions.mockResolvedValue(outcome())
   reindexNotesReferencing.mockResolvedValue(undefined)
   readNote.mockResolvedValue('# A note with no asset references\n')
-  subscribeFileChanges.mockImplementation(async (handler) => {
-    onFileChanges = handler
+  subscribeIndexApplied.mockImplementation((handler) => {
+    onApplied = handler
     return unlisten
   })
 })
@@ -110,7 +110,7 @@ describe('createAssetDescribeController', () => {
   it('describes a newly observed eligible asset, pinned to the generation', async () => {
     create().start()
     await flush()
-    onFileChanges?.([upsert('assets/a.png')])
+    onApplied?.([upsert('assets/a.png')])
     await flush()
 
     expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1)
@@ -130,7 +130,7 @@ describe('createAssetDescribeController', () => {
     )
     create().start()
     await flush()
-    onFileChanges?.([upsert('assets/a.png')])
+    onApplied?.([upsert('assets/a.png')])
     await flush()
 
     expect(reindexNotesReferencing).toHaveBeenCalledWith(['assets/a.png'], 3)
@@ -140,7 +140,7 @@ describe('createAssetDescribeController', () => {
     reconcileAssetDescriptions.mockResolvedValueOnce(outcome({ described: 0, describedAssetPaths: [] }))
     create().start()
     await flush()
-    onFileChanges?.([upsert('assets/a.png')])
+    onApplied?.([upsert('assets/a.png')])
     await flush()
 
     expect(reindexNotesReferencing).not.toHaveBeenCalled()
@@ -149,7 +149,7 @@ describe('createAssetDescribeController', () => {
   it('ignores descriptions, ineligible types, removes, and notes with no asset refs', async () => {
     create().start()
     await flush()
-    onFileChanges?.([
+    onApplied?.([
       upsert('assets/a.png.reflect.md'),
       upsert('assets/notes.txt'),
       { path: 'assets/a.png', kind: 'remove' },
@@ -164,7 +164,7 @@ describe('createAssetDescribeController', () => {
     readNote.mockResolvedValue('# Now public\n\n![](assets/a.png)\n')
     create().start()
     await flush()
-    onFileChanges?.([upsert('notes/x.md')])
+    onApplied?.([upsert('notes/x.md')])
     await flush()
 
     expect(readNote).toHaveBeenCalledWith('notes/x.md', 3)
@@ -178,9 +178,9 @@ describe('createAssetDescribeController', () => {
     create().start()
     await flush()
 
-    onFileChanges?.([upsert('assets/a.png')]) // starts the pass (now in-flight)
+    onApplied?.([upsert('assets/a.png')]) // starts the pass (now in-flight)
     await flush()
-    onFileChanges?.([upsert('assets/b.pdf')]) // lands mid-pass → queued
+    onApplied?.([upsert('assets/b.pdf')]) // lands mid-pass → queued
     await flush()
     expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1)
 
@@ -199,7 +199,7 @@ describe('createAssetDescribeController', () => {
     create().start()
     await flush()
 
-    onFileChanges?.([upsert('assets/a.png')])
+    onApplied?.([upsert('assets/a.png')])
     await flush()
     expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1)
 
@@ -214,7 +214,7 @@ describe('createAssetDescribeController', () => {
     create().start()
     await flush()
 
-    onFileChanges?.([upsert('assets/a.png')])
+    onApplied?.([upsert('assets/a.png')])
     await flush()
     window.dispatchEvent(new Event('focus'))
     await flush()
@@ -229,7 +229,7 @@ describe('createAssetDescribeController', () => {
     handle.dispose()
 
     expect(unlisten).toHaveBeenCalledTimes(1)
-    onFileChanges?.([upsert('assets/a.png')])
+    onApplied?.([upsert('assets/a.png')])
     await flush()
     expect(reconcileAssetDescriptions).not.toHaveBeenCalled()
   })
@@ -240,8 +240,8 @@ describe('createAssetDescribeController', () => {
     handle.start() // second call must be a no-op
     await flush()
 
-    expect(subscribeFileChanges).toHaveBeenCalledTimes(1)
-    onFileChanges?.([upsert('assets/a.png')])
+    expect(subscribeIndexApplied).toHaveBeenCalledTimes(1)
+    onApplied?.([upsert('assets/a.png')])
     await flush()
     expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1) // one pass, not two
   })

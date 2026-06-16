@@ -186,19 +186,18 @@ Implementation (reusing the established live-recheck pattern from
    `skip-unreferenced`; else `send`.
 
 The index is used only to find *candidates* cheaply; the privacy decision is made
-from **live** markdown, never the (laggy) index. **Known residual race (not yet
-closed):** a private note that references the asset but isn't yet in the index can
-be missed — the controller and the indexer both subscribe to the same
-`index:changed` stream independently, so ordering is *not* currently enforced; the
-asset pass can run before the indexer has applied the triggering batch. Two things
-narrow it: the encoding half is closed (asset hrefs are decoded at index-write, so
-an alternate spelling can't hide a referer; the Phase 2 `PROJECTION_VERSION` bump
-rebuilds legacy rows into the decoded form), and any asset reference is written via
-a note change that itself triggers indexing, so a private reference doesn't persist
-unindexed indefinitely. The sound closure is **Decision D5's** alternative: drive
-the asset pass off the indexer's post-apply hook (`subscribeIndexChanges`'
-`onApplied`) or a full live corpus scan, so the gate always reads a settled index.
-Deferred to a follow-up (tracked in the PR), not implemented here.
+from **live** markdown. **The index-lag race is closed:** the asset controller no
+longer reacts to the raw `index:changed` stream — it drives off the indexer's
+**post-apply** signal (`subscribeIndexApplied`, emitted by `subscribeIndexChanges`
+*after* a batch's note rows are written, on the same serialized apply queue). So
+when the gate runs, the triggering batch's notes — including a just-written
+**private** note — are already in the index and its `assets` projection; the gate
+can't read a stale snapshot. The encoding half is closed independently: asset
+hrefs are decoded at index-write (so an alternate spelling can't hide a referer),
+and the Phase 2 `PROJECTION_VERSION` bump rebuilds legacy rows into the decoded
+form. The only window that remains is inherent and out of scope per v1: a private
+reference added *after* a description was already generated — descriptions are not
+retracted in v1 (v2 indexing reapplies the gate).
 
 ### Reconcile action — `packages/core/src/actions/asset-description.ts`
 
@@ -273,13 +272,15 @@ module doc comment and the existing `tracked_relpath` unit tests.
 Clone of `createCaptureController`: `disposed` gate → `isStale`, `running`/`queued`
 single-flight coalescing, `generation` pin, `providerFetch`, plus a **dirty set**
 of asset paths so a transient stop retries exactly those on the next trigger.
-Triggers: `subscribeFileChanges` — eligible **asset** upserts mark the asset
-dirty; **note** upserts are read + parsed and their referenced eligible assets
-marked dirty (the "relevant note changes" trigger, so an asset a note edit newly
-makes public gets described even though the asset file didn't change) — plus
-`focus`/`online` retry. **No launch backfill** — incremental only processes
-changed/affected assets; existing assets wait for the explicit button. Surfaces
-`stopped` via the operations store like capture.
+Triggers: `subscribeIndexApplied` — the indexer's **post-apply** signal, so the
+privacy gate always reads a settled index (closes the index-lag race). From each
+applied batch: eligible **asset** upserts mark the asset dirty; **note** upserts
+are read + parsed and their referenced eligible assets marked dirty (the "relevant
+note changes" trigger, so an asset a note edit newly makes public gets described
+even though the asset file didn't change) — plus `focus`/`online` retry of the
+dirty set. **No launch backfill** — incremental only processes changed/affected
+assets; existing assets wait for the explicit button. Background, best-effort:
+stops are logged, never toasted.
 
 A separate exported `backfillAssetDescriptions(generation, onProgress)` runs the
 reconcile in `backfill` mode for the Settings button.
@@ -365,12 +366,13 @@ assets" button that runs the backfill with a cost warning and progress.
 - **D4 — Size cap.** Cap source bytes (propose 20 MB) and skip oversize assets
   with a logged reason; downscaling images via the Rust `image` crate (as capture
   does) is deferred. *Open: confirm cap + whether to downscale large images.*
-- **D5 — Privacy completeness. PARTIAL: index-candidate + live-recheck**
+- **D5 — Privacy completeness. RESOLVED: index-candidate + live-recheck**
   (fail-closed), with hrefs canonicalized at index-write so encoding variants
-  can't hide a referer. The discovery step still trusts the index, and the
-  controller does **not** currently sequence behind the indexer — see the "Known
-  residual race" above. Closing it (drive off `onApplied`, or a full live corpus
-  scan) is a tracked follow-up, not done here.
+  can't hide a referer, **and** the controller sequenced behind the indexer via
+  the post-apply `subscribeIndexApplied` signal so the gate always reads a settled
+  index (see "the index-lag race is closed" above). The only remaining window —
+  a private reference added *after* a description exists — is the v1 no-retraction
+  decision, reapplied by v2 indexing.
 - **D6 — Refusal re-attempts.** No failure description means a refused asset is
   retried on its next change (incremental) or on every backfill. Acceptable;
   passes are change-triggered, not continuous (no loop).

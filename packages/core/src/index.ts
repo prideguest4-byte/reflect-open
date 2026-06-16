@@ -445,6 +445,7 @@ export {
   watchStart,
   watchStop,
   subscribeIndexChanges,
+  subscribeIndexApplied,
   subscribeFileChanges,
   emitFileChanges,
   setLocalWriteEcho,
