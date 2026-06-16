@@ -77,9 +77,12 @@ export function RouterProvider({
   const scrollById = useRef(new Map<number, number>())
   /** The active entry id, readable without depending on render order. */
   const currentId = useRef(0)
-  useEffect(() => {
-    currentId.current = history.stack[history.index].id
-  })
+  // Written during render, not in an effect: descendant scroll-restoration
+  // effects read this id (through saveScrollState/savedScroll) on the same
+  // commit, and React runs effects child-before-parent — so updating it in an
+  // effect here would lag a frame and restore or save the wrong entry's offset.
+  // eslint-disable-next-line react-hooks/refs
+  currentId.current = history.stack[history.index].id
 
   const navigate = useCallback((route: Route) => {
     const target = normalizeRoute(route)
