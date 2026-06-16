@@ -1,12 +1,12 @@
 import {
-  reconcileAssetSidecars,
+  reconcileAssetDescriptions,
   type AiProvidersState,
-  type ReconcileAssetSidecarsOutcome,
+  type ReconcileAssetDescriptionsOutcome,
 } from '@reflect/core'
 import { startOperation } from '@/lib/operations'
 import { providerFetch } from '@/lib/provider-fetch'
 
-let inFlight: { generation: number; promise: Promise<ReconcileAssetSidecarsOutcome> } | null = null
+let inFlight: { generation: number; promise: Promise<ReconcileAssetDescriptionsOutcome> } | null = null
 
 /**
  * Describe every existing eligible asset with user-visible status (Plan 20):
@@ -16,10 +16,10 @@ let inFlight: { generation: number; promise: Promise<ReconcileAssetSidecarsOutco
  * unreferenced ones are never sent. Coalesces while a run is in flight (the
  * generation is the file-write generation, `GraphInfo.generation`).
  */
-export function backfillAssetSidecarsVisibly(
+export function backfillAssetDescriptionsVisibly(
   generation: number,
   providers: AiProvidersState,
-): Promise<ReconcileAssetSidecarsOutcome> {
+): Promise<ReconcileAssetDescriptionsOutcome> {
   if (inFlight !== null && inFlight.generation === generation) {
     return inFlight.promise
   }
@@ -35,9 +35,9 @@ export function backfillAssetSidecarsVisibly(
 async function runBackfill(
   generation: number,
   providers: AiProvidersState,
-): Promise<ReconcileAssetSidecarsOutcome> {
+): Promise<ReconcileAssetDescriptionsOutcome> {
   const operation = startOperation('Describing assets')
-  const outcome = await reconcileAssetSidecars({
+  const outcome = await reconcileAssetDescriptions({
     providers,
     generation,
     mode: 'backfill',

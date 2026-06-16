@@ -4,8 +4,8 @@ import type { AiProviderConfig } from '../settings/schema'
 import { languageModel } from './language-model'
 
 /**
- * BYOK description + OCR for an asset sidecar (Plan 20): one short multimodal
- * call over a single image or PDF that returns Markdown — a concise description
+ * BYOK description + OCR for one asset (Plan 20): a single short multimodal
+ * call over an image or PDF that returns Markdown — a concise description
  * plus any text the asset contains. The sibling of `describe-page` (link
  * capture); same provider wiring and the same error contract. Privacy is the
  * caller's responsibility and is gated long before this module is reached.
@@ -43,7 +43,7 @@ export interface DescribeAssetRequest {
 /**
  * The provider refused this asset itself (unsupported type, payload too large,
  * a model with no vision/file support…). Retrying the same payload can't help,
- * so the caller logs it and writes no sidecar — never a failure sidecar.
+ * so the caller logs it and writes no description file — never a failure one.
  */
 export class AssetDescriptionRejectedError extends Error {
   constructor(message: string) {
@@ -98,7 +98,7 @@ function describePrompt(kind: AssetKind, filename: string): string {
 }
 
 /**
- * Generate the sidecar Markdown for one asset. Throws {@link ReflectError}
+ * Generate the description Markdown for one asset. Throws {@link ReflectError}
  * (`auth`, `network`) for transient/credential failures the caller should
  * retry later, and {@link AssetDescriptionRejectedError} when the provider
  * refuses this asset itself. The enrichment pass is the retry layer

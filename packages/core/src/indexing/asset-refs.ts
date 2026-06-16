@@ -2,7 +2,7 @@ import { db } from './db'
 
 /**
  * The notes that reference an asset, from the index `assets` projection (Plan
- * 20). Used only to find *candidates* cheaply — the asset-sidecar privacy gate
+ * 20). Used only to find *candidates* cheaply — the asset-description privacy gate
  * re-reads each candidate's live markdown before trusting it, so an index that
  * lags the watcher can never cause a private note to be missed for long (any
  * reference is written by a note change that itself triggers re-indexing).

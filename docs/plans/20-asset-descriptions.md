@@ -1,12 +1,12 @@
-# Plan 20 — Asset Description Sidecars
+# Plan 20 — Asset Descriptions
 
 > **Status (2026-06-16): Implemented.** Built end-to-end against the contracts
 > below: the AI call (`packages/core/src/ai/describe-asset.ts`), the reconcile +
-> privacy gate (`packages/core/src/actions/asset-sidecar.ts`,
+> privacy gate (`packages/core/src/actions/asset-description.ts`,
 > `packages/core/src/indexing/asset-refs.ts`), the watcher carve-out
 > (`apps/desktop/src-tauri/src/watcher.rs`), the single-flight controller
-> (`apps/desktop/src/lib/asset-sidecar-controller.ts`) mounted by
-> `apps/desktop/src/providers/asset-sidecar-provider.tsx`, and the Settings
+> (`apps/desktop/src/lib/asset-describe-controller.ts`) mounted by
+> `apps/desktop/src/providers/asset-describe-provider.tsx`, and the Settings
 > control (`describeAssets` setting + `apps/desktop/src/components/settings/
 > describe-assets-field.tsx` + `apps/desktop/src/lib/asset-backfill.ts`).
 > Decisions D1 (auto-describe **on** for new assets) and D5 (index-candidate +
@@ -15,10 +15,10 @@
 > shipped storage/index/AI spine, not part of the first wave.
 
 **Goal:** Give every eligible image and PDF under a graph's `assets/` a local
-markdown *sidecar* containing an AI-generated description plus any OCR/extracted
-text — so asset contents become portable, greppable, and ready for future search
-indexing, **without** changing the current note index and **without** ever
-sending a private or unreferenced asset to a provider.
+markdown **description file** holding an AI-generated summary plus any
+OCR/extracted text — so asset contents become portable, greppable, and ready for
+future search indexing, **without** changing the current note index and
+**without** ever sending a private or unreferenced asset to a provider.
 
 **Depends on:** Plan 02 (graph + `assets/`), Plan 03 (markdown/frontmatter model),
 Plan 04 (file watcher + index), Plan 10 (BYOK AI providers, keychain, the
@@ -26,9 +26,9 @@ Plan 04 (file watcher + index), Plan 10 (BYOK AI providers, keychain, the
 almost verbatim.
 
 **Unlocks:** v2 asset indexing (described assets become a search corpus). v1 only
-*produces* the sidecars; indexing them is explicitly out of scope.
+*produces* the descriptions; indexing them is explicitly out of scope.
 
-**Architecture:** all policy (eligibility, privacy, AI calls, sidecar writes)
+**Architecture:** all policy (eligibility, privacy, AI calls, description writes)
 lives in `@reflect/core`; the desktop app owns the watcher trigger, the
 single-flight controller, and the Settings UI. This mirrors capture
 ([`actions/capture.ts`](../../packages/core/src/actions/capture.ts) +
@@ -41,12 +41,12 @@ and audio memos
 
 **In:**
 
-- Sidecar generation for `png`, `jpg`/`jpeg`, `gif`, `webp`, `svg`, and `pdf`
+- Description generation for `png`, `jpg`/`jpeg`, `gif`, `webp`, `svg`, and `pdf`
   files under `assets/`.
-- Sidecar path: append `.reflect.md` (`assets/diagram.png` →
+- Description path: append `.reflect.md` (`assets/diagram.png` →
   `assets/diagram.png.reflect.md`).
-- Managed-sidecar frontmatter (source path, source hash, source size, provider,
-  model, generation timestamp) + a managed marker. Rewrite a managed sidecar only
+- Managed-description frontmatter (source path, source hash, source size, provider,
+  model, generation timestamp) + a managed marker. Rewrite a managed description only
   when the source hash changes; **never** overwrite a user-authored markdown file
   at that path.
 - One-shot multimodal BYOK call: images as image inputs, PDFs as file inputs, SVG
@@ -62,13 +62,13 @@ and audio memos
 
 - **No automatic backfill** on graph open or provider connection. Existing graphs
   may hold many large/costly assets; backfill is manual only.
-- **No sidecar retraction.** If a sidecar exists and the asset later becomes
-  private/ambiguous, the sidecar is left untouched in v1. v2 indexing must
-  reapply the privacy gate at *index* time before using a sidecar.
-- **No new index tables / projection changes.** Sidecars live on disk under
+- **No description retraction.** If a description exists and the asset later becomes
+  private/ambiguous, the description is left untouched in v1. v2 indexing must
+  reapply the privacy gate at *index* time before using a description.
+- **No new index tables / projection changes.** Descriptions live on disk under
   `assets/` (which is not indexed) and are not added to the note index, backlinks,
   or search in v1.
-- **No failure sidecars.** Permanent provider refusals are logged only; nothing is
+- **No failure descriptions.** Permanent provider refusals are logged only; nothing is
   written. Auth/network errors stop the pass for a later retry.
 - Video/audio assets (audio already has its own memo/transcription path).
 - Downscaling/transcoding oversized assets (cap-and-skip in v1; see Risks).
@@ -79,12 +79,12 @@ V1 of Reflect called a Reflect-hosted image-description API. V2 must not (no
 Reflect-hosted APIs). The capture flow already inverted this correctly: the
 desktop app makes BYOK calls directly, gates `private`, and writes results
 locally. This plan reuses that exact spine. The one genuinely new surface is the
-**sidecar file** — a portable, user-inspectable markdown artifact that sits next
+**description file** — a portable, user-inspectable markdown artifact that sits next
 to the asset and travels with the graph folder (the portability contract).
 
 ## Contracts
 
-### Sidecar file
+### Description file
 
 Path: `<assetRelPath>.reflect.md`. Example: `assets/diagram.png.reflect.md`.
 
@@ -150,7 +150,7 @@ Multimodal parts (AI SDK v6, `ai@^6`):
 
 Errors mirror `describe-page.ts` exactly: `ReflectError('auth')` on 401/403,
 `ReflectError('network')` on 429/5xx/timeout (caller retries later), and a new
-`AssetDescriptionRejectedError` on other 4xx (permanent — logged, no sidecar).
+`AssetDescriptionRejectedError` on other 4xx (permanent — logged, no description).
 `maxRetries: 0`; the reconcile pass is the retry layer. 60s `AbortSignal.timeout`.
 
 Provider resolution: `defaultAiProvider(state)` (the configured default, else the
@@ -195,17 +195,17 @@ written via a note change that itself triggers indexing — so a private referen
 cannot persist unindexed across passes. This is flagged as **Decision D5**
 (accept index-candidate + live-recheck vs. full live corpus scan).
 
-### Reconcile action — `packages/core/src/actions/asset-sidecar.ts`
+### Reconcile action — `packages/core/src/actions/asset-description.ts`
 
 Mirrors `reconcileCaptureEnrichment` / `reconcileAudioMemos`:
 
 ```ts
-export type AssetSidecarMode = 'incremental' | 'backfill'
+export type AssetDescriptionMode = 'incremental' | 'backfill'
 
-export interface ReconcileAssetSidecarsInput {
+export interface ReconcileAssetDescriptionsInput {
   providers: AiProvidersState
   generation: number
-  mode: AssetSidecarMode
+  mode: AssetDescriptionMode
   /** incremental: eligible asset paths from the watcher batch. */
   changed?: readonly string[]
   fetchFn?: typeof fetch
@@ -213,13 +213,13 @@ export interface ReconcileAssetSidecarsInput {
   onProgress?: (done: number, total: number) => void
 }
 
-export interface ReconcileAssetSidecarsOutcome {
+export interface ReconcileAssetDescriptionsOutcome {
   pending: number
   described: number
   skippedUpToDate: number
   skippedPrivacy: number
   skippedUserAuthored: number
-  refused: number               // permanent refusals (logged, no sidecar)
+  refused: number               // permanent refusals (logged, no description)
   stopped: ReconcileStop | null // 'config' | 'auth' | 'network' | 'stale'
 }
 ```
@@ -233,12 +233,12 @@ with a non-private note (and no private note):
    Private and unreferenced assets are never read, hashed, or sent.
 3. Read source bytes (`readAsset(path, generation)` → base64); compute
    `sourceHash`/`sourceSize` (`hashContent`).
-4. Sidecar decision (managed marker + hash) → skip up-to-date / skip user-authored;
+4. Description decision (managed marker + hash) → skip up-to-date / skip user-authored;
    size cap → skip oversize.
 5. `describeAsset(...)`. On `AssetDescriptionRejectedError`: log, `refused++`,
    continue. On `ReflectError('auth'|'network')`: stop the pass (`stopped`) for a
    later retry — nothing written.
-6. Write the sidecar (`writeNote(sidecarPath, body, generation)`), `described++`,
+6. Write the description (`writeNote(descriptionPath, body, generation)`), `described++`,
    `onProgress`.
 
 **Candidate set:** `incremental` uses `input.changed`; `backfill` enumerates all
@@ -253,17 +253,17 @@ Today `tracked_relpath` reports `.md` under `daily/`/`notes/`, anything under
 ```rust
 let asset = rel_str.starts_with("assets/")
     && has_eligible_asset_ext(&rel_str)   // png/jpg/jpeg/gif/webp/svg/pdf
-    && !rel_str.ends_with(".reflect.md"); // never the sidecars themselves
+    && !rel_str.ends_with(".reflect.md"); // never the descriptions themselves
 (note || recording || capture || asset).then_some(rel_str)
 ```
 
 This follows the existing precedent (audio recordings are tracked but *not*
 indexed; "frontend consumers filter by path"). The indexer keeps ignoring
 non-note paths; only the asset controller acts on these. Excluding `.reflect.md`
-prevents a self-trigger loop (sidecars also live under `assets/`). Update the
+prevents a self-trigger loop (descriptions also live under `assets/`). Update the
 module doc comment and the existing `tracked_relpath` unit tests.
 
-### Desktop controller — `apps/desktop/src/lib/asset-sidecar-controller.ts`
+### Desktop controller — `apps/desktop/src/lib/asset-describe-controller.ts`
 
 Clone of `createCaptureController`: `disposed` gate → `isStale`, `running`/`queued`
 single-flight coalescing, `generation` pin, `providerFetch`, plus a **dirty set**
@@ -276,10 +276,10 @@ makes public gets described even though the asset file didn't change) — plus
 changed/affected assets; existing assets wait for the explicit button. Surfaces
 `stopped` via the operations store like capture.
 
-A separate exported `backfillAssetSidecars(generation, onProgress)` runs the
+A separate exported `backfillAssetDescriptions(generation, onProgress)` runs the
 reconcile in `backfill` mode for the Settings button.
 
-### Provider wiring — `apps/desktop/src/providers/asset-sidecar-provider.tsx`
+### Provider wiring — `apps/desktop/src/providers/asset-describe-provider.tsx`
 
 Clone of `capture-provider.tsx` / `audio-memo-provider.tsx`: mounts the controller
 for the active graph generation, gated by the `describeAssets` setting; disposes
@@ -314,37 +314,37 @@ assets" button that runs the backfill with a cost warning and progress.
 ## Steps (phased; each independently testable)
 
 1. **Core contracts + AI + reconcile (no watcher, no UI).** `describe-asset.ts`,
-   the sidecar path/frontmatter/managed-marker helpers, `classifyAsset`,
-   `reconcileAssetSidecars` (both modes). Heavy unit coverage: idempotency,
+   the description path/frontmatter/managed-marker helpers, `classifyAsset`,
+   `reconcileAssetDescriptions` (both modes). Heavy unit coverage: idempotency,
    managed-vs-user-authored, privacy verdicts (public-only, any-private,
    unreferenced, fail-closed), eligibility/`kind` mapping, error classification,
    `isStale` abort.
 2. **Watcher.** Extend `tracked_relpath` + doc comment + Rust unit tests; confirm
    the frontend file-change consumer routes eligible asset upserts and the indexer
    still ignores them.
-3. **Controller + provider.** `asset-sidecar-controller.ts`,
-   `asset-sidecar-provider.tsx`, mount it; controller unit test (single-flight,
+3. **Controller + provider.** `asset-describe-controller.ts`,
+   `asset-describe-provider.tsx`, mount it; controller unit test (single-flight,
    abort-on-dispose, no launch backfill).
 4. **Settings.** Schema key + `describe-assets-field.tsx` + wire backfill +
    progress; update settings full-doc fixtures.
 5. **Polish + verify.** `pnpm check`, targeted `pnpm test --run`, relevant
    `cargo test`, and a manual run (drop an image into `assets/`, reference it from
-   a public note → sidecar appears; reference from a private note → none).
+   a public note → description appears; reference from a private note → none).
 
 ## Acceptance criteria
 
 - Dropping an eligible asset referenced by a public note produces
   `…​.reflect.md` with the correct frontmatter and a description (+ OCR when text
   is present).
-- An asset referenced by **any** private note is never sent and gets no sidecar.
+- An asset referenced by **any** private note is never sent and gets no description.
 - An unreferenced asset is never sent.
-- Replacing an asset (new bytes) regenerates the managed sidecar; an unchanged
+- Replacing an asset (new bytes) regenerates the managed description; an unchanged
   asset is skipped; a user-authored `…​.reflect.md` is never overwritten.
 - Auth/network failure stops the pass and retries later; permanent refusal is
-  logged with no sidecar written.
+  logged with no description written.
 - No automatic backfill on graph open/provider connect; the Settings button runs
   backfill with a cost warning and progress, and is abortable on graph switch.
-- The note index, backlinks, and search are unchanged (no sidecars indexed).
+- The note index, backlinks, and search are unchanged (no descriptions indexed).
 
 ## Risks & open decisions
 
@@ -353,7 +353,7 @@ assets" button that runs the backfill with a cost warning and progress.
   *existing* assets, not new ones.
 - **D2 — PDF provider capability.** PDF-as-file-part support varies by
   provider/model (Anthropic/Google/OpenAI differ). v1 relies on the refusal path
-  (a model that can't take a PDF returns 4xx → logged, no sidecar). *Open: add a
+  (a model that can't take a PDF returns 4xx → logged, no description). *Open: add a
   capability hint to the catalog to skip/relabel known-unsupported combos?*
 - **D3 — SVG handling.** Send SVG source as text (vision endpoints reject SVG).
   Acceptable and cheap; rasterization is a possible future improvement.
@@ -365,7 +365,7 @@ assets" button that runs the backfill with a cost warning and progress.
   cost; the residual race is mitigated by ordering behind the indexer and by the
   fact that any asset reference is written via a note change that itself triggers
   indexing. The full-scan remains the documented fallback if the race proves real.
-- **D6 — Refusal re-attempts.** No failure sidecar means a refused asset is
+- **D6 — Refusal re-attempts.** No failure description means a refused asset is
   retried on its next change (incremental) or on every backfill. Acceptable;
   passes are change-triggered, not continuous (no loop).
 

@@ -2,16 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AiProvidersState,
   FileChange,
-  ReconcileAssetSidecarsInput,
-  ReconcileAssetSidecarsOutcome,
+  ReconcileAssetDescriptionsInput,
+  ReconcileAssetDescriptionsOutcome,
 } from '@reflect/core'
 import {
-  createAssetSidecarController,
-  type AssetSidecarController,
-} from './asset-sidecar-controller'
+  createAssetDescribeController,
+  type AssetDescribeController,
+} from './asset-describe-controller'
 
-const reconcileAssetSidecars = vi.hoisted(() =>
-  vi.fn<(input: ReconcileAssetSidecarsInput) => Promise<ReconcileAssetSidecarsOutcome>>(),
+const reconcileAssetDescriptions = vi.hoisted(() =>
+  vi.fn<(input: ReconcileAssetDescriptionsInput) => Promise<ReconcileAssetDescriptionsOutcome>>(),
 )
 const subscribeFileChanges = vi.hoisted(() =>
   vi.fn<(handler: (changes: FileChange[]) => void) => Promise<() => void>>(),
@@ -21,7 +21,7 @@ const failOperation = vi.hoisted(() => vi.fn<(message: string) => void>())
 
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
-  reconcileAssetSidecars,
+  reconcileAssetDescriptions,
   subscribeFileChanges,
   readNote,
   hasBridge: () => true,
@@ -38,7 +38,7 @@ const PROVIDERS: AiProvidersState = {
   defaultProviderId: 'cfg-anthropic',
 }
 
-function outcome(overrides: Partial<ReconcileAssetSidecarsOutcome> = {}): ReconcileAssetSidecarsOutcome {
+function outcome(overrides: Partial<ReconcileAssetDescriptionsOutcome> = {}): ReconcileAssetDescriptionsOutcome {
   return {
     pending: 1,
     described: 1,
@@ -67,10 +67,10 @@ function upsert(path: string): FileChange {
 
 let onFileChanges: ((changes: FileChange[]) => void) | null = null
 const unlisten = vi.fn()
-let controller: AssetSidecarController | null = null
+let controller: AssetDescribeController | null = null
 
-function create(): AssetSidecarController {
-  controller = createAssetSidecarController({ generation: 3, getProviders: () => PROVIDERS })
+function create(): AssetDescribeController {
+  controller = createAssetDescribeController({ generation: 3, getProviders: () => PROVIDERS })
   return controller
 }
 
@@ -81,7 +81,7 @@ function flush(): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks()
   onFileChanges = null
-  reconcileAssetSidecars.mockResolvedValue(outcome())
+  reconcileAssetDescriptions.mockResolvedValue(outcome())
   readNote.mockResolvedValue('# A note with no asset references\n')
   subscribeFileChanges.mockImplementation(async (handler) => {
     onFileChanges = handler
@@ -94,11 +94,11 @@ afterEach(() => {
   controller = null
 })
 
-describe('createAssetSidecarController', () => {
+describe('createAssetDescribeController', () => {
   it('runs no launch pass — existing assets are never auto-scanned', async () => {
     create().start()
     await flush()
-    expect(reconcileAssetSidecars).not.toHaveBeenCalled()
+    expect(reconcileAssetDescriptions).not.toHaveBeenCalled()
   })
 
   it('describes a newly observed eligible asset, pinned to the generation', async () => {
@@ -107,8 +107,8 @@ describe('createAssetSidecarController', () => {
     onFileChanges?.([upsert('assets/a.png')])
     await flush()
 
-    expect(reconcileAssetSidecars).toHaveBeenCalledTimes(1)
-    expect(reconcileAssetSidecars).toHaveBeenCalledWith(
+    expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1)
+    expect(reconcileAssetDescriptions).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'incremental',
         changed: ['assets/a.png'],
@@ -118,7 +118,7 @@ describe('createAssetSidecarController', () => {
     )
   })
 
-  it('ignores sidecars, ineligible types, removes, and notes with no asset refs', async () => {
+  it('ignores descriptions, ineligible types, removes, and notes with no asset refs', async () => {
     create().start()
     await flush()
     onFileChanges?.([
@@ -129,7 +129,7 @@ describe('createAssetSidecarController', () => {
     ])
     await flush()
 
-    expect(reconcileAssetSidecars).not.toHaveBeenCalled()
+    expect(reconcileAssetDescriptions).not.toHaveBeenCalled()
   })
 
   it('re-evaluates assets referenced by a changed note (an asset newly made public)', async () => {
@@ -140,13 +140,13 @@ describe('createAssetSidecarController', () => {
     await flush()
 
     expect(readNote).toHaveBeenCalledWith('notes/x.md', 3)
-    expect(reconcileAssetSidecars).toHaveBeenCalledTimes(1)
-    expect(reconcileAssetSidecars.mock.calls[0]![0].changed).toEqual(['assets/a.png'])
+    expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1)
+    expect(reconcileAssetDescriptions.mock.calls[0]![0].changed).toEqual(['assets/a.png'])
   })
 
   it('coalesces a trigger that lands mid-pass into one follow-up', async () => {
-    const first = deferred<ReconcileAssetSidecarsOutcome>()
-    reconcileAssetSidecars.mockReturnValueOnce(first.promise)
+    const first = deferred<ReconcileAssetDescriptionsOutcome>()
+    reconcileAssetDescriptions.mockReturnValueOnce(first.promise)
     create().start()
     await flush()
 
@@ -154,18 +154,18 @@ describe('createAssetSidecarController', () => {
     await flush()
     onFileChanges?.([upsert('assets/b.pdf')]) // lands mid-pass → queued
     await flush()
-    expect(reconcileAssetSidecars).toHaveBeenCalledTimes(1)
+    expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1)
 
     first.resolve(outcome()) // clears a.png; the follow-up runs for b.pdf
     await flush()
 
-    expect(reconcileAssetSidecars).toHaveBeenCalledTimes(2)
-    expect(reconcileAssetSidecars.mock.calls[0]![0].changed).toEqual(['assets/a.png'])
-    expect(reconcileAssetSidecars.mock.calls[1]![0].changed).toEqual(['assets/b.pdf'])
+    expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(2)
+    expect(reconcileAssetDescriptions.mock.calls[0]![0].changed).toEqual(['assets/a.png'])
+    expect(reconcileAssetDescriptions.mock.calls[1]![0].changed).toEqual(['assets/b.pdf'])
   })
 
   it('keeps an asset dirty after a transient stop and retries it on focus', async () => {
-    reconcileAssetSidecars.mockResolvedValueOnce(
+    reconcileAssetDescriptions.mockResolvedValueOnce(
       outcome({ described: 0, stopped: { reason: 'network', message: 'offline' } }),
     )
     create().start()
@@ -173,13 +173,13 @@ describe('createAssetSidecarController', () => {
 
     onFileChanges?.([upsert('assets/a.png')])
     await flush()
-    expect(reconcileAssetSidecars).toHaveBeenCalledTimes(1)
+    expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1)
 
     window.dispatchEvent(new Event('focus')) // back online → retry the leftover
     await flush()
 
-    expect(reconcileAssetSidecars).toHaveBeenCalledTimes(2)
-    expect(reconcileAssetSidecars.mock.calls[1]![0].changed).toEqual(['assets/a.png'])
+    expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(2)
+    expect(reconcileAssetDescriptions.mock.calls[1]![0].changed).toEqual(['assets/a.png'])
   })
 
   it('does not retry an asset a clean pass already handled', async () => {
@@ -191,7 +191,7 @@ describe('createAssetSidecarController', () => {
     window.dispatchEvent(new Event('focus'))
     await flush()
 
-    expect(reconcileAssetSidecars).toHaveBeenCalledTimes(1)
+    expect(reconcileAssetDescriptions).toHaveBeenCalledTimes(1)
   })
 
   it('dispose unlistens and stops further passes', async () => {
@@ -203,6 +203,6 @@ describe('createAssetSidecarController', () => {
     expect(unlisten).toHaveBeenCalledTimes(1)
     onFileChanges?.([upsert('assets/a.png')])
     await flush()
-    expect(reconcileAssetSidecars).not.toHaveBeenCalled()
+    expect(reconcileAssetDescriptions).not.toHaveBeenCalled()
   })
 })

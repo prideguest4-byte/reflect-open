@@ -99,6 +99,14 @@ describe('parseNote — links, assets, tags, text', () => {
     expect(note.assets).toEqual([expect.objectContaining({ path: 'assets/photo.png' })])
   })
 
+  it('decodes percent-encoded asset hrefs to the on-disk path', () => {
+    const note = parse('![pic](assets/my%20photo.png) and ![two](assets/a%2Bb.pdf)')
+    expect(note.assets.map((asset) => asset.path)).toEqual([
+      'assets/my photo.png',
+      'assets/a+b.pdf',
+    ])
+  })
+
   it('extracts body #tags only, deduped case-insensitively', () => {
     const note = parse('#alpha and #Alpha and #beta/sub, but not #123 or a#b')
     expect(note.tags).toEqual(['alpha', 'beta/sub'])

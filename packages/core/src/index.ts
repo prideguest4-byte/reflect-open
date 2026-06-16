@@ -296,7 +296,7 @@ export {
   type DescribePageRequest,
 } from './ai/describe-page'
 
-// Asset description sidecars (Plan 20)
+// Asset descriptions (Plan 20)
 export {
   isAssetDescriptionRejected,
   AssetDescriptionRejectedError,
@@ -304,19 +304,19 @@ export {
   type DescribeAssetRequest,
 } from './ai/describe-asset'
 export {
-  buildSidecarSource,
+  buildDescriptionSource,
   classifyAsset,
   isEligibleAssetPath,
-  reconcileAssetSidecars,
-  readManagedSidecar,
-  sidecarPathFor,
-  SIDECAR_SUFFIX,
-  type AssetSidecarMeta,
-  type AssetSidecarMode,
+  reconcileAssetDescriptions,
+  readManagedDescription,
+  descriptionPathFor,
+  DESCRIPTION_SUFFIX,
+  type AssetDescriptionMeta,
+  type AssetDescriptionMode,
   type AssetVerdict,
-  type ReconcileAssetSidecarsInput,
-  type ReconcileAssetSidecarsOutcome,
-} from './actions/asset-sidecar'
+  type ReconcileAssetDescriptionsInput,
+  type ReconcileAssetDescriptionsOutcome,
+} from './actions/asset-description'
 
 // Backup & sync (Plan 12)
 export {

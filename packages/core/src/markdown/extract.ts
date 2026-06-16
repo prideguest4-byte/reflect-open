@@ -104,6 +104,24 @@ function isAssetHref(href: string): boolean {
   return /(^|\/)assets\//.test(href)
 }
 
+/**
+ * Decode an asset href to the on-disk path. A note body may percent-encode an
+ * asset reference (`assets/my%20photo.png`) while the file on disk — and the
+ * watcher / `dir_list` paths — are `assets/my photo.png`. The index projection
+ * and the asset-description privacy gate both key off this decoded form, so two
+ * notes referencing the same file under different spellings collapse to one key
+ * (a private referer can't hide behind an alternate encoding). A malformed
+ * escape keeps the raw href. The `AssetRef` span still points at the raw body
+ * text; only the logical `path` is decoded.
+ */
+function decodeAssetPath(href: string): string {
+  try {
+    return decodeURIComponent(href)
+  } catch {
+    return href
+  }
+}
+
 function stringField(frontmatter: Frontmatter, key: string): string | undefined {
   const value = (frontmatter as Record<string, unknown>)[key]
   return typeof value === 'string' ? value : undefined
@@ -293,7 +311,7 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
         const link = readLink(body, from, to, bodyOffset)
         if (link) {
           if (isAssetHref(link.href)) {
-            assets.push({ path: link.href, from: link.from, to: link.to })
+            assets.push({ path: decodeAssetPath(link.href), from: link.from, to: link.to })
           } else {
             links.push(link)
           }

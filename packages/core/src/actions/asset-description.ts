@@ -6,6 +6,7 @@ import { base64ToBytes } from '../ai/transcribe'
 import { isAppError, toAppError } from '../errors'
 import { listDir, readAsset, readNote, writeNote } from '../graph/commands'
 import { ASSETS_DIR } from '../graph/paths'
+import type { FileMeta } from '../graph/schemas'
 import { assetReferencingNotePaths } from '../indexing/asset-refs'
 import { hashContent } from '../indexing/hash'
 import { parseNote } from '../markdown/extract'
@@ -15,9 +16,9 @@ import type { AiProviderConfig } from '../settings/schema'
 import type { ReconcileStop } from './audio-memo'
 
 /**
- * Asset description sidecars (Plan 20). For each eligible image/PDF under
- * `assets/` that is safely associated with public notes, generate a managed
- * markdown sidecar (`<asset>.reflect.md`) holding an AI description + OCR. The
+ * Asset descriptions (Plan 20). For each eligible image/PDF under `assets/`
+ * that is safely associated with public notes, generate a managed markdown
+ * description file (`<asset>.reflect.md`) holding an AI description + OCR. The
  * note index is untouched; this only writes files next to the asset.
  *
  * The reconcile pass mirrors `reconcileCaptureEnrichment`: generation-pinned,
@@ -27,8 +28,8 @@ import type { ReconcileStop } from './audio-memo'
  * block — an asset referenced by any private note is never sent.
  */
 
-/** Sidecar filename suffix appended to the asset's graph-relative path. */
-export const SIDECAR_SUFFIX = '.reflect.md'
+/** Description filename suffix appended to the asset's graph-relative path. */
+export const DESCRIPTION_SUFFIX = '.reflect.md'
 
 /** Largest source we send to a provider; bigger assets are skipped, not sent. */
 const MAX_ASSET_BYTES = 20 * 1024 * 1024
@@ -51,11 +52,11 @@ const ASSET_TYPES: Readonly<Record<string, AssetType>> = {
 
 /**
  * The asset type for a graph-relative path, or `null` when it is not an
- * eligible asset: outside `assets/`, a sidecar itself, or an unsupported
+ * eligible asset: outside `assets/`, a description itself, or an unsupported
  * extension. Pure — the watcher's Rust filter mirrors this rule.
  */
 export function assetTypeFor(path: string): AssetType | null {
-  if (!path.startsWith(`${ASSETS_DIR}/`) || path.endsWith(SIDECAR_SUFFIX)) {
+  if (!path.startsWith(`${ASSETS_DIR}/`) || path.endsWith(DESCRIPTION_SUFFIX)) {
     return null
   }
   const dot = path.lastIndexOf('.')
@@ -70,13 +71,13 @@ export function isEligibleAssetPath(path: string): boolean {
   return assetTypeFor(path) !== null
 }
 
-/** The sidecar path for an asset (`assets/x.png` → `assets/x.png.reflect.md`). */
-export function sidecarPathFor(assetPath: string): string {
-  return `${assetPath}${SIDECAR_SUFFIX}`
+/** The description path for an asset (`assets/x.png` → `assets/x.png.reflect.md`). */
+export function descriptionPathFor(assetPath: string): string {
+  return `${assetPath}${DESCRIPTION_SUFFIX}`
 }
 
-/** Provenance recorded in a managed sidecar's frontmatter. */
-export interface AssetSidecarMeta {
+/** Provenance recorded in a managed description's frontmatter. */
+export interface AssetDescriptionMeta {
   /** The graph-relative source asset path. */
   source: string
   /** sha256 of the source bytes (as base64) — the change-detection key. */
@@ -92,28 +93,42 @@ export interface AssetSidecarMeta {
 }
 
 /** The managed marker; its presence means Reflect owns the file. */
-const managedSidecarSchema = z.object({
+const managedDescriptionSchema = z.object({
   reflectAsset: z.literal(true),
   sourceHash: z.string().optional(),
+  sourceSize: z.number().optional(),
+  generatedAt: z.string().optional(),
 })
 
-/** A managed sidecar's identity, as read back from disk. */
-export interface ManagedSidecar {
+/** A managed description's identity, as read back from disk. */
+export interface ManagedDescription {
   /** The recorded source hash, or `null` if absent (forces a rewrite). */
   sourceHash: string | null
+  /** The recorded source size in bytes, or `null` if absent. */
+  sourceSize: number | null
+  /** `generatedAt` parsed to epoch ms, or `null` if absent/unparseable. */
+  generatedAtMs: number | null
 }
 
 /**
- * Read a sidecar's managed marker. `null` means the file is **user-authored**
+ * Read a description's managed marker. `null` means the file is **user-authored**
  * (no `reflectAsset: true`) and must never be overwritten or trusted.
  */
-export function readManagedSidecar(source: string): ManagedSidecar | null {
-  const parsed = managedSidecarSchema.safeParse(parseFrontmatter(splitFrontmatter(source).raw).data)
-  return parsed.success ? { sourceHash: parsed.data.sourceHash ?? null } : null
+export function readManagedDescription(source: string): ManagedDescription | null {
+  const parsed = managedDescriptionSchema.safeParse(parseFrontmatter(splitFrontmatter(source).raw).data)
+  if (!parsed.success) {
+    return null
+  }
+  const generatedAtMs = parsed.data.generatedAt ? Date.parse(parsed.data.generatedAt) : Number.NaN
+  return {
+    sourceHash: parsed.data.sourceHash ?? null,
+    sourceSize: parsed.data.sourceSize ?? null,
+    generatedAtMs: Number.isNaN(generatedAtMs) ? null : generatedAtMs,
+  }
 }
 
-/** Assemble a managed sidecar's full source from its provenance + body. */
-export function buildSidecarSource(meta: AssetSidecarMeta, body: string): string {
+/** Assemble a managed description's full source from its provenance + body. */
+export function buildDescriptionSource(meta: AssetDescriptionMeta, body: string): string {
   return upsertFrontmatter(`${body.trimEnd()}\n`, {
     reflectAsset: true,
     source: meta.source,
@@ -174,15 +189,15 @@ export async function classifyAsset(assetPath: string, generation: number): Prom
 }
 
 /** Whether new eligible assets are described automatically vs. only on backfill. */
-export type AssetSidecarMode = 'incremental' | 'backfill'
+export type AssetDescriptionMode = 'incremental' | 'backfill'
 
-export interface ReconcileAssetSidecarsInput {
+export interface ReconcileAssetDescriptionsInput {
   /** The configured-providers state — decides the provider and keychain entry. */
   providers: AiProvidersState
   /** `GraphInfo.generation` — pins every read/write to the issuing graph. */
   generation: number
   /** `incremental` processes `changed`; `backfill` enumerates every asset. */
-  mode: AssetSidecarMode
+  mode: AssetDescriptionMode
   /** Incremental only: the eligible asset paths the watcher reported changed. */
   changed?: readonly string[]
   /** Host transport for the provider call (the Tauri HTTP plugin's fetch). */
@@ -191,26 +206,26 @@ export interface ReconcileAssetSidecarsInput {
   isStale?: () => boolean
   /** Backfill progress: `(processed, total)` after each handled asset. */
   onProgress?: (processed: number, total: number) => void
-  /** Injectable clock for the sidecar's `generatedAt`. */
+  /** Injectable clock for the description's `generatedAt`. */
   now?: () => Date
 }
 
-export interface ReconcileAssetSidecarsOutcome {
+export interface ReconcileAssetDescriptionsOutcome {
   /** Eligible assets this pass considered. */
   pending: number
   /** Assets described and written this pass. */
   described: number
-  /** Skipped — a managed sidecar already matched the source hash. */
+  /** Skipped — a managed description already matched the source hash. */
   skippedUpToDate: number
   /** Skipped — referenced by no public note (or none at all). */
   skippedUnreferenced: number
   /** Skipped — referenced by a private note (the hard block). */
   skippedPrivate: number
-  /** Skipped — an existing sidecar was user-authored, never overwritten. */
+  /** Skipped — an existing description was user-authored, never overwritten. */
   skippedUserAuthored: number
   /** Skipped — larger than the size cap. */
   skippedOversize: number
-  /** Permanent provider refusals — logged, no sidecar written. */
+  /** Permanent provider refusals — logged, no description written. */
   refused: number
   /** Why the pass ended early, or `null` when every asset was handled. */
   stopped: ReconcileStop | null
@@ -233,6 +248,8 @@ interface AssetContext {
   fetchFn?: typeof fetch | undefined
   now: () => Date
   isStale: () => boolean
+  /** `assets/` file stats (size + mtime), to skip reads we can prove are stale. */
+  statByPath: Map<string, FileMeta>
 }
 
 const STALE: ReconcileStop = { reason: 'stale', message: 'the graph session ended mid-pass' }
@@ -249,7 +266,7 @@ function utf8FromBase64(base64: string): string {
   return new TextDecoder().decode(base64ToBytes(base64))
 }
 
-async function readSidecarSource(path: string, generation: number): Promise<string | null> {
+async function readDescriptionSource(path: string, generation: number): Promise<string | null> {
   try {
     return await readNote(path, generation)
   } catch (cause) {
@@ -282,6 +299,38 @@ async function processAsset(assetPath: string, ctx: AssetContext): Promise<Asset
     return { kind: 'skipped', reason: 'unreferenced' }
   }
 
+  // Read the (small) description before the (large) asset. A managed description whose
+  // recorded size matches the file and whose `generatedAt` is at or after the
+  // file's mtime proves the asset hasn't changed since we described it — skip
+  // without ever pulling the bytes. A real content change advances the mtime
+  // (and almost always the size), so this never misses one; at worst a sync that
+  // bumps mtime forward costs the read + rehash below. This spares re-reading
+  // large assets on every edit of a note that merely references them.
+  const stat = ctx.statByPath.get(assetPath)
+  const descriptionPath = descriptionPathFor(assetPath)
+  const existing = await readDescriptionSource(descriptionPath, ctx.generation)
+  let managed: ManagedDescription | null = null
+  if (existing !== null) {
+    managed = readManagedDescription(existing)
+    if (managed === null) {
+      return { kind: 'skipped', reason: 'user-authored' }
+    }
+    if (
+      stat !== undefined &&
+      managed.sourceSize === stat.size &&
+      managed.generatedAtMs !== null &&
+      stat.modifiedMs <= managed.generatedAtMs
+    ) {
+      return { kind: 'skipped', reason: 'up-to-date' }
+    }
+  }
+
+  // Cap before reading when the stat is known — never pull an oversize file's
+  // bytes into memory just to skip it.
+  if (stat !== undefined && stat.size > MAX_ASSET_BYTES) {
+    return { kind: 'skipped', reason: 'oversize' }
+  }
+
   let base64: string
   try {
     base64 = await readAsset(assetPath, ctx.generation)
@@ -292,22 +341,14 @@ async function processAsset(assetPath: string, ctx: AssetContext): Promise<Asset
     throw cause
   }
 
-  const sourceHash = await hashContent(base64)
-  const sidecarPath = sidecarPathFor(assetPath)
-  const existing = await readSidecarSource(sidecarPath, ctx.generation)
-  if (existing !== null) {
-    const managed = readManagedSidecar(existing)
-    if (managed === null) {
-      return { kind: 'skipped', reason: 'user-authored' }
-    }
-    if (managed.sourceHash === sourceHash) {
-      return { kind: 'skipped', reason: 'up-to-date' }
-    }
-  }
-
   const sourceSize = base64ByteLength(base64)
   if (sourceSize > MAX_ASSET_BYTES) {
-    return { kind: 'skipped', reason: 'oversize' }
+    return { kind: 'skipped', reason: 'oversize' } // belt: no stat was available
+  }
+
+  const sourceHash = await hashContent(base64)
+  if (managed !== null && managed.sourceHash === sourceHash) {
+    return { kind: 'skipped', reason: 'up-to-date' } // mtime moved but content identical
   }
 
   if (ctx.isStale()) {
@@ -327,7 +368,7 @@ async function processAsset(assetPath: string, ctx: AssetContext): Promise<Asset
     })
   } catch (cause) {
     if (isAssetDescriptionRejected(cause)) {
-      return { kind: 'refused' } // permanent — log only, no failure sidecar
+      return { kind: 'refused' } // permanent — log only, no failure description
     }
     throw cause // auth/network — stop the pass, retry on the next trigger
   }
@@ -339,8 +380,8 @@ async function processAsset(assetPath: string, ctx: AssetContext): Promise<Asset
   }
 
   await writeNote(
-    sidecarPath,
-    buildSidecarSource(
+    descriptionPath,
+    buildDescriptionSource(
       {
         source: assetPath,
         sourceHash,
@@ -356,10 +397,17 @@ async function processAsset(assetPath: string, ctx: AssetContext): Promise<Asset
   return { kind: 'described' }
 }
 
-async function candidateAssets(input: ReconcileAssetSidecarsInput): Promise<string[]> {
+interface AssetCandidates {
+  /** Eligible asset paths to consider this pass. */
+  paths: string[]
+  /** The `assets/` listing when the mode already fetched it (backfill), else null. */
+  listing: FileMeta[] | null
+}
+
+async function candidateAssets(input: ReconcileAssetDescriptionsInput): Promise<AssetCandidates> {
   if (input.mode === 'backfill') {
-    const files = await listDir(ASSETS_DIR, input.generation)
-    return files.map((file) => file.path).filter(isEligibleAssetPath)
+    const listing = await listDir(ASSETS_DIR, input.generation)
+    return { paths: listing.map((file) => file.path).filter(isEligibleAssetPath), listing }
   }
   const unique = new Set<string>()
   for (const path of input.changed ?? []) {
@@ -367,21 +415,34 @@ async function candidateAssets(input: ReconcileAssetSidecarsInput): Promise<stri
       unique.add(path)
     }
   }
-  return [...unique]
+  return { paths: [...unique], listing: null }
+}
+
+/**
+ * File stats for the candidates, keyed by path. Reuses backfill's listing; for
+ * incremental it lists `assets/` best-effort — a failure just means the pass
+ * reads every asset instead of skipping unchanged ones by stat.
+ */
+async function statMap(
+  input: ReconcileAssetDescriptionsInput,
+  listing: FileMeta[] | null,
+): Promise<Map<string, FileMeta>> {
+  const files = listing ?? (await listDir(ASSETS_DIR, input.generation).catch(() => []))
+  return new Map(files.map((file) => [file.path, file]))
 }
 
 /**
  * Describe every candidate asset that needs it. `incremental` mode handles the
  * eligible paths in `changed`; `backfill` mode enumerates every eligible asset
- * under `assets/`. Idempotent in both modes: a managed sidecar whose source
+ * under `assets/`. Idempotent in both modes: a managed description whose source
  * hash still matches is skipped, so re-runs are cheap. Never throws.
  */
-export async function reconcileAssetSidecars(
-  input: ReconcileAssetSidecarsInput,
-): Promise<ReconcileAssetSidecarsOutcome> {
-  let candidates: string[]
+export async function reconcileAssetDescriptions(
+  input: ReconcileAssetDescriptionsInput,
+): Promise<ReconcileAssetDescriptionsOutcome> {
+  let candidate: AssetCandidates
   try {
-    candidates = await candidateAssets(input)
+    candidate = await candidateAssets(input)
   } catch (cause) {
     return {
       pending: 0,
@@ -396,7 +457,7 @@ export async function reconcileAssetSidecars(
     }
   }
 
-  const total = candidates.length
+  const total = candidate.paths.length
   let described = 0
   let skippedUpToDate = 0
   let skippedUnreferenced = 0
@@ -404,7 +465,7 @@ export async function reconcileAssetSidecars(
   let skippedUserAuthored = 0
   let skippedOversize = 0
   let refused = 0
-  const outcome = (stopped: ReconcileStop | null): ReconcileAssetSidecarsOutcome => ({
+  const outcome = (stopped: ReconcileStop | null): ReconcileAssetDescriptionsOutcome => ({
     pending: total,
     described,
     skippedUpToDate,
@@ -442,10 +503,11 @@ export async function reconcileAssetSidecars(
     fetchFn: input.fetchFn,
     now: input.now ?? (() => new Date()),
     isStale: () => input.isStale?.() === true,
+    statByPath: await statMap(input, candidate.listing),
   }
 
   let processed = 0
-  for (const assetPath of candidates) {
+  for (const assetPath of candidate.paths) {
     if (ctx.isStale()) {
       return outcome(STALE)
     }

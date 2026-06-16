@@ -9,14 +9,14 @@ import { getSecret } from '../secrets/keychain'
 import {
   assetTypeFor,
   base64ByteLength,
-  buildSidecarSource,
+  buildDescriptionSource,
   classifyAsset,
   isEligibleAssetPath,
-  readManagedSidecar,
-  reconcileAssetSidecars,
-  sidecarPathFor,
-  type ReconcileAssetSidecarsInput,
-} from './asset-sidecar'
+  readManagedDescription,
+  reconcileAssetDescriptions,
+  descriptionPathFor,
+  type ReconcileAssetDescriptionsInput,
+} from './asset-description'
 
 vi.mock('../graph/commands', () => ({
   listDir: vi.fn(),
@@ -54,7 +54,7 @@ const NOW = (): Date => new Date('2026-06-16T00:00:00.000Z')
 
 const notFound = (): unknown => ({ kind: 'notFound', message: 'missing' })
 
-/** In-memory graph: notes + sidecars by path, assets by path, and the index refs. */
+/** In-memory graph: notes + descriptions by path, assets by path, and the index refs. */
 const files = new Map<string, string>()
 const assets = new Map<string, string>()
 const refs = new Map<string, string[]>()
@@ -86,7 +86,11 @@ beforeEach(() => {
     if (dir !== 'assets') {
       return []
     }
-    return [...assets.keys()].map((path) => ({ path, size: 1, modifiedMs: 1 }))
+    return [...assets.entries()].map(([path, value]) => ({
+      path,
+      size: base64ByteLength(value),
+      modifiedMs: 1, // epoch+1ms — far before any ISO `generatedAt`
+    }))
   })
   assetRefsMock.mockImplementation(async (assetPath: string) => refs.get(assetPath) ?? [])
   getSecretMock.mockResolvedValue('sk-live')
@@ -103,7 +107,7 @@ function privateNote(assetPath: string): string {
   return `---\nprivate: true\n---\n\n![](${assetPath})\n`
 }
 
-function input(overrides: Partial<ReconcileAssetSidecarsInput> = {}): ReconcileAssetSidecarsInput {
+function input(overrides: Partial<ReconcileAssetDescriptionsInput> = {}): ReconcileAssetDescriptionsInput {
   return {
     providers: PROVIDERS,
     generation: GENERATION,
@@ -125,14 +129,14 @@ describe('pure helpers', () => {
     expect(assetTypeFor('assets/a.pdf')).toEqual({ kind: 'pdf', mediaType: 'application/pdf' })
     expect(assetTypeFor('assets/a.txt')).toBeNull()
     expect(assetTypeFor('notes/a.png')).toBeNull()
-    expect(assetTypeFor('assets/a.png.reflect.md')).toBeNull() // never describe a sidecar
+    expect(assetTypeFor('assets/a.png.reflect.md')).toBeNull() // never describe a description
     expect(assetTypeFor('assets/noext')).toBeNull()
   })
 
-  it('isEligibleAssetPath and sidecarPathFor', () => {
+  it('isEligibleAssetPath and descriptionPathFor', () => {
     expect(isEligibleAssetPath('assets/a.png')).toBe(true)
     expect(isEligibleAssetPath('assets/a.png.reflect.md')).toBe(false)
-    expect(sidecarPathFor('assets/a.png')).toBe('assets/a.png.reflect.md')
+    expect(descriptionPathFor('assets/a.png')).toBe('assets/a.png.reflect.md')
   })
 
   it('base64ByteLength matches the decoded size', () => {
@@ -141,8 +145,8 @@ describe('pure helpers', () => {
     expect(base64ByteLength('YWJjZA==')).toBe(4) // "abcd"
   })
 
-  it('readManagedSidecar recognizes managed files and rejects user-authored ones', async () => {
-    const built = buildSidecarSource(
+  it('readManagedDescription recognizes managed files and rejects user-authored ones', async () => {
+    const built = buildDescriptionSource(
       {
         source: 'assets/a.png',
         sourceHash: 'abc',
@@ -153,12 +157,16 @@ describe('pure helpers', () => {
       },
       'A flow diagram.',
     )
-    expect(readManagedSidecar(built)).toEqual({ sourceHash: 'abc' })
+    expect(readManagedDescription(built)).toEqual({
+      sourceHash: 'abc',
+      sourceSize: 5,
+      generatedAtMs: Date.parse('2026-06-16T00:00:00.000Z'),
+    })
     expect(built).toContain('A flow diagram.')
     expect(built).toContain('source: assets/a.png')
     // A file the user wrote (no managed marker) is never claimed.
-    expect(readManagedSidecar('# My own notes about this image\n')).toBeNull()
-    expect(readManagedSidecar('---\ntitle: Hand written\n---\n\nbody\n')).toBeNull()
+    expect(readManagedDescription('# My own notes about this image\n')).toBeNull()
+    expect(readManagedDescription('---\ntitle: Hand written\n---\n\nbody\n')).toBeNull()
   })
 })
 
@@ -199,70 +207,96 @@ describe('classifyAsset (privacy gate)', () => {
   })
 })
 
-describe('reconcileAssetSidecars', () => {
-  it('describes a public asset and writes a managed, generation-pinned sidecar', async () => {
+describe('reconcileAssetDescriptions', () => {
+  it('describes a public asset and writes a managed, generation-pinned description', async () => {
     assets.set('assets/a.png', 'aGVsbG8=')
     files.set('notes/pub.md', publicNote('assets/a.png'))
     refs.set('assets/a.png', ['notes/pub.md'])
 
-    const outcome = await reconcileAssetSidecars(input())
+    const outcome = await reconcileAssetDescriptions(input())
 
     expect(outcome.described).toBe(1)
     expect(outcome.stopped).toBeNull()
     const hash = await hashContent('aGVsbG8=')
     const written = files.get('assets/a.png.reflect.md')!
-    expect(readManagedSidecar(written)).toEqual({ sourceHash: hash })
+    expect(readManagedDescription(written)).toMatchObject({ sourceHash: hash })
     expect(written).toContain('A flow diagram.')
     expect(written).toContain('provider: anthropic')
     expect(written).toContain('generatedAt: 2026-06-16T00:00:00.000Z')
     expect(writeNoteMock).toHaveBeenCalledWith('assets/a.png.reflect.md', expect.any(String), GENERATION)
   })
 
-  it('skips an up-to-date managed sidecar without calling the provider', async () => {
+  it('skips an up-to-date managed description without calling the provider', async () => {
     assets.set('assets/a.png', 'aGVsbG8=')
     files.set('notes/pub.md', publicNote('assets/a.png'))
     refs.set('assets/a.png', ['notes/pub.md'])
     const hash = await hashContent('aGVsbG8=')
     files.set(
       'assets/a.png.reflect.md',
-      buildSidecarSource(
+      buildDescriptionSource(
         { source: 'assets/a.png', sourceHash: hash, sourceSize: 5, provider: 'anthropic', model: 'm', generatedAt: 'x' },
         'old',
       ),
     )
 
-    const outcome = await reconcileAssetSidecars(input())
+    const outcome = await reconcileAssetDescriptions(input())
 
     expect(outcome.skippedUpToDate).toBe(1)
     expect(outcome.described).toBe(0)
     expect(describeMock).not.toHaveBeenCalled()
   })
 
-  it('regenerates a managed sidecar when the source hash changed', async () => {
+  it('skips an up-to-date asset by stat, without reading its bytes', async () => {
+    assets.set('assets/a.png', 'aGVsbG8=') // 5 bytes; stat size matches below
+    files.set('notes/pub.md', publicNote('assets/a.png'))
+    refs.set('assets/a.png', ['notes/pub.md'])
+    files.set(
+      'assets/a.png.reflect.md',
+      buildDescriptionSource(
+        {
+          source: 'assets/a.png',
+          sourceHash: 'unused-because-we-never-read',
+          sourceSize: 5,
+          provider: 'anthropic',
+          model: 'm',
+          generatedAt: '2026-06-16T00:00:00.000Z', // after the stat mtime (epoch+1ms)
+        },
+        'old',
+      ),
+    )
+
+    const outcome = await reconcileAssetDescriptions(input())
+
+    expect(outcome.skippedUpToDate).toBe(1)
+    expect(readAssetMock).not.toHaveBeenCalled() // size + mtime proved it unchanged
+    expect(describeMock).not.toHaveBeenCalled()
+  })
+
+  it('regenerates a managed description when the source hash changed', async () => {
     assets.set('assets/a.png', 'bmV3Qnl0ZXM=') // different bytes
     files.set('notes/pub.md', publicNote('assets/a.png'))
     refs.set('assets/a.png', ['notes/pub.md'])
     files.set(
       'assets/a.png.reflect.md',
-      buildSidecarSource(
+      buildDescriptionSource(
         { source: 'assets/a.png', sourceHash: 'oldhash', sourceSize: 5, provider: 'anthropic', model: 'm', generatedAt: 'x' },
         'old',
       ),
     )
 
-    const outcome = await reconcileAssetSidecars(input())
+    const outcome = await reconcileAssetDescriptions(input())
 
     expect(outcome.described).toBe(1)
     expect(files.get('assets/a.png.reflect.md')).toContain('A flow diagram.')
   })
 
-  it('never overwrites a user-authored sidecar', async () => {
+  it('never overwrites a user-authored description', async () => {
     assets.set('assets/a.png', 'aGVsbG8=')
     files.set('notes/pub.md', publicNote('assets/a.png'))
     refs.set('assets/a.png', ['notes/pub.md'])
     files.set('assets/a.png.reflect.md', '# My own caption\n')
 
-    const outcome = await reconcileAssetSidecars(input())
+    const outcome = await reconcileAssetDescriptions(input())
 
     expect(outcome.skippedUserAuthored).toBe(1)
     expect(outcome.described).toBe(0)
@@ -275,7 +309,7 @@ describe('reconcileAssetSidecars', () => {
     files.set('notes/secret.md', privateNote('assets/a.png'))
     refs.set('assets/a.png', ['notes/secret.md'])
 
-    const outcome = await reconcileAssetSidecars(input())
+    const outcome = await reconcileAssetDescriptions(input())
 
     expect(outcome.skippedPrivate).toBe(1)
     expect(outcome.described).toBe(0)
@@ -287,7 +321,7 @@ describe('reconcileAssetSidecars', () => {
     assets.set('assets/a.png', 'aGVsbG8=')
     refs.set('assets/a.png', [])
 
-    const outcome = await reconcileAssetSidecars(input())
+    const outcome = await reconcileAssetDescriptions(input())
 
     expect(outcome.skippedUnreferenced).toBe(1)
     expect(describeMock).not.toHaveBeenCalled()
@@ -300,7 +334,7 @@ describe('reconcileAssetSidecars', () => {
     refs.set('assets/secret.png', ['notes/secret.md']) // referenced only by a private note
     refs.set('assets/orphan.png', []) // referenced by nothing
 
-    const outcome = await reconcileAssetSidecars(
+    const outcome = await reconcileAssetDescriptions(
       input({ changed: ['assets/secret.png', 'assets/orphan.png'] }),
     )
 
@@ -310,7 +344,7 @@ describe('reconcileAssetSidecars', () => {
     expect(describeMock).not.toHaveBeenCalled()
   })
 
-  it('logs a permanent refusal and writes no sidecar, continuing the pass', async () => {
+  it('logs a permanent refusal and writes no description, continuing the pass', async () => {
     assets.set('assets/a.png', 'aGVsbG8=')
     assets.set('assets/b.pdf', 'JVBERg==')
     files.set('notes/pub.md', `# Both\n\n![](assets/a.png)\n![](assets/b.pdf)\n`)
@@ -320,7 +354,7 @@ describe('reconcileAssetSidecars', () => {
       .mockRejectedValueOnce(new AssetDescriptionRejectedError('unsupported'))
       .mockResolvedValueOnce('A PDF.')
 
-    const outcome = await reconcileAssetSidecars(input({ changed: ['assets/a.png', 'assets/b.pdf'] }))
+    const outcome = await reconcileAssetDescriptions(input({ changed: ['assets/a.png', 'assets/b.pdf'] }))
 
     expect(outcome.refused).toBe(1)
     expect(outcome.described).toBe(1)
@@ -335,7 +369,7 @@ describe('reconcileAssetSidecars', () => {
     refs.set('assets/a.png', ['notes/pub.md'])
     describeMock.mockRejectedValueOnce(new ReflectError('network', 'offline'))
 
-    const outcome = await reconcileAssetSidecars(input())
+    const outcome = await reconcileAssetDescriptions(input())
 
     expect(outcome.stopped).toEqual({ reason: 'network', message: 'offline' })
     expect(outcome.described).toBe(0)
@@ -346,7 +380,7 @@ describe('reconcileAssetSidecars', () => {
     assets.set('assets/a.png', 'aGVsbG8=')
     refs.set('assets/a.png', ['notes/pub.md'])
 
-    const outcome = await reconcileAssetSidecars(input({ providers: NO_PROVIDERS }))
+    const outcome = await reconcileAssetDescriptions(input({ providers: NO_PROVIDERS }))
 
     expect(outcome.stopped?.reason).toBe('config')
     expect(describeMock).not.toHaveBeenCalled()
@@ -357,7 +391,7 @@ describe('reconcileAssetSidecars', () => {
     refs.set('assets/a.png', ['notes/pub.md'])
     getSecretMock.mockRejectedValue(new Error('no key'))
 
-    const outcome = await reconcileAssetSidecars(input())
+    const outcome = await reconcileAssetDescriptions(input())
 
     expect(outcome.stopped?.reason).toBe('config')
     expect(describeMock).not.toHaveBeenCalled()
@@ -368,7 +402,7 @@ describe('reconcileAssetSidecars', () => {
     files.set('notes/pub.md', publicNote('assets/a.png'))
     refs.set('assets/a.png', ['notes/pub.md'])
 
-    const outcome = await reconcileAssetSidecars(input({ isStale: () => true }))
+    const outcome = await reconcileAssetDescriptions(input({ isStale: () => true }))
 
     expect(outcome.stopped?.reason).toBe('stale')
     expect(outcome.described).toBe(0)
@@ -384,7 +418,7 @@ describe('reconcileAssetSidecars', () => {
     refs.set('assets/b.pdf', ['notes/pub.md'])
     const progress: Array<[number, number]> = []
 
-    const outcome = await reconcileAssetSidecars(
+    const outcome = await reconcileAssetDescriptions(
       // `changed` is ignored in backfill mode — listDir enumerates the candidates.
       input({ mode: 'backfill', onProgress: (done, total) => void progress.push([done, total]) }),
     )

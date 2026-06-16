@@ -133,7 +133,7 @@ describe('describeAsset', () => {
     await expect(request()).rejects.toMatchObject({ kind })
   })
 
-  it('a 4xx refusal becomes AssetDescriptionRejectedError — log only, no sidecar', async () => {
+  it('a 4xx refusal becomes AssetDescriptionRejectedError — log only, no description', async () => {
     modelThrowing(apiError(415))
     const failure = await request().catch((cause: unknown) => cause)
     expect(isAssetDescriptionRejected(failure)).toBe(true)

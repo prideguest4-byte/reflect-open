@@ -4,13 +4,12 @@ import {
   isNotePath,
   parseNote,
   readNote,
-  reconcileAssetSidecars,
+  reconcileAssetDescriptions,
   subscribeFileChanges,
   type AiProvidersState,
   type ReconcileStop,
   type Unlisten,
 } from '@reflect/core'
-import { startOperation } from '@/lib/operations'
 import { providerFetch } from '@/lib/provider-fetch'
 
 /**
@@ -23,9 +22,9 @@ import { providerFetch } from '@/lib/provider-fetch'
  * reported by the watcher accumulate in a dirty set; each pass reconciles that
  * set. A transient (auth/network) stop leaves the set intact so the next
  * trigger retries; a clean pass clears it. Re-describing an unchanged asset is
- * cheap — its managed sidecar's hash matches, so no provider call is made.
+ * cheap — its managed description's hash matches, so no provider call is made.
  */
-export interface AssetSidecarController {
+export interface AssetDescribeController {
   /** Attach the triggers (watcher, focus, online). No launch backfill. */
   start(): void
   /** Request a pass; coalesces while one runs (at most one follow-up). */
@@ -34,7 +33,7 @@ export interface AssetSidecarController {
   dispose(): void
 }
 
-export interface AssetSidecarControllerOptions {
+export interface AssetDescribeControllerOptions {
   /** The open graph's generation — every pass's reads and writes pin to it. */
   generation: number
   /**
@@ -45,9 +44,9 @@ export interface AssetSidecarControllerOptions {
 }
 
 /** Build the controller for one graph session. `dispose()` is terminal. */
-export function createAssetSidecarController(
-  options: AssetSidecarControllerOptions,
-): AssetSidecarController {
+export function createAssetDescribeController(
+  options: AssetDescribeControllerOptions,
+): AssetDescribeController {
   let disposed = false
   let running = false
   /** A trigger landed mid-pass; run exactly one follow-up after it. */
@@ -56,25 +55,28 @@ export function createAssetSidecarController(
   const domDisposers: Array<() => void> = []
   /** Eligible assets observed changed and not yet successfully reconciled. */
   const dirty = new Set<string>()
-  /** Last surfaced stop message — retries must not re-toast it. */
-  let surfacedStop: string | null = null
+  /** Last logged stop message — retries must not re-log it. */
+  let loggedStop: string | null = null
 
   function surfaceStop(stopped: ReconcileStop | null): void {
     if (stopped === null) {
-      surfacedStop = null
+      loggedStop = null
       return
     }
-    // Self-healing stops stay silent: network retries on the next trigger,
-    // config means no provider/key yet (the asset waits), stale is a graph
-    // switch tearing the pass down.
+    // Automatic description is background, best-effort work, so it never toasts:
+    // network retries on the next trigger, config means no provider/key yet (the
+    // asset waits), stale is a graph switch, and an index-not-ready (io) failure
+    // during startup is transient too. The Settings backfill is the user-initiated
+    // path that surfaces progress and errors. Log unexpected stops (deduped) for
+    // diagnosis only.
     if (stopped.reason === 'network' || stopped.reason === 'config' || stopped.reason === 'stale') {
       return
     }
-    if (surfacedStop === stopped.message) {
+    if (loggedStop === stopped.message) {
       return
     }
-    surfacedStop = stopped.message
-    startOperation('Describing assets').fail(stopped.message)
+    loggedStop = stopped.message
+    console.warn(`asset description stopped (${stopped.reason}): ${stopped.message}`)
   }
 
   async function run(): Promise<void> {
@@ -93,7 +95,7 @@ export function createAssetSidecarController(
           break
         }
         const batch = [...dirty]
-        const outcome = await reconcileAssetSidecars({
+        const outcome = await reconcileAssetDescriptions({
           providers: options.getProviders(),
           generation: options.generation,
           mode: 'incremental',
@@ -213,7 +215,7 @@ export function createAssetSidecarController(
       .catch((cause: unknown) => {
         // Degrades to the focus/online triggers; surfaced for diagnosis rather
         // than left as an unhandled rejection.
-        console.error('asset-sidecar file-change subscription failed:', cause)
+        console.error('asset-description file-change subscription failed:', cause)
       })
   }
 

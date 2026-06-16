@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { backfillAssetSidecarsVisibly } from '@/lib/asset-backfill'
+import { backfillAssetDescriptionsVisibly } from '@/lib/asset-backfill'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 import { SettingsField } from './field'
@@ -43,7 +43,7 @@ export function DescribeAssetsField(): ReactElement {
     }
     setRunning(true)
     try {
-      await backfillAssetSidecarsVisibly(generation, providers)
+      await backfillAssetDescriptionsVisibly(generation, providers)
     } finally {
       setRunning(false)
     }

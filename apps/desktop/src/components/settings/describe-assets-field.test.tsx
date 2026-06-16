@@ -15,7 +15,7 @@ vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: graphRef.current }),
 }))
 vi.mock('@/lib/asset-backfill', () => ({
-  backfillAssetSidecarsVisibly: backfill,
+  backfillAssetDescriptionsVisibly: backfill,
 }))
 
 const PROVIDER = { id: 'cfg', provider: 'anthropic' as const, model: 'claude-opus-4-8', keyHint: 'wxyz1' }

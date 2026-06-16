@@ -2,7 +2,7 @@ import type { ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { PaletteProvider } from '@/components/command-palette/palette-provider'
 import { WorkspaceContent } from '@/components/workspace-content'
-import { AssetSidecarProvider } from '@/providers/asset-sidecar-provider'
+import { AssetDescribeProvider } from '@/providers/asset-describe-provider'
 import { AudioMemoProvider } from '@/providers/audio-memo-provider'
 import { FocusedDailyProvider } from '@/providers/focused-daily-provider'
 import { CaptureProvider } from '@/providers/capture-provider'
@@ -34,7 +34,7 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
                   mic button) unmounting on collapse. */}
               <AudioMemoProvider graph={graph}>
                 <CaptureProvider graph={graph}>
-                  <AssetSidecarProvider graph={graph}>
+                  <AssetDescribeProvider graph={graph}>
                     <ChatProvider graph={graph}>
                       {/* Tracks the focused day in the daily stream so the right
                           sidebar describes it, not just the routed day. */}
@@ -42,7 +42,7 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
                         <WorkspaceContent graph={graph} />
                       </FocusedDailyProvider>
                     </ChatProvider>
-                  </AssetSidecarProvider>
+                  </AssetDescribeProvider>
                 </CaptureProvider>
               </AudioMemoProvider>
             </SidebarProvider>

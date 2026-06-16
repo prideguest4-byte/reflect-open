@@ -1,22 +1,22 @@
 import { useEffect, useRef, type ReactElement, type ReactNode } from 'react'
 import type { AiProvidersState, GraphInfo } from '@reflect/core'
-import { createAssetSidecarController } from '@/lib/asset-sidecar-controller'
+import { createAssetDescribeController } from '@/lib/asset-describe-controller'
 import { useSettings } from '@/providers/settings-provider'
 
 /**
  * Mounts the asset-description lifecycle for the open graph (Plan 20): runs the
- * {@link createAssetSidecarController} loop that describes new eligible
- * images/PDFs into managed `.reflect.md` sidecars. No UI — the only surface is
+ * {@link createAssetDescribeController} loop that describes new eligible
+ * images/PDFs into managed `.reflect.md` descriptions. No UI — the only surface is
  * the Settings backfill button; this provider only handles the automatic path
  * for newly added assets, and only when `describeAssets` is on.
  */
 
-interface AssetSidecarProviderProps {
+interface AssetDescribeProviderProps {
   graph: GraphInfo
   children: ReactNode
 }
 
-export function AssetSidecarProvider({ graph, children }: AssetSidecarProviderProps): ReactElement {
+export function AssetDescribeProvider({ graph, children }: AssetDescribeProviderProps): ReactElement {
   const { settings } = useSettings()
   const describeAssets = settings.describeAssets
 
@@ -37,7 +37,7 @@ export function AssetSidecarProvider({ graph, children }: AssetSidecarProviderPr
     if (!describeAssets) {
       return
     }
-    const controller = createAssetSidecarController({
+    const controller = createAssetDescribeController({
       generation: graph.generation,
       getProviders: () => providersRef.current,
     })
