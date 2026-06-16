@@ -6,8 +6,8 @@ import {
   type MutableRefObject,
   type ReactElement,
 } from 'react'
-import { Priority } from '@prosekit/core'
-import { useKeymap } from '@prosekit/react'
+import { Priority } from '@meowdown/core'
+import { useKeymap } from '@meowdown/react'
 import { type OpenTask } from '@reflect/core'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
