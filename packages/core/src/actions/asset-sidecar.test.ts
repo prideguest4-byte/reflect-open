@@ -293,6 +293,23 @@ describe('reconcileAssetSidecars', () => {
     expect(describeMock).not.toHaveBeenCalled()
   })
 
+  it('never reads an asset until a non-private note is associated (gate before attempt)', async () => {
+    assets.set('assets/secret.png', 'aGVsbG8=')
+    assets.set('assets/orphan.png', 'aGVsbG8=')
+    files.set('notes/secret.md', privateNote('assets/secret.png'))
+    refs.set('assets/secret.png', ['notes/secret.md']) // referenced only by a private note
+    refs.set('assets/orphan.png', []) // referenced by nothing
+
+    const outcome = await reconcileAssetSidecars(
+      input({ changed: ['assets/secret.png', 'assets/orphan.png'] }),
+    )
+
+    expect(outcome.skippedPrivate).toBe(1)
+    expect(outcome.skippedUnreferenced).toBe(1)
+    expect(readAssetMock).not.toHaveBeenCalled() // bytes never touched
+    expect(describeMock).not.toHaveBeenCalled()
+  })
+
   it('logs a permanent refusal and writes no sidecar, continuing the pass', async () => {
     assets.set('assets/a.png', 'aGVsbG8=')
     assets.set('assets/b.pdf', 'JVBERg==')

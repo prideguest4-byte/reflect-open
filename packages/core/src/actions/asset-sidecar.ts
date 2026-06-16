@@ -267,6 +267,21 @@ async function processAsset(assetPath: string, ctx: AssetContext): Promise<Asset
     return { kind: 'skipped', reason: 'gone' } // defensive: an ineligible path slipped in
   }
 
+  // Gate first, on the notes index: never read or send an asset's bytes until a
+  // non-private note is associated with it (and no private note is). Waiting for
+  // the association before attempting keeps private and unreferenced assets
+  // entirely untouched — they are never read, hashed, or sent to a provider.
+  const verdict = await classifyAsset(assetPath, ctx.generation)
+  if (ctx.isStale()) {
+    return { kind: 'stop', stopped: STALE }
+  }
+  if (verdict === 'skip-private') {
+    return { kind: 'skipped', reason: 'private' }
+  }
+  if (verdict === 'skip-unreferenced') {
+    return { kind: 'skipped', reason: 'unreferenced' }
+  }
+
   let base64: string
   try {
     base64 = await readAsset(assetPath, ctx.generation)
@@ -297,16 +312,6 @@ async function processAsset(assetPath: string, ctx: AssetContext): Promise<Asset
 
   if (ctx.isStale()) {
     return { kind: 'stop', stopped: STALE }
-  }
-  const verdict = await classifyAsset(assetPath, ctx.generation)
-  if (ctx.isStale()) {
-    return { kind: 'stop', stopped: STALE }
-  }
-  if (verdict === 'skip-private') {
-    return { kind: 'skipped', reason: 'private' }
-  }
-  if (verdict === 'skip-unreferenced') {
-    return { kind: 'skipped', reason: 'unreferenced' }
   }
 
   let body: string

@@ -224,13 +224,17 @@ export interface ReconcileAssetSidecarsOutcome {
 }
 ```
 
-Per-asset loop (each gated by `isStale()`):
+Per-asset loop (each gated by `isStale()`). **The privacy gate runs first** — we
+never read or send an asset's bytes until the notes index shows it is associated
+with a non-private note (and no private note):
 
 1. Resolve eligibility by extension; classify `kind` (image/pdf/svg).
-2. Read source bytes (`readAsset(path, generation)` → base64); compute
+2. **`classifyAsset` → skip-private / skip-unreferenced (before any asset read).**
+   Private and unreferenced assets are never read, hashed, or sent.
+3. Read source bytes (`readAsset(path, generation)` → base64); compute
    `sourceHash`/`sourceSize` (`hashContent`).
-3. Sidecar decision (managed marker + hash) → skip up-to-date / skip user-authored.
-4. `classifyAsset` → skip-private / skip-unreferenced.
+4. Sidecar decision (managed marker + hash) → skip up-to-date / skip user-authored;
+   size cap → skip oversize.
 5. `describeAsset(...)`. On `AssetDescriptionRejectedError`: log, `refused++`,
    continue. On `ReflectError('auth'|'network')`: stop the pass (`stopped`) for a
    later retry — nothing written.
