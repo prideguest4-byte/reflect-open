@@ -140,15 +140,17 @@ export function ChatProvider({ graph, children }: ChatProviderProps): ReactEleme
   // Read at call time, not captured: send() can fire long after the render
   // that created it.
   const turnsRef = useRef(turns)
-  turnsRef.current = turns
   const attachmentsRef = useRef(attachments)
-  attachmentsRef.current = attachments
   const activeModelRef = useRef<AiProviderConfig | null>(activeModel)
-  activeModelRef.current = activeModel
   const conversationIdRef = useRef(conversationId)
-  conversationIdRef.current = conversationId
   const generationRef = useRef<number | null>(indexGeneration)
-  generationRef.current = indexGeneration
+  useEffect(() => {
+    turnsRef.current = turns
+    attachmentsRef.current = attachments
+    activeModelRef.current = activeModel
+    conversationIdRef.current = conversationId
+    generationRef.current = indexGeneration
+  })
 
   // The in-flight send, tracked synchronously — the no-concurrent-sends
   // guard can't ride on rendered state, which only reflects a send after

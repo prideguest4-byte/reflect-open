@@ -13,7 +13,7 @@ import { useRouter } from '@/routing/router'
 export function MobileShell(): ReactElement {
   const { route, navigate, entryId } = useRouter()
   const [allQuery, setAllQuery] = useState('')
-  const lastTab = useRef<MobileTab>('daily')
+  const [lastTab, setLastTab] = useState<MobileTab>('daily')
 
   // A `search` history entry seeds the live query — once per entry, so the
   // user can keep typing without the effect snapping the text back.
@@ -25,13 +25,18 @@ export function MobileShell(): ReactElement {
     }
   }, [route, entryId])
 
+  // A note keeps whichever tab it was opened from: routes that don't map to a
+  // tab fall back to the last one, remembered across renders. Tracking that in
+  // state (adjusted during render) avoids reading/writing a ref in render.
   const tab: MobileTab =
     route.kind === 'allNotes' || route.kind === 'search'
       ? 'all'
       : route.kind === 'today' || route.kind === 'daily'
         ? 'daily'
-        : lastTab.current
-  lastTab.current = tab
+        : lastTab
+  if (tab !== lastTab) {
+    setLastTab(tab)
+  }
 
   return (
     <div className="flex h-dvh w-screen flex-col">

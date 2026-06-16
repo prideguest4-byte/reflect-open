@@ -18,13 +18,15 @@ interface FilterCountSyncProps {
 }
 
 /**
- * Reads the cmdk filtered item count each render and writes it into a ref so
- * the parent's keydown handler always sees the latest value synchronously.
- * Must be rendered inside a {@link Command}.
+ * Tracks the cmdk filtered item count in a ref so the parent's keydown handler
+ * (which fires long after render) always sees the latest value. Must be
+ * rendered inside a {@link Command}.
  */
 function FilterCountSync({ countRef }: FilterCountSyncProps): null {
   const count = useCommandState((state) => state.filtered.count)
-  countRef.current = count
+  useEffect(() => {
+    countRef.current = count
+  })
   return null
 }
 
@@ -54,9 +56,15 @@ export function ModelCombobox({
   const [inputValue, setInputValue] = useState('')
   const filteredCountRef = useRef(models.length)
 
-  // Clear stale search text whenever the popover closes or the provider changes.
   const clearInput = () => setInputValue('')
-  useEffect(clearInput, [provider])
+  // Clear stale search text whenever the provider changes (popover close is
+  // handled in the open-change handler). Adjusting during render avoids a
+  // prop-syncing effect.
+  const [appliedProvider, setAppliedProvider] = useState(provider)
+  if (appliedProvider !== provider) {
+    setAppliedProvider(provider)
+    setInputValue('')
+  }
 
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen)

@@ -136,7 +136,9 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   )
 
   const collapsedRef = useRef(collapsed)
-  collapsedRef.current = collapsed
+  useEffect(() => {
+    collapsedRef.current = collapsed
+  })
 
   /** Committed recordings waiting their turn; the pump owns the head. */
   const queueRef = useRef<PendingCapture[]>([])
@@ -161,7 +163,9 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     providers: settings.aiProviders,
     defaultProviderId: settings.defaultAiProviderId,
   })
-  providersRef.current = { providers: settings.aiProviders, defaultProviderId: settings.defaultAiProviderId }
+  useEffect(() => {
+    providersRef.current = { providers: settings.aiProviders, defaultProviderId: settings.defaultAiProviderId }
+  })
 
   // One reconciler per graph session (this provider remounts per graph). It
   // owns the launch pass and all retry triggers; the pump only schedules.
@@ -294,7 +298,9 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     stopSettledRef.current = settled
     return settled
   }, [stopRecorder, pump])
-  stopAndSaveRef.current = () => void stopAndSave()
+  useEffect(() => {
+    stopAndSaveRef.current = () => void stopAndSave()
+  })
 
   const discard = useCallback((): void => {
     parkedRef.current = null

@@ -26,10 +26,12 @@ export function CaptureProvider({ graph, children }: CaptureProviderProps): Reac
     providers: settings.aiProviders,
     defaultProviderId: settings.defaultAiProviderId,
   })
-  providersRef.current = {
-    providers: settings.aiProviders,
-    defaultProviderId: settings.defaultAiProviderId,
-  }
+  useEffect(() => {
+    providersRef.current = {
+      providers: settings.aiProviders,
+      defaultProviderId: settings.defaultAiProviderId,
+    }
+  })
 
   useEffect(() => {
     const controller = createCaptureController({

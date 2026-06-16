@@ -110,89 +110,93 @@ export function useTaskEditorFinalizer({
   // Reassigned each render (like apiRef) so the unmount cleanup — registered once
   // — flushes against this render's `initial`/`onFlush`, not the mount-time ones.
   const flushRef = useRef<() => void>(() => {})
-  flushRef.current = (): void => {
-    if (doneRef.current) {
-      return
+  useEffect(() => {
+    flushRef.current = (): void => {
+      if (doneRef.current) {
+        return
+      }
+      // Selection already moved → persist a real change (or the cleared line as an
+      // empty task) without touching the selection or the cancel/exit path. An
+      // unchanged editor claims nothing — so a StrictMode double-cleanup can't
+      // starve a later explicit commit/cancel of the single-shot claim.
+      const result = resolveTaskEdit(initial, currentRef.current)
+      if (result.type === 'cancel') {
+        return
+      }
+      doneRef.current = true
+      onFlush(result.type === 'commit' ? result.content : '')
     }
-    // Selection already moved → persist a real change (or the cleared line as an
-    // empty task) without touching the selection or the cancel/exit path. An
-    // unchanged editor claims nothing — so a StrictMode double-cleanup can't
-    // starve a later explicit commit/cancel of the single-shot claim.
-    const result = resolveTaskEdit(initial, currentRef.current)
-    if (result.type === 'cancel') {
-      return
+  })
+  useEffect(() => {
+    apiRef.current = {
+      commit: () => {
+        if (!claim()) {
+          return
+        }
+        const result = resolveTaskEdit(initial, currentRef.current)
+        if (result.type === 'commit') {
+          onCommit(result.content)
+        } else if (result.type === 'delete') {
+          onDelete()
+        } else {
+          onCancel()
+        }
+      },
+      commitAndContinue: () => {
+        if (!claim()) {
+          return
+        }
+        // Enter always adds the next task (V1). Hand the screen the resolved content
+        // to persist first — the new text, `''` for an emptied row, or `null` when
+        // unchanged (don't rewrite) — so the insert can sequence after the save.
+        const result = resolveTaskEdit(initial, currentRef.current)
+        onContinue(
+          result.type === 'commit' ? result.content : result.type === 'delete' ? '' : null,
+        )
+      },
+      cancel: () => {
+        if (!claim()) {
+          return
+        }
+        // An editor left empty on Escape — a Return-to-add row never typed into, or
+        // a task whose text was cleared — removes the line rather than leaving a
+        // blank task (V1). Decided on the *live* editor content, never the row's
+        // (possibly stale) projected text: Escape discards the unsaved edit, so a
+        // row with typed content is kept, not deleted.
+        if (currentRef.current.trim() === '') {
+          onDelete()
+        } else {
+          onCancel()
+        }
+      },
+      complete: () => {
+        if (!claim()) {
+          return
+        }
+        // Emptying then completing means delete (an empty task can't be "done");
+        // an unchanged task just toggles; otherwise save the new text and complete.
+        const result = resolveTaskEdit(initial, currentRef.current)
+        if (result.type === 'delete') {
+          onDelete()
+        } else if (result.type === 'commit') {
+          onComplete(result.content)
+        } else {
+          onComplete(null)
+        }
+      },
+      delete: () => {
+        if (claim()) {
+          onDelete()
+        }
+      },
+      deleteEmpty: () => {
+        if (claim()) {
+          onDeleteEmpty()
+        }
+      },
+      isEmpty: () => currentRef.current.trim() === '',
     }
-    doneRef.current = true
-    onFlush(result.type === 'commit' ? result.content : '')
-  }
-  apiRef.current = {
-    commit: () => {
-      if (!claim()) {
-        return
-      }
-      const result = resolveTaskEdit(initial, currentRef.current)
-      if (result.type === 'commit') {
-        onCommit(result.content)
-      } else if (result.type === 'delete') {
-        onDelete()
-      } else {
-        onCancel()
-      }
-    },
-    commitAndContinue: () => {
-      if (!claim()) {
-        return
-      }
-      // Enter always adds the next task (V1). Hand the screen the resolved content
-      // to persist first — the new text, `''` for an emptied row, or `null` when
-      // unchanged (don't rewrite) — so the insert can sequence after the save.
-      const result = resolveTaskEdit(initial, currentRef.current)
-      onContinue(
-        result.type === 'commit' ? result.content : result.type === 'delete' ? '' : null,
-      )
-    },
-    cancel: () => {
-      if (!claim()) {
-        return
-      }
-      // An editor left empty on Escape — a Return-to-add row never typed into, or
-      // a task whose text was cleared — removes the line rather than leaving a
-      // blank task (V1). Decided on the *live* editor content, never the row's
-      // (possibly stale) projected text: Escape discards the unsaved edit, so a
-      // row with typed content is kept, not deleted.
-      if (currentRef.current.trim() === '') {
-        onDelete()
-      } else {
-        onCancel()
-      }
-    },
-    complete: () => {
-      if (!claim()) {
-        return
-      }
-      // Emptying then completing means delete (an empty task can't be "done");
-      // an unchanged task just toggles; otherwise save the new text and complete.
-      const result = resolveTaskEdit(initial, currentRef.current)
-      if (result.type === 'delete') {
-        onDelete()
-      } else if (result.type === 'commit') {
-        onComplete(result.content)
-      } else {
-        onComplete(null)
-      }
-    },
-    delete: () => {
-      if (claim()) {
-        onDelete()
-      }
-    },
-    deleteEmpty: () => {
-      if (claim()) {
-        onDeleteEmpty()
-      }
-    },
-    isEmpty: () => currentRef.current.trim() === '',
-  }
+  })
 
   // Persist a pending edit when the row unmounts — the selection moved off it, so
   // flush (never clear/cancel) keeps the now-current selection intact.

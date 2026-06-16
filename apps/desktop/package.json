@@ -12,6 +12,7 @@
     "release:macos": "node scripts/release-macos.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "lint:react": "eslint .",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -58,9 +59,13 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "eslint": "^10.5.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.0",
     "typescript": "~5.8.3",
+    "typescript-eslint": "^8.61.1",
     "vite": "^7.0.4",
     "vitest": "^3"
   }

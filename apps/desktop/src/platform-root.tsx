@@ -15,11 +15,14 @@ const MobileRoot = lazy(() =>
  * versa. Plain-browser dev (no Tauri bridge) gets the desktop tree.
  */
 export function PlatformRoot(): ReactElement {
-  const [platform, setPlatform] = useState<AppPlatform | null>(null)
+  // Plain-browser dev has no bridge — start on the desktop tree directly. With a
+  // bridge, resolve the real platform asynchronously in the effect below.
+  const [platform, setPlatform] = useState<AppPlatform | null>(() =>
+    hasBridge() ? null : 'desktop',
+  )
 
   useEffect(() => {
     if (!hasBridge()) {
-      setPlatform('desktop')
       return
     }
     let active = true

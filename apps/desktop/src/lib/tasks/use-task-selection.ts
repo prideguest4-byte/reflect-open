@@ -50,7 +50,9 @@ export function useTaskSelection(orderedKeys: readonly string[]): TaskSelection 
   // The latest order, read by mutators that run from a keydown listener closing
   // over an older render.
   const orderRef = useRef(orderedKeys)
-  orderRef.current = orderedKeys
+  useEffect(() => {
+    orderRef.current = orderedKeys
+  })
   const anchorRef = useRef<string | null>(null)
   const cursorRef = useRef<string | null>(null)
 
@@ -59,6 +61,10 @@ export function useTaskSelection(orderedKeys: readonly string[]): TaskSelection 
   // only runs when the set of rows actually changes.
   useEffect(() => {
     const valid = new Set(orderedKeys)
+    // Reconcile the selection to a changed visible order; the functional update
+    // returns the same Set when nothing vanished, so steady-state renders never
+    // cascade.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelected((current) =>
       [...current].every((key) => valid.has(key))
         ? current

@@ -129,6 +129,10 @@ export function useDayCarousel(date: string, onSelect: (date: string) => void): 
   // same frame as the strip's new selection (no visible lag).
   useLayoutEffect(() => {
     if (indexWithin(dayWindow, date) === -1) {
+      // Re-anchor the window when a far date link lands outside it; runs only on
+      // that rare miss, and the rebuilt window then contains the date, so it
+      // cannot loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDayWindow(createDayWindow(date, CAROUSEL_WINDOW))
     }
   }, [date, dayWindow])

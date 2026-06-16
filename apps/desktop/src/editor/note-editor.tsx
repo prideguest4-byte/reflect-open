@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
   type ReactElement,
@@ -111,15 +112,17 @@ export function NoteEditor({
   // rebuilds meowdown's extensions (the uncontrolled-editor contract).
   // TODO: This violates "Rule of hooks". Refactor this later.
   const onChangeRef = useRef(onChange)
-  onChangeRef.current = onChange
   const onWikiLinkClickRef = useRef(onWikiLinkClick)
-  onWikiLinkClickRef.current = onWikiLinkClick
   const resolveImageUrlRef = useRef(resolveImageUrl)
-  resolveImageUrlRef.current = resolveImageUrl
   const saveImageRef = useRef(saveImage)
-  saveImageRef.current = saveImage
   const onImageSaveErrorRef = useRef(onImageSaveError)
-  onImageSaveErrorRef.current = onImageSaveError
+  useEffect(() => {
+    onChangeRef.current = onChange
+    onWikiLinkClickRef.current = onWikiLinkClick
+    resolveImageUrlRef.current = resolveImageUrl
+    saveImageRef.current = saveImage
+    onImageSaveErrorRef.current = onImageSaveError
+  })
 
   useImperativeHandle(
     handleRef,

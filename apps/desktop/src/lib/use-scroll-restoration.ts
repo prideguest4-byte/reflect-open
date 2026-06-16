@@ -21,6 +21,10 @@ export function useScrollRestoration(
   const { arrivalSeq, entryId, saveScrollState, savedScroll } = useRouter()
   useEffect(() => {
     if (ready && element) {
+      // Setting scrollTop is a DOM side effect inside an effect; the rule treats
+      // the `element` argument as immutable, but mutating the live DOM node here
+      // is intentional.
+      // eslint-disable-next-line react-hooks/immutability
       element.scrollTop = savedScroll() ?? 0
     }
   }, [arrivalSeq, entryId, ready, savedScroll, element])

@@ -15,7 +15,9 @@ export function usePoll(
 ): void {
   // Always call the latest tick without re-arming the timer every render.
   const tickRef = useRef(tick)
-  tickRef.current = tick
+  useEffect(() => {
+    tickRef.current = tick
+  })
 
   useEffect(() => {
     if (!enabled) {

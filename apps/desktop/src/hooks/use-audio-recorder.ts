@@ -78,7 +78,9 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
   // Read at fire time, not captured at start — the host's callback identity
   // changes across renders.
   const optionsRef = useRef(options)
-  optionsRef.current = options
+  useEffect(() => {
+    optionsRef.current = options
+  })
   // Bumped by cancel/unmount so an in-flight getUserMedia resolves into a dead
   // session and releases the mic instead of recording into the void.
   const sessionRef = useRef(0)

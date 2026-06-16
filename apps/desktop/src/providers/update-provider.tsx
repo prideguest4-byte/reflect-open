@@ -69,6 +69,10 @@ export function UpdateProvider({ children, autoCheck }: UpdateProviderProps): Re
       return
     }
     const next = createUpdateController({ autoCheck: resolvedAutoCheck })
+    // The controller is an imperative lifecycle object created for the app's
+    // lifetime; it must be instantiated in an effect (it subscribes and starts)
+    // and stored so useSyncExternalStore can read it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setController(next)
     next.start()
     return () => {

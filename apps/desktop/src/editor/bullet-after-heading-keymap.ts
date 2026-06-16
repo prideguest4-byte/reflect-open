@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Priority } from '@prosekit/core'
 import { type Command, TextSelection } from '@prosekit/pm/state'
 import { useKeymap } from '@prosekit/react'
@@ -68,8 +68,16 @@ interface BulletAfterHeadingKeymapProps {
  */
 export function BulletAfterHeadingKeymap({ enabled }: BulletAfterHeadingKeymapProps): null {
   const enabledRef = useRef(enabled)
-  enabledRef.current = enabled
-  const keymap = useMemo(() => ({ Enter: bulletAfterHeadingOnEnter(() => enabledRef.current) }), [])
+  useEffect(() => {
+    enabledRef.current = enabled
+  })
+  const keymap = useMemo(
+    // The getter is invoked only when the Enter command fires (a keypress),
+    // never during render.
+    // eslint-disable-next-line react-hooks/refs
+    () => ({ Enter: bulletAfterHeadingOnEnter(() => enabledRef.current) }),
+    [],
+  )
   useKeymap(keymap, { priority: Priority.high })
   return null
 }

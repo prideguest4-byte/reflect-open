@@ -9,7 +9,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "lint": "oxlint apps packages",
+    "lint": "oxlint apps packages && pnpm --filter @reflect/desktop lint:react",
     "lint:fix": "oxlint --fix apps packages",
     "check": "pnpm typecheck && pnpm lint",
     "tauri": "pnpm --filter @reflect/desktop tauri",

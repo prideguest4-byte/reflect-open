@@ -31,9 +31,12 @@ export function PublishedUrlSection({ path }: PublishedUrlSectionProps): ReactEl
   const [copyState, setCopyState] = useState<CopyState>('idle')
   const [isUpdating, setIsUpdating] = useState(false)
 
-  useEffect(() => {
+  // Reset the transient "copied" badge whenever the published URL changes.
+  const [appliedUrl, setAppliedUrl] = useState(url)
+  if (appliedUrl !== url) {
+    setAppliedUrl(url)
     setCopyState('idle')
-  }, [url])
+  }
 
   useEffect(() => {
     if (copyState !== 'copied') {

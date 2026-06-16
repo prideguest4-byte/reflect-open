@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, type ReactElement } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import { MeowdownEditor, type EditorHandle } from '@meowdown/react'
 import '@meowdown/core/style.css'
 import '@meowdown/react/style.css'
@@ -41,15 +41,17 @@ export function MarkdownPreview({
   // The resolver and click handler are read through refs so a changing prop
   // never rebuilds the editor's extensions.
   const resolveRef = useRef(resolveImageUrl)
-  resolveRef.current = resolveImageUrl
   const navigateRef = useRef(onWikiLinkClick)
-  navigateRef.current = onWikiLinkClick
+  useEffect(() => {
+    resolveRef.current = resolveImageUrl
+    navigateRef.current = onWikiLinkClick
+  })
 
   // Whether wiki links navigate at all is fixed by the first render — hosts
   // either always pass the handler (chat) or never do (palette preview). An
   // inert preview must not register a click handler, which would swallow chip
   // clicks.
-  const navigates = useRef(onWikiLinkClick != null).current
+  const [navigates] = useState(() => onWikiLinkClick != null)
 
   const resolveImageUrlStable = useCallback(
     (src: string) => resolveRef.current?.(src) ?? undefined,

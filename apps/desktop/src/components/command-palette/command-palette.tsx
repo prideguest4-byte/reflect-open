@@ -56,11 +56,15 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
   // on close so a reopened palette highlights its first result, not the last
   // session's pick.
   const [selectedValue, setSelectedValue] = useState('')
-  useEffect(() => {
+  // Reset on close so a reopened palette highlights its first result, not the
+  // last session's pick. Adjusting during render avoids a prop-syncing effect.
+  const [appliedOpen, setAppliedOpen] = useState(open)
+  if (appliedOpen !== open) {
+    setAppliedOpen(open)
     if (!open) {
       setSelectedValue('')
     }
-  }, [open])
+  }
   // Each new result set highlights its top note. Without this, cmdk keeps any
   // still-valid selection — and commands match synchronously while notes load
   // async, so the first command would stay highlighted over the top hit. Keyed
@@ -70,9 +74,11 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
   // stale note selection clears so cmdk's first-item default can highlight a
   // matching command (Enter must always have a target).
   const selectedValueRef = useRef(selectedValue)
-  selectedValueRef.current = selectedValue
   const notesRef = useRef(sections.notes)
-  notesRef.current = sections.notes
+  useEffect(() => {
+    selectedValueRef.current = selectedValue
+    notesRef.current = sections.notes
+  })
   const notesKey = sections.notes.map((entry) => entry.path).join('\n')
   useEffect(() => {
     if (!open) {

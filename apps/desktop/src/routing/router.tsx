@@ -77,7 +77,9 @@ export function RouterProvider({
   const scrollById = useRef(new Map<number, number>())
   /** The active entry id, readable without depending on render order. */
   const currentId = useRef(0)
-  currentId.current = history.stack[history.index].id
+  useEffect(() => {
+    currentId.current = history.stack[history.index].id
+  })
 
   const navigate = useCallback((route: Route) => {
     const target = normalizeRoute(route)

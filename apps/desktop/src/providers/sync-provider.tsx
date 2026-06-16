@@ -55,6 +55,10 @@ export function SyncProvider({ graph, children }: SyncProviderProps): ReactEleme
 
   useEffect(() => {
     const next = createBackupController({ graph, indexGeneration })
+    // The controller is an imperative lifecycle object created per (graph, index
+    // session); it must be instantiated in an effect (it subscribes and starts)
+    // and stored so useSyncExternalStore can read it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setController(next)
     void next.start()
     return () => {

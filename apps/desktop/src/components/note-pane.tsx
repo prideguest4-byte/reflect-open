@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ReactElement } from 'react'
+import { useCallback, useState, type ReactElement } from 'react'
 import { isDaily } from '@reflect/core'
 import { BacklinksPanel } from '@/components/backlinks-panel'
 import { InlineAlert } from '@/components/inline-alert'
@@ -77,14 +77,15 @@ export function NotePane({
   const dailyNote = isDaily(path)
   // One seed per (pane, path): a fresh seed carries a fresh `id:`, and a mere
   // re-render must not mint a new identity (the session is keyed on the seed).
-  const seedRef = useRef<{ path: string; seed: string } | null>(null)
-  let missingSeed: string | undefined
-  if (lazy && !dailyNote) {
-    if (seedRef.current === null || seedRef.current.path !== path) {
-      seedRef.current = { path, seed: untitledNoteSeed() }
-    }
-    missingSeed = seedRef.current.seed
+  // Re-mint during render when the path changes — only the committed render's
+  // seed reaches the session, so the transient stale render is harmless, and
+  // this avoids writing a ref during render.
+  const needsSeed = lazy && !dailyNote
+  const [seed, setSeed] = useState(() => ({ path, seed: untitledNoteSeed() }))
+  if (needsSeed && seed.path !== path) {
+    setSeed({ path, seed: untitledNoteSeed() })
   }
+  const missingSeed = needsSeed ? seed.seed : undefined
   const document = useNoteDocument(path, generation, {
     createIfMissing: lazy,
     // Daily notes are excluded from rename tracking: their date labels are

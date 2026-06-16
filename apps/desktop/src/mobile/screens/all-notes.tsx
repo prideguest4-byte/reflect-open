@@ -226,12 +226,10 @@ function SearchResults({
                 <span className="line-clamp-2 text-xs text-text-muted">
                   {parseHighlights(hit.snippet).map((segment, index) =>
                     segment.highlighted ? (
-                      // eslint-disable-next-line react/no-array-index-key
                       <mark key={index} className="rounded-sm bg-primary/15 text-text">
                         {segment.text}
                       </mark>
                     ) : (
-                      // eslint-disable-next-line react/no-array-index-key
                       <span key={index}>{segment.text}</span>
                     ),
                   )}

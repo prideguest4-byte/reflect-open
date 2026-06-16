@@ -79,9 +79,7 @@ export function useNoteDocument(
   /** Mirrors the snapshot's conflict for non-reactive checks (rename gating). */
   const conflictRef = useRef<string | null>(null)
   /** The pane's lifecycle policy object — one per hook instance. */
-  const bindingRef = useRef<DocumentBinding | null>(null)
-  bindingRef.current ??= createDocumentBinding()
-  const binding = bindingRef.current
+  const [binding] = useState<DocumentBinding>(() => createDocumentBinding())
 
   // Writes read the generation at write time, not at session creation, so the
   // session must NOT be keyed on `generation`: reopening the *same* graph bumps
@@ -92,7 +90,9 @@ export function useNoteDocument(
   // the unmounted pane never re-renders, its ref keeps the old generation, and
   // Rust rejects its final flush instead of landing it in the new graph.
   const generationRef = useRef(generation)
-  generationRef.current = generation
+  useEffect(() => {
+    generationRef.current = generation
+  })
   const canWrite = generation !== null
 
   useEffect(() => {

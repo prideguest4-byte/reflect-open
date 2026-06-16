@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { BacklinkSource } from '@/lib/group-backlinks'
 
@@ -33,9 +33,15 @@ export function BacklinkSourceGroup({
 }: BacklinkSourceGroupProps): ReactElement {
   const [expanded, setExpanded] = useState(expandedOverride)
 
-  useEffect(() => {
+  // Reset to the panel-level toggle whenever it changes; the group chevron can
+  // then locally override again until the next panel toggle. Adjusting state
+  // during render (React applies it before paint, no wasted re-render) is the
+  // recommended alternative to a prop-syncing effect.
+  const [appliedOverride, setAppliedOverride] = useState(expandedOverride)
+  if (appliedOverride !== expandedOverride) {
+    setAppliedOverride(expandedOverride)
     setExpanded(expandedOverride)
-  }, [expandedOverride])
+  }
 
   return (
     <div className="group relative">

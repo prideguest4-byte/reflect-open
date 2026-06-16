@@ -143,7 +143,9 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
   })
   const [overrides, setOverrides] = useState<Partial<Settings>>({})
   const loadedRef = useRef(loaded)
-  loadedRef.current = loaded
+  useEffect(() => {
+    loadedRef.current = loaded
+  })
 
   // One derived load-state drives everything that waits on hydration (the
   // updater queue drain, the settle promise). With no bridge installed
@@ -244,7 +246,9 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
   const persistQueue = useRef<Promise<void>>(Promise.resolve())
   const lastPersisted = useRef<Settings | null>(null)
   const settingsRef = useRef(settings)
-  settingsRef.current = settings
+  useEffect(() => {
+    settingsRef.current = settings
+  })
 
   const persistIfChanged = useCallback((): Promise<void> => {
     const disk = loadedRef.current
