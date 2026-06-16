@@ -50,6 +50,7 @@ function makeActions(over: Partial<TaskActions> = {}): TaskActions {
     editAndComplete: vi.fn(),
     schedule: vi.fn(),
     convertToBullet: vi.fn(),
+    editAndConvertToBullet: vi.fn(),
     archive: vi.fn(),
     isPending: false,
     ...over,
@@ -195,6 +196,19 @@ describe('useTaskKeyboard', () => {
     const selEvent = press(root, 'k', { metaKey: true, shiftKey: true })
     expect(withSel.onConvertToBullet).toHaveBeenCalledTimes(1)
     expect(selEvent.defaultPrevented).toBe(true)
+  })
+
+  it('backs off ⌘⇧K while the inline editor is focused (it handles convert itself)', () => {
+    const editor = document.createElement('div')
+    editor.setAttribute('data-task-editor', '')
+    root.appendChild(editor)
+    const selection = makeSelection({ selected: new Set(['k']), selectedCount: 1 })
+    const { onConvertToBullet } = mount({ selection, tasksByKey: new Map([['k', task()]]) })
+
+    press(editor, 'k', { metaKey: true, shiftKey: true })
+    // The editor's own keymap flushes the draft then converts — the screen handler
+    // must not also fire (that's the data-loss race Bugbot flagged).
+    expect(onConvertToBullet).not.toHaveBeenCalled()
   })
 
   it('plain ⌫ removes a single empty row and selects the previous (V1)', () => {

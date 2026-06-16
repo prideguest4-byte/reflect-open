@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenTask } from '@reflect/core'
-import type { ReactNode } from 'react'
+import { useEffect, type MutableRefObject, type ReactNode } from 'react'
 import { resetRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { TasksScreen } from './tasks-screen'
@@ -53,8 +53,10 @@ vi.mock('./task-editor', () => ({
     onDeleteEmpty,
     onCancel,
     onComplete,
+    onConvertToBullet,
     onFlush,
     onNavigate,
+    convertControllerRef,
   }: {
     task: { text: string }
     onCommit: (content: string) => void
@@ -63,9 +65,23 @@ vi.mock('./task-editor', () => ({
     onDeleteEmpty: () => void
     onCancel: () => void
     onComplete: (content: string | null) => void
+    onConvertToBullet: (content: string | null) => void
     onFlush: (content: string) => void
     onNavigate: (direction: -1 | 1, options: { span: boolean }) => void
-  }) => (
+    convertControllerRef?: MutableRefObject<(() => void) | null>
+  }) => {
+    // Mirror the real editor: expose a flush-then-convert trigger (simulating a
+    // changed draft) so the toolbar button routes the sole row through it.
+    useEffect(() => {
+      if (convertControllerRef === undefined) {
+        return
+      }
+      convertControllerRef.current = () => onConvertToBullet('edited content')
+      return () => {
+        convertControllerRef.current = null
+      }
+    })
+    return (
     <div data-task-editor data-testid="task-editor">
       <span>editing: {task.text}</span>
       <button type="button" onClick={() => onCommit('edited content')}>
@@ -95,6 +111,12 @@ vi.mock('./task-editor', () => ({
       <button type="button" onClick={() => onComplete(null)}>
         complete-unchanged
       </button>
+      <button type="button" onClick={() => onConvertToBullet('edited content')}>
+        convert-edited
+      </button>
+      <button type="button" onClick={() => onConvertToBullet(null)}>
+        convert-unchanged
+      </button>
       <button type="button" onClick={() => onFlush('edited content')}>
         flush-edit
       </button>
@@ -105,7 +127,8 @@ vi.mock('./task-editor', () => ({
         nav-up
       </button>
     </div>
-  ),
+    )
+  },
 }))
 
 const fail = vi.hoisted(() => vi.fn())
@@ -701,7 +724,7 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
-  it('converts the selection to bullets via the toolbar button, dropping the rows', async () => {
+  it('converts a multi-selection to bullets via the toolbar button (no editor, bulk)', async () => {
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] plan', text: 'plan', noteTitle: 'A' }),
       task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] ship', text: 'ship', noteTitle: 'B' }),
@@ -709,7 +732,7 @@ describe('TasksScreen', () => {
     const view = renderScreen()
 
     await view.findByText('plan')
-    await userEvent.keyboard('{Meta>}a{/Meta}') // select both (no editor)
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select both (no editor mounts)
     await userEvent.click(view.getByRole('button', { name: /Convert to bullet \(2\)/ }))
 
     await waitFor(() => expect(convertTaskToBullet).toHaveBeenCalledTimes(2))
@@ -721,21 +744,63 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
-  it('converts the selection to bullets with ⌘⇧K', async () => {
+  it('converts a multi-selection to bullets with ⌘⇧K', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] plan', text: 'plan', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] ship', text: 'ship', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('plan')
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select both (no editor mounts)
+    await userEvent.keyboard('{Meta>}{Shift>}k{/Shift}{/Meta}')
+    await waitFor(() => expect(convertTaskToBullet).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(view.queryByText('plan')).toBeNull())
+    view.unmount()
+  })
+
+  it('converts a sole-edited row through its editor — saving the draft before converting', async () => {
+    // The toolbar button on the sole (edited) row routes through the editor so the
+    // unsaved draft is saved first, then the marker is stripped — the data-loss race
+    // Bugbot flagged (convert landing before the editor's commit) can't happen.
+    editTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] plan', text: 'plan', noteTitle: 'A' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'plan' })) // sole → editor mounts
+    await userEvent.click(view.getByRole('button', { name: /Convert to bullet \(1\)/ }))
+
+    // Edit first (persist the draft), then convert the rewritten line.
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/a.md', markerOffset: 2 }),
+        'edited content',
+        1,
+      ),
+    )
+    await waitFor(() =>
+      expect(convertTaskToBullet).toHaveBeenCalledWith(
+        expect.objectContaining({ markerOffset: 2, raw: '[ ] edited content' }),
+        1,
+      ),
+    )
+    await waitFor(() => expect(view.queryByText('plan')).toBeNull())
+    view.unmount()
+  })
+
+  it('converts an edited row from the editor’s own ⌘⇧K (save then convert)', async () => {
+    editTask.mockResolvedValue(undefined)
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] plan', text: 'plan', noteTitle: 'A' }),
     ])
     const view = renderScreen()
 
     await userEvent.click(await view.findByRole('button', { name: 'plan' }))
-    await userEvent.keyboard('{Meta>}{Shift>}k{/Shift}{/Meta}')
-    await waitFor(() =>
-      expect(convertTaskToBullet).toHaveBeenCalledWith(
-        expect.objectContaining({ notePath: 'notes/a.md', markerOffset: 2 }),
-        1,
-      ),
-    )
-    await waitFor(() => expect(view.queryByText('plan')).toBeNull())
+    await userEvent.click(view.getByRole('button', { name: 'convert-edited' }))
+    await waitFor(() => expect(editTask).toHaveBeenCalledWith(expect.anything(), 'edited content', 1))
+    await waitFor(() => expect(convertTaskToBullet).toHaveBeenCalled())
     view.unmount()
   })
 

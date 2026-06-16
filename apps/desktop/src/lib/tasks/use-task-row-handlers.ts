@@ -14,6 +14,7 @@ export interface TaskRowEditHandlers {
   onEditDeleteEmpty: () => void
   onEditCancel: () => void
   onEditComplete: (content: string | null) => void
+  onEditConvertToBullet: (content: string | null) => void
   onEditFlush: (content: string) => void
   onEditNavigate: TaskNavigate
 }
@@ -110,6 +111,18 @@ export function useTaskRowHandlers({
           actions.complete([task])
         } else {
           actions.editAndComplete(task, content)
+        }
+        selection.clear()
+      },
+      onEditConvertToBullet: (content) => {
+        // ⌘⇧K while editing (or the toolbar button on the sole row): convert to a
+        // bullet, saving the edit first when it changed (V1 muscle memory). An
+        // emptied row took the delete path in the finalizer, so `content` is the
+        // new text or null (unchanged) here.
+        if (content === null) {
+          actions.convertToBullet([task])
+        } else {
+          actions.editAndConvertToBullet(task, content)
         }
         selection.clear()
       },

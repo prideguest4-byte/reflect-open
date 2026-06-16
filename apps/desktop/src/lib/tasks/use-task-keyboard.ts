@@ -102,15 +102,6 @@ export function useTaskKeyboard({
         }
         return
       }
-      // ⌘⇧K converts the selection to plain bullets (V1's "Convert to checklist")
-      // — likewise a screen-level chord that fires only with a selection to act on.
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.key === 'k' || event.key === 'K')) {
-        if (selection.selectedCount > 0) {
-          event.preventDefault()
-          onConvertToBullet()
-        }
-        return
-      }
       const target = event.target as HTMLElement | null
       // Focus outside the Tasks surface (the workspace sidebar, another panel) keeps
       // its own keys — only `body`/no-focus and elements inside the surface drive the
@@ -204,6 +195,15 @@ export function useTaskKeyboard({
       } else if (mod && (event.key === 'a' || event.key === 'A')) {
         event.preventDefault()
         selection.selectAll()
+      } else if (mod && event.shiftKey && (event.key === 'k' || event.key === 'K')) {
+        // ⌘⇧K converts the selection to plain bullets (V1's "Convert to checklist").
+        // Below the OWNS_KEYS bail on purpose: while the inline editor is focused it
+        // handles ⌘⇧K itself (flush the draft, then convert), so this fires only for a
+        // multi-selection or an unfocused single selection — never racing a live draft.
+        if (selection.selectedCount > 0) {
+          event.preventDefault()
+          onConvertToBullet()
+        }
       } else if (event.key === 'ArrowDown') {
         event.preventDefault()
         if (event.shiftKey) {

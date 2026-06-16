@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactElement } from 'react'
+import type { MouseEvent, MutableRefObject, ReactElement } from 'react'
 import { ArrowRight, Circle, CircleCheck } from 'lucide-react'
 import type { OpenTask } from '@reflect/core'
 import { formatDayLabel } from '@/lib/dates'
@@ -31,10 +31,14 @@ interface TaskRowProps {
   onEditCancel: () => void
   /** ⌘↵ in the editor: complete the task, saving the edit first when `content` isn't null. */
   onEditComplete: (content: string | null) => void
+  /** ⌘⇧K in the editor: convert the task to a bullet, saving the edit first when changed. */
+  onEditConvertToBullet: (content: string | null) => void
   /** Persist a changed edit when the row unmounts (selection moved), without exiting. */
   onEditFlush: (content: string) => void
   /** ↑/↓ in the editor: move the selection between rows (Shift extends). */
   onEditNavigate: TaskNavigate
+  /** Holds the editing row's flush-then-convert trigger for the toolbar button. */
+  convertControllerRef: MutableRefObject<(() => void) | null>
   onOpen: (notePath: string) => void
 }
 
@@ -59,8 +63,10 @@ export function TaskRow({
   onEditDeleteEmpty,
   onEditCancel,
   onEditComplete,
+  onEditConvertToBullet,
   onEditFlush,
   onEditNavigate,
+  convertControllerRef,
   onOpen,
 }: TaskRowProps): ReactElement {
   const { settings } = useSettings()
@@ -103,8 +109,10 @@ export function TaskRow({
           onDeleteEmpty={onEditDeleteEmpty}
           onCancel={onEditCancel}
           onComplete={onEditComplete}
+          onConvertToBullet={onEditConvertToBullet}
           onFlush={onEditFlush}
           onNavigate={onEditNavigate}
+          convertControllerRef={convertControllerRef}
         />
       ) : (
         <button

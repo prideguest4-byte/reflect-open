@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import type { MutableRefObject, ReactElement } from 'react'
 import { AlarmClock, Calendar, FileText, Pin, Plus, Star } from 'lucide-react'
 import type { OpenTask, TaskGroup } from '@reflect/core'
 import { taskKey } from '@/lib/tasks/task-identity'
@@ -18,6 +18,8 @@ interface TaskGroupSectionProps {
   today: string
   /** Add a task to this group and open its editor (the header's "+ Add", V1). */
   onAdd: (target: InsertTaskTarget) => void
+  /** Holds the editing row's flush-then-convert trigger for the toolbar button. */
+  convertControllerRef: MutableRefObject<(() => void) | null>
   onOpen: (notePath: string) => void
 }
 
@@ -62,6 +64,7 @@ export function TaskGroupSection({
   editHandlers,
   today,
   onAdd,
+  convertControllerRef,
   onOpen,
 }: TaskGroupSectionProps): ReactElement {
   const showSource = group.kind !== 'note'
@@ -113,6 +116,7 @@ export function TaskGroupSection({
                 editing={selection.isSoleSelected(key)}
                 onSelect={(event) => selection.clickSelect(key, event)}
                 {...editHandlers(task)}
+                convertControllerRef={convertControllerRef}
                 onOpen={onOpen}
               />
             )

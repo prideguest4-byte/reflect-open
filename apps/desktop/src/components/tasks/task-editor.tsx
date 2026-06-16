@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useState, type MutableRefObject, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type MutableRefObject,
+  type ReactElement,
+} from 'react'
 import { Priority } from '@prosekit/core'
 import { useKeymap } from '@prosekit/react'
 import { type OpenTask } from '@reflect/core'
@@ -39,10 +46,19 @@ interface TaskEditorProps {
   onCancel: () => void
   /** ⌘↵: complete the task (saving the edit first when `content` isn't null). */
   onComplete: (content: string | null) => void
+  /** ⌘⇧K: convert the task to a plain bullet (saving the edit first when changed). */
+  onConvertToBullet: (content: string | null) => void
   /** Persist a changed edit when the row unmounts (selection moved), without exiting. */
   onFlush: (content: string) => void
   /** ↑/↓ (Shift to extend): move the selection between rows while editing (V1). */
   onNavigate: TaskNavigate
+  /**
+   * Lets the toolbar's "Convert to bullet" button drive the same flush-then-convert
+   * the ⌘⇧K keymap does. While this row is the sole selection it holds a trigger
+   * that commits the live draft and converts; it clears on unmount so the screen
+   * falls back to a plain (no-edit) convert when no row is being edited.
+   */
+  convertControllerRef?: MutableRefObject<(() => void) | null>
 }
 
 /**
@@ -76,6 +92,10 @@ function TaskCommitKeymap({
       },
       'Mod-Enter': () => {
         apiRef.current.complete()
+        return true
+      },
+      'Mod-Shift-k': () => {
+        apiRef.current.convertToBullet()
         return true
       },
       Escape: () => {
@@ -126,8 +146,10 @@ export function TaskEditor({
   onDeleteEmpty,
   onCancel,
   onComplete,
+  onConvertToBullet,
   onFlush,
   onNavigate,
+  convertControllerRef,
 }: TaskEditorProps): ReactElement {
   const { graph } = useGraph()
   const { settings } = useSettings()
@@ -146,8 +168,22 @@ export function TaskEditor({
     onDeleteEmpty,
     onCancel,
     onComplete,
+    onConvertToBullet,
     onFlush,
   })
+
+  // Expose the flush-then-convert trigger to the screen while this row is edited,
+  // so the toolbar button converts through the same path the ⌘⇧K keymap uses —
+  // never a stale-content write that drops the unsaved draft. Cleared on unmount.
+  useEffect(() => {
+    if (convertControllerRef === undefined) {
+      return
+    }
+    convertControllerRef.current = () => apiRef.current.convertToBullet()
+    return () => {
+      convertControllerRef.current = null
+    }
+  }, [convertControllerRef, apiRef])
 
   const handleRef = useCallback((handle: NoteEditorHandle | null) => {
     handle?.focus()

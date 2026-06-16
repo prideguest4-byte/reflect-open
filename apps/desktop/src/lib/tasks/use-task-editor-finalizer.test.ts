@@ -9,6 +9,7 @@ function setup(initial = 'milk') {
   const onDeleteEmpty = vi.fn()
   const onCancel = vi.fn()
   const onComplete = vi.fn()
+  const onConvertToBullet = vi.fn()
   const onFlush = vi.fn()
   const { result, unmount } = renderHook(() =>
     useTaskEditorFinalizer({
@@ -19,12 +20,25 @@ function setup(initial = 'milk') {
       onDeleteEmpty,
       onCancel,
       onComplete,
+      onConvertToBullet,
       onFlush,
     }),
   )
   const api = () => result.current.apiRef.current
   const type = (markdown: string) => result.current.onChange(markdown)
-  return { api, type, unmount, onCommit, onContinue, onDelete, onDeleteEmpty, onCancel, onComplete, onFlush }
+  return {
+    api,
+    type,
+    unmount,
+    onCommit,
+    onContinue,
+    onDelete,
+    onDeleteEmpty,
+    onCancel,
+    onComplete,
+    onConvertToBullet,
+    onFlush,
+  }
 }
 
 describe('useTaskEditorFinalizer', () => {
@@ -116,6 +130,23 @@ describe('useTaskEditorFinalizer', () => {
     expect(emptied.onComplete).not.toHaveBeenCalled()
   })
 
+  it('converts to a bullet: unchanged converts as-is, a change saves first, emptied deletes', () => {
+    const unchanged = setup('milk')
+    unchanged.api().convertToBullet()
+    expect(unchanged.onConvertToBullet).toHaveBeenCalledWith(null)
+
+    const changed = setup('milk')
+    changed.type('oat milk')
+    changed.api().convertToBullet()
+    expect(changed.onConvertToBullet).toHaveBeenCalledWith('oat milk')
+
+    const emptied = setup('milk')
+    emptied.type('   ')
+    emptied.api().convertToBullet()
+    expect(emptied.onDelete).toHaveBeenCalled()
+    expect(emptied.onConvertToBullet).not.toHaveBeenCalled()
+  })
+
   it('unmount persists a change via onFlush — never cancels/clears the new selection', () => {
     const changed = setup('milk')
     changed.type('oat milk')
@@ -161,6 +192,7 @@ describe('useTaskEditorFinalizer', () => {
           onDeleteEmpty: vi.fn(),
           onCancel: vi.fn(),
           onComplete: vi.fn(),
+          onConvertToBullet: vi.fn(),
           onFlush: props.onFlush,
         }),
       { initialProps: { onFlush: onFlushA } },

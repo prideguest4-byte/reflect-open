@@ -91,6 +91,14 @@ export interface TaskActions {
    * the Tasks view but stays in its note as an ordinary list item.
    */
   convertToBullet: (tasks: OpenTask[]) => void
+  /**
+   * Convert the inline-edited task to a bullet, saving its edit first (⌘⇧K while
+   * editing). The two writes run **sequentially** — edit then strip the marker
+   * from the rebuilt line — so the unsaved draft is never lost to the convert
+   * landing first; the convert is given the post-edit `raw`, like {@link
+   * editAndComplete}.
+   */
+  editAndConvertToBullet: (task: OpenTask, content: string) => void
   /** Archive (⌘⇧↵): stop showing the session's completed tasks in the active list. */
   archive: () => void
   isPending: boolean
@@ -274,6 +282,33 @@ export function useTaskActions(): TaskActions {
     },
   })
 
+  const editAndConvertMutation = useMutation({
+    mutationFn: async ({ task, content }: { task: OpenTask; content: string }) => {
+      const generation = graph?.generation
+      if (generation === undefined) {
+        throw new Error('No graph is open.')
+      }
+      // Edit, then strip the marker off the *rewritten* line — sequential, and the
+      // convert is given the post-edit `raw` so it locates the line the edit just
+      // wrote (the marker offset is unchanged; only the content after it moved).
+      // Saving first is what keeps the inline draft from being lost to the convert.
+      await editTask(task, content, generation)
+      await convertTaskToBullet({ ...task, raw: taskRawWithContent(task, content) }, generation)
+    },
+    onMutate: async ({ task }: { task: OpenTask; content: string }) => {
+      const snapshot = await cache.snapshot()
+      // The row leaves the view (it's no longer a checkbox) — same optimistic shape
+      // as a plain convert.
+      cache.patch(
+        (rows) => withoutTasks(rows, [task]),
+        (rows) => withoutTasks(rows, [task]),
+      )
+      forgetRecentlyCompleted(root, [taskKey(task)])
+      return snapshot
+    },
+    onError: (cause) => cache.reconcile('Converting task', cause),
+  })
+
   const insertMutation = useMutation({
     mutationFn: (target: InsertTaskTarget) => {
       const generation = graph?.generation
@@ -343,7 +378,8 @@ export function useTaskActions(): TaskActions {
       editAndCompleteMutation.isPending ||
       insertMutation.isPending ||
       scheduleMutation.isPending ||
-      convertMutation.isPending,
+      convertMutation.isPending ||
+      editAndConvertMutation.isPending,
     complete: (tasks) => {
       // ⌘↵ *completes*; with archived rows in the selection, toggling an
       // already-checked task would reopen it on disk. Only act on open rows.
@@ -432,6 +468,11 @@ export function useTaskActions(): TaskActions {
     convertToBullet: (tasks) => {
       if (tasks.length > 0 && graph?.generation !== undefined && !convertMutation.isPending) {
         convertMutation.mutate(tasks)
+      }
+    },
+    editAndConvertToBullet: (task, content) => {
+      if (graph?.generation !== undefined && !editAndConvertMutation.isPending) {
+        editAndConvertMutation.mutate({ task, content })
       }
     },
     archive: () => archiveRecentlyCompleted(root),

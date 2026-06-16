@@ -13,6 +13,12 @@ export interface TaskEditorApi {
   cancel: () => void
   /** ⌘↵: save any change, then complete the task (or delete it if emptied). */
   complete: () => void
+  /**
+   * ⌘⇧K: save any change, then strip the marker so the task becomes a plain
+   * bullet and leaves the Tasks view (an emptied row is deleted instead). Saving
+   * first is what keeps the unsaved draft from being lost to the convert.
+   */
+  convertToBullet: () => void
   /** ⌘⌫: delete the task outright, discarding any pending edit. */
   delete: () => void
   /** Backspace on an empty row: delete it and select the previous task (V1). */
@@ -42,6 +48,12 @@ export interface TaskEditorFinalizerOptions {
    * changed it (save **and** complete), or `null` to complete the unchanged task.
    */
   onComplete: (content: string | null) => void
+  /**
+   * Convert the task to a plain bullet and exit (⌘⇧K). `content` is the new text
+   * when the edit changed it (save **and** convert), or `null` to convert the
+   * unchanged task as-is.
+   */
+  onConvertToBullet: (content: string | null) => void
   /**
    * Persist a changed edit **without** exiting edit mode — the row is unmounting
    * because the selection already moved elsewhere, so it must not clear it.
@@ -84,6 +96,7 @@ export function useTaskEditorFinalizer({
   onDeleteEmpty,
   onCancel,
   onComplete,
+  onConvertToBullet,
   onFlush,
 }: TaskEditorFinalizerOptions): TaskEditorFinalizer {
   const currentRef = useRef(initial)
@@ -96,6 +109,7 @@ export function useTaskEditorFinalizer({
     commitAndContinue: () => {},
     cancel: () => {},
     complete: () => {},
+    convertToBullet: () => {},
     delete: () => {},
     deleteEmpty: () => {},
     isEmpty: () => false,
@@ -182,6 +196,21 @@ export function useTaskEditorFinalizer({
           onComplete(result.content)
         } else {
           onComplete(null)
+        }
+      },
+      convertToBullet: () => {
+        if (!claim()) {
+          return
+        }
+        // Emptying then converting means delete (an empty bullet is just noise);
+        // an unchanged task converts as-is; otherwise save the new text and convert.
+        const result = resolveTaskEdit(initial, currentRef.current)
+        if (result.type === 'delete') {
+          onDelete()
+        } else if (result.type === 'commit') {
+          onConvertToBullet(result.content)
+        } else {
+          onConvertToBullet(null)
         }
       },
       delete: () => {

@@ -183,10 +183,20 @@ export function TasksScreen(): ReactElement {
     [actions, selection, selectedTasks],
   )
   // Convert the current selection to plain bullets (the toolbar / ⌘⇧K): the rows
-  // leave the Tasks view, so deselect after, like scheduling.
+  // leave the Tasks view, so deselect after, like scheduling. When a single row is
+  // being inline-edited it holds a flush-then-convert trigger here — route through
+  // it so the unsaved draft is saved first, never written stale by the convert
+  // landing ahead of the editor's commit (the keyboard ⌘⇧K hits the editor's own
+  // keymap; this covers the toolbar button and an unfocused sole selection).
+  const convertControllerRef = useRef<(() => void) | null>(null)
   const onConvertToBullet = useCallback(() => {
-    actions.convertToBullet(selectedTasks())
-    selection.clear()
+    const convertEditing = convertControllerRef.current
+    if (convertEditing !== null) {
+      convertEditing()
+    } else {
+      actions.convertToBullet(selectedTasks())
+      selection.clear()
+    }
   }, [actions, selection, selectedTasks])
   useTaskKeyboard({
     selection,
@@ -291,6 +301,7 @@ export function TasksScreen(): ReactElement {
               editHandlers={editHandlers}
               today={today}
               onAdd={onAdd}
+              convertControllerRef={convertControllerRef}
               onOpen={(path) => navigate(routeForPath(path))}
             />
           ))
