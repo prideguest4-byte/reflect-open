@@ -49,6 +49,7 @@ function makeActions(over: Partial<TaskActions> = {}): TaskActions {
     insertAfter: vi.fn().mockResolvedValue(null),
     editAndComplete: vi.fn(),
     schedule: vi.fn(),
+    convertToBullet: vi.fn(),
     archive: vi.fn(),
     isPending: false,
     ...over,
@@ -81,6 +82,7 @@ function mount(options: {
   const scrollToKey = vi.fn()
   const onToggleFilters = vi.fn()
   const onToggleSchedule = vi.fn()
+  const onConvertToBullet = vi.fn()
   renderHook(() =>
     useTaskKeyboard({
       selection,
@@ -94,9 +96,10 @@ function mount(options: {
       scrollToKey,
       onToggleFilters,
       onToggleSchedule,
+      onConvertToBullet,
     }),
   )
-  return { selection, actions, setQuery, scrollToKey, onToggleFilters, onToggleSchedule }
+  return { selection, actions, setQuery, scrollToKey, onToggleFilters, onToggleSchedule, onConvertToBullet }
 }
 
 /** Let the `void insert(...).then(...)` microtask settle before asserting. */
@@ -179,6 +182,18 @@ describe('useTaskKeyboard', () => {
     const withSel = mount({ selection: makeSelection({ selectedCount: 2 }) })
     const selEvent = press(root, 's', { metaKey: true, shiftKey: true })
     expect(withSel.onToggleSchedule).toHaveBeenCalledTimes(1)
+    expect(selEvent.defaultPrevented).toBe(true)
+  })
+
+  it('converts the selection to bullets on ⌘⇧K only when something is selected', () => {
+    const withNone = mount({ selection: makeSelection({ selectedCount: 0 }) })
+    const noneEvent = press(root, 'k', { metaKey: true, shiftKey: true })
+    expect(withNone.onConvertToBullet).not.toHaveBeenCalled()
+    expect(noneEvent.defaultPrevented).toBe(false)
+
+    const withSel = mount({ selection: makeSelection({ selectedCount: 2 }) })
+    const selEvent = press(root, 'k', { metaKey: true, shiftKey: true })
+    expect(withSel.onConvertToBullet).toHaveBeenCalledTimes(1)
     expect(selEvent.defaultPrevented).toBe(true)
   })
 

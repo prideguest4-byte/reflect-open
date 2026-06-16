@@ -4,6 +4,7 @@ import {
   isAppError,
   removeTaskLine,
   splitFrontmatter,
+  taskLineToBullet,
   toggleTaskMarker,
   upsertFrontmatter,
   type GistFrontmatter,
@@ -290,6 +291,14 @@ export interface NoteSession {
    * {@link commitTaskToggle}.
    */
   commitTaskRemove: (task: TaskMarker) => Promise<boolean>
+  /**
+   * Demote a task to a plain bullet from the Tasks view — the "Convert to bullet"
+   * path (Plan 18 follow-up). Strips just the marker from the line in the live
+   * buffer (keeping its content) so the item leaves the Tasks projection while
+   * staying in the note, then flushes now; same gating, `false`-when-busy,
+   * transactional revert, and `TaskStaleError` propagation as {@link commitTaskToggle}.
+   */
+  commitTaskToBullet: (task: TaskMarker) => Promise<boolean>
   /** Flush pending edits and detach: no further snapshots are emitted. */
   dispose: () => void
   /**
@@ -741,6 +750,10 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     return commitBodyEdit((full) => removeTaskLine(full, task))
   }
 
+  function commitTaskToBullet(task: TaskMarker): Promise<boolean> {
+    return commitBodyEdit((full) => taskLineToBullet(full, task))
+  }
+
   function dispose(): void {
     // A discarded session must not write: its file is being deleted, and a
     // flush would recreate it. Otherwise flush first — the queued save step
@@ -778,6 +791,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     commitTaskToggle,
     commitTaskEdit,
     commitTaskRemove,
+    commitTaskToBullet,
     dispose,
     discard,
   }

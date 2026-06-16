@@ -361,6 +361,7 @@ export {
   renameWikiLink,
   setTaskDueDate,
   clearTaskDueDate,
+  taskLineToBullet,
   toggleTaskMarker,
   TaskStaleError,
   resolved,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Archive, CalendarClock, Search } from 'lucide-react'
+import { Archive, CalendarClock, List, Search } from 'lucide-react'
 import { getCompletedTasks, getOpenTasks, groupTasks, hasBridge, type TaskGroup } from '@reflect/core'
 import { Input } from '@/components/ui/input'
 import { useRecentlyCompleted } from '@/lib/tasks/recently-completed'
@@ -167,6 +167,15 @@ export function TasksScreen(): ReactElement {
     },
     [actions, selection, tasksByKey],
   )
+  // Convert the current selection to plain bullets (the toolbar / ⌘⇧K): the rows
+  // leave the Tasks view, so deselect after, like scheduling.
+  const onConvertToBullet = useCallback(() => {
+    const tasks = [...selection.selected]
+      .map((key) => tasksByKey.get(key))
+      .filter((task): task is NonNullable<typeof task> => task !== undefined)
+    actions.convertToBullet(tasks)
+    selection.clear()
+  }, [actions, selection, tasksByKey])
   useTaskKeyboard({
     selection,
     actions,
@@ -179,6 +188,7 @@ export function TasksScreen(): ReactElement {
     scrollToKey,
     onToggleFilters: () => setFiltersOpen((open) => !open),
     onToggleSchedule: () => setScheduleOpen((open) => !open),
+    onConvertToBullet,
   })
 
   // Move focus into the Tasks surface on mount so the shortcuts work the moment
@@ -224,6 +234,17 @@ export function TasksScreen(): ReactElement {
               Schedule ({selection.selectedCount})
             </button>
           </TaskScheduleCalendar>
+        ) : null}
+        {selection.selectedCount > 0 ? (
+          <button
+            type="button"
+            onClick={onConvertToBullet}
+            title="Drop the checkbox, keeping the line as a plain bullet — leaves the Tasks list"
+            className="flex flex-none items-center gap-2 rounded-md px-2 py-1 text-sm text-text-muted transition-colors hover:text-text focus-visible:text-text focus-visible:outline-none"
+          >
+            <List aria-hidden className="size-4" />
+            Convert to bullet ({selection.selectedCount})
+          </button>
         ) : null}
         {recentlyCompleted.length > 0 ? (
           <button

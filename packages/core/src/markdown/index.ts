@@ -45,6 +45,7 @@ export {
   renameWikiLink,
   setTaskDueDate,
   clearTaskDueDate,
+  taskLineToBullet,
   toggleTaskMarker,
   TaskStaleError,
 } from './edit'

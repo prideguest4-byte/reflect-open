@@ -31,7 +31,14 @@ const toggleTask = vi.hoisted(() => vi.fn())
 const deleteTask = vi.hoisted(() => vi.fn())
 const editTask = vi.hoisted(() => vi.fn())
 const insertTask = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/note-task', () => ({ toggleTask, deleteTask, editTask, insertTask }))
+const convertTaskToBullet = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/note-task', () => ({
+  toggleTask,
+  deleteTask,
+  editTask,
+  insertTask,
+  convertTaskToBullet,
+}))
 
 // The real inline editor mounts ProseKit, which jsdom can't render (no
 // getClientRects/getAnimations). Stub it with the callback surface the row
@@ -155,6 +162,8 @@ beforeEach(() => {
   editTask.mockReset()
   insertTask.mockReset()
   insertTask.mockResolvedValue(0)
+  convertTaskToBullet.mockReset()
+  convertTaskToBullet.mockResolvedValue(undefined)
   startOperation.mockClear()
   fail.mockReset()
   resetRecentlyCompleted()
@@ -689,6 +698,44 @@ describe('TasksScreen', () => {
       'plan [[2026-06-20]]',
       1,
     )
+    view.unmount()
+  })
+
+  it('converts the selection to bullets via the toolbar button, dropping the rows', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] plan', text: 'plan', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] ship', text: 'ship', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('plan')
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select both (no editor)
+    await userEvent.click(view.getByRole('button', { name: /Convert to bullet \(2\)/ }))
+
+    await waitFor(() => expect(convertTaskToBullet).toHaveBeenCalledTimes(2))
+    expect(convertTaskToBullet).toHaveBeenCalledWith(expect.objectContaining({ notePath: 'notes/a.md' }), 1)
+    expect(convertTaskToBullet).toHaveBeenCalledWith(expect.objectContaining({ notePath: 'notes/b.md' }), 1)
+    // The converted rows are no longer checkboxes, so they leave the view.
+    await waitFor(() => expect(view.queryByText('plan')).toBeNull())
+    expect(view.queryByText('ship')).toBeNull()
+    view.unmount()
+  })
+
+  it('converts the selection to bullets with ⌘⇧K', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] plan', text: 'plan', noteTitle: 'A' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'plan' }))
+    await userEvent.keyboard('{Meta>}{Shift>}k{/Shift}{/Meta}')
+    await waitFor(() =>
+      expect(convertTaskToBullet).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/a.md', markerOffset: 2 }),
+        1,
+      ),
+    )
+    await waitFor(() => expect(view.queryByText('plan')).toBeNull())
     view.unmount()
   })
 

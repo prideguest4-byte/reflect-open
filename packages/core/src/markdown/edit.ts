@@ -131,6 +131,35 @@ export function appendTaskLine(source: string): { source: string; markerOffset: 
 }
 
 /**
+ * Demote a task back to a plain bullet by removing exactly its `[ ]`/`[x]` marker
+ * and the run of horizontal whitespace after it — `- [ ] text` becomes `- text`,
+ * the list bullet, indentation, and content all untouched. This is the Tasks
+ * view's "Convert to bullet" (Plan 18 follow-up): a GFM checkbox is the only
+ * thing the projection treats as a task, so dropping the marker lifts the item
+ * out of the Tasks view while keeping it in the note as ordinary markdown — no
+ * invented syntax, unlike a per-item checklist flag. Located by {@link
+ * locateTaskMarker}, the same staleness guard the toggle uses, so a drifted or
+ * ambiguous line — or a position that no longer holds a marker — refuses loudly
+ * with {@link TaskStaleError} rather than rewriting the wrong line. An empty task
+ * (`- [ ] `) collapses to a bare bullet (`- `).
+ */
+export function taskLineToBullet(source: string, task: TaskMarker): string {
+  const offset = locateTaskMarker(source, task.markerOffset, task.raw)
+  const marker = source.slice(offset, offset + 3)
+  if (parseTaskMarker(marker) === null) {
+    throw new TaskStaleError(`no task marker at offset ${offset}: ${JSON.stringify(marker)}`)
+  }
+  let contentStart = offset + 3
+  while (
+    contentStart < source.length &&
+    (source[contentStart] === ' ' || source[contentStart] === '\t')
+  ) {
+    contentStart += 1
+  }
+  return source.slice(0, offset) + source.slice(contentStart)
+}
+
+/**
  * Schedule a task by setting its due date to `isoDate` (a `YYYY-MM-DD`), working
  * on the task's **content** — the markdown after the marker. A task's due date is
  * the first calendar-valid `[[YYYY-MM-DD]]` link inside it (the same rule the

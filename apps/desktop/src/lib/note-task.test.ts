@@ -1,6 +1,6 @@
 import { TaskStaleError } from '@reflect/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { deleteTask, editTask, NoteBusyError, toggleTask } from './note-task'
+import { convertTaskToBullet, deleteTask, editTask, NoteBusyError, toggleTask } from './note-task'
 
 const openSession = vi.hoisted(() => vi.fn())
 vi.mock('@/editor/open-documents', () => ({ openSession }))
@@ -160,6 +160,39 @@ describe('deleteTask', () => {
   it('throws NoteBusyError when the session declines, never clobbering via disk', async () => {
     openSession.mockReturnValue({ commitTaskRemove: vi.fn().mockResolvedValue(false) })
     await expect(deleteTask(task, 7)).rejects.toBeInstanceOf(NoteBusyError)
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+})
+
+describe('convertTaskToBullet', () => {
+  it('strips the marker to a plain bullet on disk when the note is not open', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] do it\n- [ ] keep\n')
+    writeNote.mockResolvedValue(undefined)
+
+    await convertTaskToBullet(task, 7)
+    expect(writeNote).toHaveBeenCalledWith('notes/a.md', '- do it\n- [ ] keep\n', 7)
+  })
+
+  it('routes through the live session when the note is open', async () => {
+    const commitTaskToBullet = vi.fn().mockResolvedValue(true)
+    openSession.mockReturnValue({ commitTaskToBullet })
+
+    await convertTaskToBullet(task, 7)
+    expect(commitTaskToBullet).toHaveBeenCalledWith({ markerOffset: 2, raw: '[ ] do it' })
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('throws NoteBusyError when the session declines, never clobbering via disk', async () => {
+    openSession.mockReturnValue({ commitTaskToBullet: vi.fn().mockResolvedValue(false) })
+    await expect(convertTaskToBullet(task, 7)).rejects.toBeInstanceOf(NoteBusyError)
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('propagates TaskStaleError from the disk path when the index is stale', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] something else entirely\n')
+    await expect(convertTaskToBullet(task, 7)).rejects.toBeInstanceOf(TaskStaleError)
     expect(writeNote).not.toHaveBeenCalled()
   })
 })

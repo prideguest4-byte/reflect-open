@@ -9,6 +9,7 @@ import {
   removeTaskLine,
   renameWikiLink,
   setTaskDueDate,
+  taskLineToBullet,
   TaskStaleError,
   toggleTaskMarker,
 } from './edit'
@@ -330,5 +331,53 @@ describe('removeTaskLine', () => {
   it('refuses loudly when the task line is gone', () => {
     const task = indexedTask('- [ ] buy milk\n')
     expect(() => removeTaskLine('- [ ] something else\n', task)).toThrow(TaskStaleError)
+  })
+})
+
+describe('taskLineToBullet', () => {
+  function indexedTask(source: string, index = 0) {
+    const task = parseNote({ path: 'notes/n.md', source }).tasks[index]
+    return { markerOffset: task.markerOffset, raw: task.raw }
+  }
+
+  it('drops the marker, leaving the bullet and content', () => {
+    const source = '- [ ] buy milk\n'
+    expect(taskLineToBullet(source, indexedTask(source))).toBe('- buy milk\n')
+  })
+
+  it('drops a checked marker too', () => {
+    const source = '- [x] done\n'
+    expect(taskLineToBullet(source, indexedTask(source))).toBe('- done\n')
+  })
+
+  it('preserves the bullet character and indentation', () => {
+    const source = '  * [ ] sub\n'
+    expect(taskLineToBullet(source, indexedTask(source))).toBe('  * sub\n')
+  })
+
+  it('collapses an empty task to a bare bullet', () => {
+    const source = '- [ ] \n'
+    expect(taskLineToBullet(source, indexedTask(source))).toBe('- \n')
+  })
+
+  it('keeps wiki links and tags in the content', () => {
+    const source = '- [ ] ship [[2026-07-01]] #release\n'
+    expect(taskLineToBullet(source, indexedTask(source))).toBe('- ship [[2026-07-01]] #release\n')
+  })
+
+  it('converts a middle task, leaving its neighbours as tasks', () => {
+    const source = '- [ ] a\n- [ ] b\n- [ ] c\n'
+    expect(taskLineToBullet(source, indexedTask(source, 1))).toBe('- [ ] a\n- b\n- [ ] c\n')
+  })
+
+  it('relocates by raw when an edit above drifts the offset', () => {
+    const source = '- [ ] buy milk\n'
+    const stale = indexedTask(source)
+    expect(taskLineToBullet(`Intro.\n\n${source}`, stale)).toBe('Intro.\n\n- buy milk\n')
+  })
+
+  it('refuses loudly when the task line is gone', () => {
+    const task = indexedTask('- [ ] buy milk\n')
+    expect(() => taskLineToBullet('- [ ] something else\n', task)).toThrow(TaskStaleError)
   })
 })

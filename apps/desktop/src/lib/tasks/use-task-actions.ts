@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { clearTaskDueDate, setTaskDueDate, type OpenTask } from '@reflect/core'
-import { deleteTask, editTask, insertTask, toggleTask } from '@/lib/note-task'
+import { convertTaskToBullet, deleteTask, editTask, insertTask, toggleTask } from '@/lib/note-task'
 import { taskContent } from '@/lib/tasks/task-content'
 import {
   archiveRecentlyCompleted,
@@ -85,6 +85,12 @@ export interface TaskActions {
    * adds/replaces the `[[YYYY-MM-DD]]` link the projection reads as the due date.
    */
   schedule: (tasks: OpenTask[], isoDate: string | null) => void
+  /**
+   * Convert a selection to plain bullets (⌘⇧K, V1's "Convert to checklist"
+   * restated for markdown): strip each task's `[ ]`/`[x]` marker so it leaves
+   * the Tasks view but stays in its note as an ordinary list item.
+   */
+  convertToBullet: (tasks: OpenTask[]) => void
   /** Archive (⌘⇧↵): stop showing the session's completed tasks in the active list. */
   archive: () => void
   isPending: boolean
@@ -235,6 +241,39 @@ export function useTaskActions(): TaskActions {
     onError: (cause) => cache.reconcile('Scheduling tasks', cause),
   })
 
+  const convertMutation = useMutation({
+    mutationFn: async (tasks: OpenTask[]) => {
+      const generation = graph?.generation
+      if (generation === undefined) {
+        throw new Error('No graph is open.')
+      }
+      // Sequential, like the other batch writes — tasks can share a note, and the
+      // core edit relocates by `raw`, so a same-note batch tolerates offset drift.
+      for (const task of tasks) {
+        await convertTaskToBullet(task, generation)
+      }
+    },
+    onMutate: async (tasks: OpenTask[]) => {
+      const snapshot = await cache.snapshot()
+      // A converted task is no longer a checkbox, so it leaves both lists outright
+      // — same optimistic shape as a delete.
+      cache.patch(
+        (rows) => withoutTasks(rows, tasks),
+        (rows) => withoutTasks(rows, tasks),
+      )
+      // A converted task must not linger struck in the session's completed set.
+      forgetRecentlyCompleted(root, tasks.map(taskKey))
+      return snapshot
+    },
+    onError: (cause, tasks) => {
+      cache.reconcile('Converting tasks', cause)
+      // The convert dropped checked rows from the session's struck set; if it
+      // failed they're still `[x]` on disk, so restore them or they'd vanish from
+      // the default list (gone from open, struck-set, and the unloaded archived query).
+      markRecentlyCompleted(root, tasks.filter((task) => task.checked))
+    },
+  })
+
   const insertMutation = useMutation({
     mutationFn: (target: InsertTaskTarget) => {
       const generation = graph?.generation
@@ -303,7 +342,8 @@ export function useTaskActions(): TaskActions {
       editMutation.isPending ||
       editAndCompleteMutation.isPending ||
       insertMutation.isPending ||
-      scheduleMutation.isPending,
+      scheduleMutation.isPending ||
+      convertMutation.isPending,
     complete: (tasks) => {
       // ⌘↵ *completes*; with archived rows in the selection, toggling an
       // already-checked task would reopen it on disk. Only act on open rows.
@@ -387,6 +427,11 @@ export function useTaskActions(): TaskActions {
     schedule: (tasks, isoDate) => {
       if (tasks.length > 0 && graph?.generation !== undefined && !scheduleMutation.isPending) {
         scheduleMutation.mutate({ tasks, isoDate })
+      }
+    },
+    convertToBullet: (tasks) => {
+      if (tasks.length > 0 && graph?.generation !== undefined && !convertMutation.isPending) {
+        convertMutation.mutate(tasks)
       }
     },
     archive: () => archiveRecentlyCompleted(root),

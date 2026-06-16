@@ -4,6 +4,7 @@ import {
   isAppError,
   readNote,
   removeTaskLine,
+  taskLineToBullet,
   toggleTaskMarker,
   writeNote,
   type TaskMarker,
@@ -128,6 +129,22 @@ export function deleteTask(task: TaskRef, generation: number): Promise<void> {
     generation,
     (owner, marker) => owner.commitTaskRemove(marker),
     (source, marker) => removeTaskLine(source, marker),
+  )
+}
+
+/**
+ * Demote a task to a plain bullet from the Tasks view — "Convert to bullet"
+ * (Plan 18 follow-up). Strips just the `[ ]`/`[x]` marker, keeping the bullet and
+ * content, so the item drops out of the Tasks projection while staying in the
+ * note. Routes session-or-disk and is guarded by the task's `raw` like its
+ * siblings.
+ */
+export function convertTaskToBullet(task: TaskRef, generation: number): Promise<void> {
+  return applyTaskChange(
+    task,
+    generation,
+    (owner, marker) => owner.commitTaskToBullet(marker),
+    (source, marker) => taskLineToBullet(source, marker),
   )
 }
 

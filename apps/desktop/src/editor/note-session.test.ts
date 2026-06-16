@@ -877,3 +877,39 @@ describe('commitTaskRemove', () => {
     expect(h.applied.at(-1)).toBe('- [ ] x\n')
   })
 })
+
+describe('commitTaskToBullet', () => {
+  it('strips the marker to a plain bullet while preserving unsaved edits', async () => {
+    const source = '- [ ] buy milk\n- [ ] call mum\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    h.session.editorChanged('- [ ] buy milk\n- [ ] call mum\n\njot\n') // unsaved when it arrives
+    expect(await h.session.commitTaskToBullet(firstTask(source))).toBe(true)
+    expect(h.writes.at(-1)?.contents).toBe('- buy milk\n- [ ] call mum\n\njot\n')
+    expect(h.applied.at(-1)).toBe('- buy milk\n- [ ] call mum\n\njot\n')
+  })
+
+  it('drops a checked marker too', async () => {
+    const source = '- [x] done\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    expect(await h.session.commitTaskToBullet(firstTask(source))).toBe(true)
+    expect(h.writes.at(-1)?.contents).toBe('- done\n')
+  })
+
+  it('propagates TaskStaleError when the task line is gone', async () => {
+    const source = '- [ ] gone\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    h.session.editorChanged('- [ ] something else entirely\n')
+    await expect(h.session.commitTaskToBullet(firstTask(source))).rejects.toBeInstanceOf(
+      TaskStaleError,
+    )
+  })
+})
