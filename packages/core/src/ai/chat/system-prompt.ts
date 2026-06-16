@@ -10,6 +10,12 @@ export interface SystemPromptInput {
   /** Local ISO date (`YYYY-MM-DD`) — daily notes live under this key space. */
   today: string
   /**
+   * Whether `search_notes` can use embeddings for meaning-based recall.
+   * Disabled chats stay strictly lexical, so the prompt must not promise
+   * semantic matching.
+   */
+  semanticSearchEnabled: boolean
+  /**
    * Graph-level grounding block ({@link CloudGraphContext}), or `null` when
    * it could not be loaded — the prompt then simply omits the overview.
    */
@@ -17,7 +23,11 @@ export interface SystemPromptInput {
 }
 
 /** Build the system prompt for one chat session. */
-export function chatSystemPrompt({ today, context }: SystemPromptInput): string {
+export function chatSystemPrompt({
+  today,
+  context,
+  semanticSearchEnabled,
+}: SystemPromptInput): string {
   return [
     'You are Reflect’s assistant, embedded in the user’s personal note graph.',
     `Today’s date is ${today}. Daily notes are markdown files named daily/YYYY-MM-DD.md; other notes live under notes/.`,
@@ -25,7 +35,7 @@ export function chatSystemPrompt({ today, context }: SystemPromptInput): string 
     '',
     'Grounding rules:',
     '- When a question could be answered by the user’s notes, look them up before answering: search_notes finds notes by topic or keyword, list_daily_notes finds daily notes in a date range (questions like “yesterday” or “last week”), and list_recent_notes shows what was edited lately. Call read_notes when you need notes’ full content.',
-    '- search_notes matches on both keywords and meaning, so it finds relevant notes even when your wording differs from theirs — repeating a search with reordered or reworded terms returns the same notes. To widen the net, raise its “limit” (up to 20) in one call instead of searching again. When you need the full text of several notes, pass all their paths to read_notes in one call rather than reading them one at a time.',
+    searchNotesGuidance(semanticSearchEnabled),
     '- You have a limited number of tool rounds per question, so gather efficiently: once the results cover the question, stop searching and write the answer.',
     '- For “what have I written or worked on lately?”, call list_recent_notes with no tag — pass a tag only when the user names one. Tool inputs are plain values; there is no wildcard or operator syntax (never pass “*”).',
     '- Ground answers in what the tools return. If the notes don’t cover something, say so plainly instead of guessing.',
@@ -34,6 +44,16 @@ export function chatSystemPrompt({ today, context }: SystemPromptInput): string 
     '',
     'Style: answer in concise markdown. Prefer short paragraphs and lists over headings.',
   ].join('\n')
+}
+
+/** The search-specific prompt rule, matching the active retrieval mode. */
+function searchNotesGuidance(semanticSearchEnabled: boolean): string {
+  const shared =
+    'To widen the net, raise its “limit” (up to 20) in one call instead of searching again. When you need the full text of several notes, pass all their paths to read_notes in one call rather than reading them one at a time.'
+  if (semanticSearchEnabled) {
+    return `- search_notes matches on both keywords and meaning, so it finds relevant notes even when your wording differs from theirs — repeating a search with reordered or reworded terms returns the same notes. ${shared}`
+  }
+  return `- search_notes uses lexical full-text search over titles and note bodies. Choose the user’s own likely wording, names, and keywords; if the first search is too narrow, try one broader lexical query before reading notes. ${shared}`
 }
 
 /**

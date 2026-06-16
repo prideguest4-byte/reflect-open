@@ -47,6 +47,8 @@ export interface StreamChatOptions {
   messages: ModelMessage[]
   /** Local ISO date for the system prompt (daily-note key space). */
   today: string
+  /** Whether note search can use embeddings for meaning-based recall. */
+  semanticSearchEnabled: boolean
   /**
    * Graph overview for the system prompt (`loadChatGraphContext`), or
    * `null` to send the prompt without it — required so call sites decide
@@ -77,11 +79,16 @@ export type ChatStreamEvent =
 export function streamChat(options: StreamChatOptions): AsyncGenerator<ChatStreamEvent> {
   const messages = fitToContextWindow(options.messages, {
     contextWindow: modelContextWindow(options.config.provider, options.config.model),
-    systemPrompt: chatSystemPrompt({ today: options.today, context: options.context }),
+    systemPrompt: chatSystemPrompt({
+      today: options.today,
+      context: options.context,
+      semanticSearchEnabled: options.semanticSearchEnabled,
+    }),
   })
   return streamChatTurn(languageModel(options.config, options.apiKey, options.fetchFn), {
     messages,
     today: options.today,
+    semanticSearchEnabled: options.semanticSearchEnabled,
     context: options.context,
     signal: options.signal,
   })
@@ -93,6 +100,8 @@ export interface ChatTurnOptions {
   messages: ModelMessage[]
   /** Local ISO date for the system prompt (daily-note key space). */
   today: string
+  /** Whether note search can use embeddings for meaning-based recall. */
+  semanticSearchEnabled: boolean
   /** Graph overview for the system prompt, or `null` to omit the block. */
   context: CloudSafe<CloudGraphContext> | null
   /** Aborts the provider call mid-stream (the UI's stop button). */
@@ -115,7 +124,10 @@ export async function* streamChatTurn(
   model: LanguageModel,
   options: ChatTurnOptions,
 ): AsyncGenerator<ChatStreamEvent> {
-  const tools = buildNoteTools(options.toolDeps)
+  const tools = buildNoteTools({
+    ...options.toolDeps,
+    semanticSearchEnabled: options.semanticSearchEnabled,
+  })
 
   // Messages for all *completed* steps (cumulative, assistant/tool pairs)…
   let stepMessages: ModelMessage[] = []
@@ -129,7 +141,11 @@ export async function* streamChatTurn(
   try {
     const result = streamText({
       model,
-      system: chatSystemPrompt({ today: options.today, context: options.context }),
+      system: chatSystemPrompt({
+        today: options.today,
+        context: options.context,
+        semanticSearchEnabled: options.semanticSearchEnabled,
+      }),
       messages: options.messages,
       tools,
       stopWhen: stepCountIs(MAX_STEPS),

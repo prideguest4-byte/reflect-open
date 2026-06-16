@@ -144,12 +144,14 @@ export function ChatProvider({ graph, children }: ChatProviderProps): ReactEleme
   const activeModelRef = useRef<AiProviderConfig | null>(activeModel)
   const conversationIdRef = useRef(conversationId)
   const generationRef = useRef<number | null>(indexGeneration)
+  const semanticSearchEnabledRef = useRef(settings.semanticSearchEnabled)
   useEffect(() => {
     turnsRef.current = turns
     attachmentsRef.current = attachments
     activeModelRef.current = activeModel
     conversationIdRef.current = conversationId
     generationRef.current = indexGeneration
+    semanticSearchEnabledRef.current = settings.semanticSearchEnabled
   })
 
   // The in-flight send, tracked synchronously — the no-concurrent-sends
@@ -338,6 +340,7 @@ export function ChatProvider({ graph, children }: ChatProviderProps): ReactEleme
           fetchFn: providerFetch,
           messages,
           today: todayIso(),
+          semanticSearchEnabled: semanticSearchEnabledRef.current,
           context,
           signal: controller.signal,
         })

@@ -146,7 +146,20 @@ describe('search_notes', () => {
       },
     })
     await runSearch(tools, { query: 'atlas' })
-    expect(seen).toEqual([{ limit: 8, excludePrivateContent: true }])
+    expect(seen).toEqual([{ limit: 8, mode: 'hybrid', excludePrivateContent: true }])
+  })
+
+  it('uses lexical retrieval when semantic search is disabled', async () => {
+    const seen: Array<RetrieveOptions | undefined> = []
+    const tools = buildNoteTools({
+      semanticSearchEnabled: false,
+      retrieveFn: async (_query, options) => {
+        seen.push(options)
+        return []
+      },
+    })
+    await runSearch(tools, { query: 'atlas' })
+    expect(seen).toEqual([{ limit: 8, mode: 'lexical', excludePrivateContent: true }])
   })
 
   it('drops private hits entirely — not even the title goes out', async () => {
