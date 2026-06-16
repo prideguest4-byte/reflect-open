@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { errorMessage, type NoteListEntry } from '@reflect/core'
 import { deleteOpenNote } from '@/lib/note-delete'
 import { startOperation } from '@/lib/operations'
-import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { useGraph } from '@/providers/graph-provider'
 import { allNotesListPrefix } from './all-notes-query'
 
@@ -84,10 +83,12 @@ export function useNoteTrash(): NoteTrash {
         }
         if (failures > 0) {
           operation.fail(errorMessage(lastError))
-          // Reconcile in case a delete half-succeeded (file trashed but its
-          // session discard threw): the watcher's reindex is the source of
-          // record; this just doesn't wait for it.
-          void queryClient.invalidateQueries({ queryKey: [INDEX_QUERY_SCOPE] })
+          // Deliberately no invalidate: the index still lists the notes that
+          // *did* trash (their reindex hasn't run yet), so a refetch would
+          // resurrect them in the list. The per-row cache removal above is
+          // already truth; the watcher reconciles the index — and the rare
+          // half-succeeded edge (file trashed but its session discard threw) —
+          // on its own.
           return false
         }
         operation.done()

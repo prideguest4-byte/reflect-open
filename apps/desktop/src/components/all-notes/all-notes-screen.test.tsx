@@ -550,4 +550,45 @@ describe('AllNotesScreen — selection and bulk trash', () => {
     expect(view.getByRole('button', { name: /Trash \(1\)/ })).toBeDefined()
     view.unmount()
   })
+
+  it('keeps trashed rows gone on a partial failure (no index resurrection)', async () => {
+    // health trashes; tokyo fails. The index still lists health until the
+    // watcher reindexes, so a refetch here would wrongly bring it back.
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'note_delete') {
+        if (args['path'] === 'notes/tokyo.md') {
+          throw new Error('locked')
+        }
+        return null
+      }
+      if (command !== 'db_query') {
+        return null
+      }
+      const sql = String(args['sql'])
+      if (sql.includes('group by')) {
+        return facetRows
+      }
+      if (sql.includes('"preview"')) {
+        return sql.includes('from "tags"') ? [] : noteRows
+      }
+      if (sql.includes('from "tags"')) {
+        return tagRows
+      }
+      return []
+    })
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.click(view.getByText('Dandelion chocolate.'), { metaKey: true })
+    fireEvent.click(view.getByRole('button', { name: /Trash \(2\)/ }))
+    await view.findByText('Trash 2 notes?')
+    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
+
+    // The successfully-trashed note stays gone; the failed one stays selected.
+    await waitFor(() => expect(view.queryByText('Health Stacked')).toBeNull())
+    expect(view.getByText('Tokyo Gâteau')).toBeDefined()
+    expect(view.getByRole('button', { name: /Trash \(1\)/ })).toBeDefined()
+    view.unmount()
+  })
 })
