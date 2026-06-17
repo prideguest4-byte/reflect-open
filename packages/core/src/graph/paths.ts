@@ -63,7 +63,7 @@ export function descriptionPathFor(assetPath: string): string {
 
 /**
  * Is this graph-relative path an asset under `assets/` (and not a managed
- * description sidecar)? A coarse predicate — it does not check the file
+ * description file)? A coarse predicate — it does not check the file
  * extension — used to decide whether a watcher batch is relevant to the
  * asset-description pass; precise eligibility is `isEligibleAssetPath`.
  */

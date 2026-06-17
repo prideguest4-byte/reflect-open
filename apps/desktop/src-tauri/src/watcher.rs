@@ -7,10 +7,10 @@
 //! loop back. The watcher reports `.md` under `daily/` and `notes/`, plus
 //! anything under `audio-memos/` (recordings feed the sync debounce and the
 //! transcription reconciler, not the index) and eligible image/PDF files under
-//! `assets/` (which feed the asset-sidecar controller — Plan 20 — not the
-//! index; the `.reflect.md` sidecars are excluded so a write can't loop back).
-//! Non-note consumers filter by path. The frontend resolves create-vs-delete
-//! and re-indexes (content-hash gated).
+//! `assets/` (which feed the asset-description controller — Plan 20 — not the
+//! index; the `.reflect.md` description files are excluded so a write can't loop
+//! back). Non-note consumers filter by path. The frontend resolves
+//! create-vs-delete and re-indexes (content-hash gated).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -47,13 +47,13 @@ pub struct FileChange {
     pub modified_ms: Option<u64>,
 }
 
-/// Image and PDF extensions that earn an AI description sidecar (Plan 20). Must
-/// stay in sync with `assetTypeFor` in `@reflect/core` (`actions/asset-sidecar`).
+/// Image and PDF extensions that earn an AI description file (Plan 20). Must
+/// stay in sync with `assetTypeFor` in `@reflect/core` (`actions/asset-description`).
 const ELIGIBLE_ASSET_EXTS: [&str; 7] = ["png", "jpg", "jpeg", "gif", "webp", "svg", "pdf"];
 
-/// Whether a graph-relative path is an asset the sidecar controller describes:
-/// an eligible image/PDF under `assets/`, never a `.reflect.md` sidecar (which
-/// also lives there — tracking it would loop a sidecar write back into work).
+/// Whether a graph-relative path is an asset the description controller handles:
+/// an eligible image/PDF under `assets/`, never a `.reflect.md` description file
+/// (which also lives there — tracking it would loop a write back into work).
 fn is_eligible_asset(rel_str: &str) -> bool {
     if !rel_str.starts_with("assets/") || rel_str.ends_with(".reflect.md") {
         return false;
@@ -69,7 +69,7 @@ fn is_eligible_asset(rel_str: &str) -> bool {
 /// `audio-memos/`), a spooled capture envelope (`.json` under `.reflect/inbox/`
 /// — the one carve-out from the `.reflect/` blackout; the envelope is the
 /// spool's commit point and triggers the capture drain), or an eligible asset
-/// under `assets/` ({@link is_eligible_asset} — feeds the sidecar controller),
+/// under `assets/` ({@link is_eligible_asset} — feeds the description controller),
 /// else `None`. Pure — the filtering rule, unit-tested.
 fn tracked_relpath(path: &Path, root: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn tracks_eligible_assets_but_not_sidecars_or_other_files() {
+    fn tracks_eligible_assets_but_not_description_files_or_other_files() {
         let root = Path::new("/g");
         for ext in ELIGIBLE_ASSET_EXTS {
             let path = format!("/g/assets/diagram.{ext}");
@@ -252,8 +252,8 @@ mod tests {
             tracked_relpath(Path::new("/g/assets/PHOTO.PNG"), root).as_deref(),
             Some("assets/PHOTO.PNG")
         );
-        // The sidecar lives under assets/ too — tracking it would loop a write
-        // back into the controller, so it must never be tracked.
+        // The description file lives under assets/ too — tracking it would loop a
+        // write back into the controller, so it must never be tracked.
         assert_eq!(
             tracked_relpath(Path::new("/g/assets/diagram.png.reflect.md"), root),
             None
