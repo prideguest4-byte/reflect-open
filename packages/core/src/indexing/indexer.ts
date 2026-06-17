@@ -10,6 +10,7 @@ import {
   setIndexMeta,
 } from './commands'
 import { assetReferencingNotePaths } from './asset-refs'
+import { rebuildAssetDescriptions, reconcileAssetDescriptionRow } from './asset-description-index'
 import { gatherAssetDescriptionText } from './asset-description-text'
 import { hashContent } from './hash'
 import { buildIndexedNote, PROJECTION_VERSION, type IndexedNote } from './indexed-note'
@@ -80,8 +81,12 @@ export async function reindexNotesReferencing(
   assetPaths: readonly string[],
   generation: number,
 ): Promise<void> {
+  // First refresh each asset's `asset_descriptions` entity row from its sidecar,
+  // then re-index the referencing notes — whose fold reads description text from
+  // that entity, so the row must be current before the notes are re-folded.
   const notePaths = new Set<string>()
   for (const assetPath of assetPaths) {
+    await reconcileAssetDescriptionRow(assetPath, generation)
     for (const notePath of await assetReferencingNotePaths(assetPath)) {
       notePaths.add(notePath)
     }
@@ -166,6 +171,10 @@ export async function rebuildIndex(options: IndexPassOptions): Promise<void> {
     return // don't wipe the current index for an already-cancelled pass
   }
   await clearIndex(generation)
+  // Project the asset descriptions from their sidecars first, so each note's
+  // fold below reads description text from the now-populated `asset_descriptions`
+  // entity rather than re-reading sidecar files per note.
+  await rebuildAssetDescriptions({ generation, signal: options.signal })
   const files = await listFiles()
   let batch: IndexedNote[] = []
   for (const file of files) {

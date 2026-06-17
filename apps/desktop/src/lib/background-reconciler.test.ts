@@ -17,7 +17,7 @@ function tick(): Promise<void> {
 
 describe('createBackgroundReconciler', () => {
   it('coalesces triggers landing mid-pass into exactly one follow-up', async () => {
-    const gates: Array<ReturnType<typeof deferred>> = []
+    const gates: Array<{ promise: Promise<void>; resolve: (value: void) => void }> = []
     let calls = 0
     const reconciler = createBackgroundReconciler({
       pass: async () => {
