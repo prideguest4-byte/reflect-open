@@ -254,6 +254,7 @@ export {
   audioMemoFromPath,
   audioMemoIdentity,
   captureAudioMemo,
+  isSilentStop,
   listPendingAudioMemos,
   reconcileAudioMemos,
   type AudioMemoIdentity,

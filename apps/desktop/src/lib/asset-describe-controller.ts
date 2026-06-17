@@ -2,6 +2,7 @@ import {
   hasBridge,
   isEligibleAssetPath,
   isNotePath,
+  isSilentStop,
   parseNote,
   readNote,
   reconcileAssetDescriptions,
@@ -9,14 +10,15 @@ import {
   subscribeIndexApplied,
   type AiProvidersState,
   type ReconcileStop,
-  type Unlisten,
 } from '@reflect/core'
+import { createBackgroundReconciler } from '@/lib/background-reconciler'
 import { providerFetch } from '@/lib/provider-fetch'
 
 /**
- * The asset-description lifecycle for one graph session (Plan 20). Mirrors
- * `createCaptureController`: the trigger plumbing (the indexer's post-apply
- * signal, plus focus/online retries) lives in one object with one `dispose()`.
+ * The asset-description lifecycle for one graph session (Plan 20). Built on
+ * {@link createBackgroundReconciler} (shared with capture and transcription):
+ * the single-flight loop, focus/online retries, and teardown live there; this
+ * supplies the asset-specific pass and triggers.
  *
  * Triggers fire off `subscribeIndexApplied` — the indexer's POST-APPLY signal —
  * not the raw watcher stream, so the privacy gate always reads a settled index
@@ -51,13 +53,7 @@ export interface AssetDescribeControllerOptions {
 export function createAssetDescribeController(
   options: AssetDescribeControllerOptions,
 ): AssetDescribeController {
-  let disposed = false
   let started = false
-  let running = false
-  /** A trigger landed mid-pass; run exactly one follow-up after it. */
-  let queued = false
-  let unlisten: Unlisten | null = null
-  const domDisposers: Array<() => void> = []
   /** Eligible assets observed changed and not yet successfully reconciled. */
   const dirty = new Set<string>()
   /** Last logged stop message — retries must not re-log it. */
@@ -69,82 +65,63 @@ export function createAssetDescribeController(
       return
     }
     // Automatic description is background, best-effort work, so it never toasts:
-    // network retries on the next trigger, config means no provider/key yet (the
-    // asset waits), stale is a graph switch, and an index-not-ready (io) failure
-    // during startup is transient too. The Settings backfill is the user-initiated
-    // path that surfaces progress and errors. Log unexpected stops (deduped) for
-    // diagnosis only.
-    if (stopped.reason === 'network' || stopped.reason === 'config' || stopped.reason === 'stale') {
-      return
-    }
-    if (loggedStop === stopped.message) {
+    // self-healing stops (network/config/stale) stay silent, and the Settings
+    // backfill is the user-initiated path that surfaces progress and errors. An
+    // index-not-ready (io) failure during startup is unexpected here, so it is
+    // logged (deduped) for diagnosis only.
+    if (isSilentStop(stopped) || loggedStop === stopped.message) {
       return
     }
     loggedStop = stopped.message
     console.warn(`asset description stopped (${stopped.reason}): ${stopped.message}`)
   }
 
-  async function run(): Promise<void> {
-    if (running) {
-      queued = true
-      return
+  /**
+   * One reconcile pass over the dirty set, then fold any new descriptions into
+   * the referencing notes' search rows so a query matching a description
+   * surfaces the note (Plan 20 search integration). Returns `'stop'` on a
+   * transient/config stop so the loop keeps the batch for the next trigger
+   * instead of spinning.
+   */
+  const reconcile = async (isStale: () => boolean): Promise<void | 'stop'> => {
+    if (!hasBridge() || dirty.size === 0) {
+      return // browser dev (no graph to read assets from), or nothing pending
     }
-    if (!hasBridge()) {
-      return // browser dev: no graph to read assets from
+    const batch = [...dirty]
+    const outcome = await reconcileAssetDescriptions({
+      providers: options.getProviders(),
+      generation: options.generation,
+      mode: 'incremental',
+      changed: batch,
+      fetchFn: providerFetch,
+      isStale,
+    })
+    surfaceStop(outcome.stopped)
+    if (isStale()) {
+      return 'stop'
     }
-    running = true
-    try {
-      do {
-        queued = false
-        if (dirty.size === 0) {
-          break
-        }
-        const batch = [...dirty]
-        const outcome = await reconcileAssetDescriptions({
-          providers: options.getProviders(),
-          generation: options.generation,
-          mode: 'incremental',
-          changed: batch,
-          fetchFn: providerFetch,
-          isStale: () => disposed,
-        })
-        surfaceStop(outcome.stopped)
-        if (disposed) {
-          return
-        }
-        // Fold the new descriptions into the referencing notes' search rows so
-        // a query matching a description surfaces the note (Plan 20 search
-        // integration). Runs even on a stop — whatever was described is real.
-        // A re-index failure must not crash the loop: the descriptions are
-        // written, so search catches up on the note's next re-index or a rebuild.
-        if (outcome.describedAssetPaths.length > 0) {
-          try {
-            await reindexNotesReferencing(outcome.describedAssetPaths, options.generation)
-          } catch (cause) {
-            console.warn('asset-description re-index failed:', cause)
-          }
-        }
-        if (disposed) {
-          return
-        }
-        if (outcome.stopped === null) {
-          for (const path of batch) {
-            dirty.delete(path)
-          }
-        } else {
-          break // transient/config stop: keep the batch, wait for the next trigger
-        }
-      } while (queued && !disposed)
-    } finally {
-      running = false
+    // Runs even on a stop — whatever was described is real. A re-index failure
+    // must not crash the loop: the descriptions are written, so search catches
+    // up on the note's next re-index or a rebuild.
+    if (outcome.describedAssetPaths.length > 0) {
+      try {
+        await reindexNotesReferencing(outcome.describedAssetPaths, options.generation)
+      } catch (cause) {
+        console.warn('asset-description re-index failed:', cause)
+      }
+    }
+    if (isStale()) {
+      return 'stop'
+    }
+    if (outcome.stopped !== null) {
+      return 'stop' // transient/config stop: keep the batch, wait for the next trigger
+    }
+    for (const path of batch) {
+      dirty.delete(path)
     }
   }
 
-  function schedule(): void {
-    if (!disposed) {
-      void run()
-    }
-  }
+  const loop = createBackgroundReconciler({ pass: reconcile })
 
   function markDirty(paths: readonly string[]): void {
     let added = false
@@ -155,7 +132,7 @@ export function createAssetDescribeController(
       }
     }
     if (added) {
-      schedule()
+      loop.schedule()
     }
   }
 
@@ -169,7 +146,7 @@ export function createAssetDescribeController(
   async function markAssetsFromNotes(notePaths: readonly string[]): Promise<void> {
     const referenced = new Set<string>()
     for (const notePath of notePaths) {
-      if (disposed) {
+      if (loop.isStale()) {
         return
       }
       let source: string
@@ -184,25 +161,17 @@ export function createAssetDescribeController(
         }
       }
     }
-    if (referenced.size > 0 && !disposed) {
+    if (referenced.size > 0 && !loop.isStale()) {
       markDirty([...referenced])
     }
   }
 
   function start(): void {
-    if (disposed || started) {
+    if (started || loop.isStale()) {
       return // idempotent: never register the DOM/watcher listeners twice
     }
     started = true
-    const onWake = (): void => {
-      schedule() // retry any assets a prior pass left dirty after coming back online
-    }
-    window.addEventListener('focus', onWake)
-    window.addEventListener('online', onWake)
-    domDisposers.push(
-      () => window.removeEventListener('focus', onWake),
-      () => window.removeEventListener('online', onWake),
-    )
+    loop.retryOnWake() // retry assets a prior pass left dirty after coming back online
     if (!hasBridge()) {
       return // browser dev: no indexer to follow
     }
@@ -211,41 +180,32 @@ export function createAssetDescribeController(
     // already in the index, so the privacy gate can't race a just-written private
     // note's indexing. Carries the full batch — asset-file upserts (a dropped
     // image) and note upserts (which may newly reference an asset).
-    unlisten = subscribeIndexApplied((changes, generation) => {
-      if (generation !== options.generation) {
-        return // a delayed emit from a graph we've switched away from
-      }
-      const newAssets: string[] = []
-      const changedNotes: string[] = []
-      for (const change of changes) {
-        if (change.kind !== 'upsert') {
-          continue
+    loop.onDispose(
+      subscribeIndexApplied((changes, generation) => {
+        if (generation !== options.generation) {
+          return // a delayed emit from a graph we've switched away from
         }
-        if (isEligibleAssetPath(change.path)) {
-          newAssets.push(change.path)
-        } else if (isNotePath(change.path)) {
-          changedNotes.push(change.path)
+        const newAssets: string[] = []
+        const changedNotes: string[] = []
+        for (const change of changes) {
+          if (change.kind !== 'upsert') {
+            continue
+          }
+          if (isEligibleAssetPath(change.path)) {
+            newAssets.push(change.path)
+          } else if (isNotePath(change.path)) {
+            changedNotes.push(change.path)
+          }
         }
-      }
-      if (newAssets.length > 0) {
-        markDirty(newAssets)
-      }
-      if (changedNotes.length > 0) {
-        void markAssetsFromNotes(changedNotes)
-      }
-    })
+        if (newAssets.length > 0) {
+          markDirty(newAssets)
+        }
+        if (changedNotes.length > 0) {
+          void markAssetsFromNotes(changedNotes)
+        }
+      }),
+    )
   }
 
-  return {
-    start,
-    schedule,
-    dispose: () => {
-      disposed = true
-      unlisten?.()
-      unlisten = null
-      for (const stop of domDisposers.splice(0)) {
-        stop()
-      }
-    },
-  }
+  return { start, schedule: loop.schedule, dispose: loop.dispose }
 }
