@@ -36,9 +36,9 @@ afterEach(() => {
 })
 
 describe('DescribeAssetsField', () => {
-  it('reflects and toggles the auto-describe setting', () => {
+  it('reflects and toggles the automatic OCR setting', () => {
     render(<DescribeAssetsField />)
-    const toggle = screen.getByRole('switch', { name: /describe new assets automatically/i })
+    const toggle = screen.getByRole('switch', { name: /ocr new assets automatically/i })
     expect(toggle.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(toggle)
     expect(updateSettings).toHaveBeenCalledWith({ describeAssets: false })
@@ -47,19 +47,19 @@ describe('DescribeAssetsField', () => {
   it('disables the backfill until an AI provider is configured', () => {
     settingsRef.current = { ...settingsRef.current, aiProviders: [], defaultAiProviderId: null }
     render(<DescribeAssetsField />)
-    expect(screen.getByRole('button', { name: /describe existing assets/i }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: /backfill existing assets/i }).hasAttribute('disabled')).toBe(true)
     expect(screen.queryByText(/add an ai provider to enable this/i)).not.toBeNull()
   })
 
   it('confirms the cost before running the backfill, then runs it pinned to the graph', () => {
     render(<DescribeAssetsField />)
-    fireEvent.click(screen.getByRole('button', { name: /describe existing assets/i }))
+    fireEvent.click(screen.getByRole('button', { name: /backfill existing assets/i }))
 
     // The cost warning appears; nothing is sent until the user confirms.
-    expect(screen.queryByText(/describe existing assets\?/i)).not.toBeNull()
+    expect(screen.queryByText(/backfill existing assets\?/i)).not.toBeNull()
     expect(backfill).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: /^describe assets$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^backfill existing assets$/i }))
     expect(backfill).toHaveBeenCalledWith(5, {
       providers: [PROVIDER],
       defaultProviderId: 'cfg',
@@ -68,7 +68,7 @@ describe('DescribeAssetsField', () => {
 
   it('cancels without sending anything', () => {
     render(<DescribeAssetsField />)
-    fireEvent.click(screen.getByRole('button', { name: /describe existing assets/i }))
+    fireEvent.click(screen.getByRole('button', { name: /backfill existing assets/i }))
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
     expect(backfill).not.toHaveBeenCalled()
   })

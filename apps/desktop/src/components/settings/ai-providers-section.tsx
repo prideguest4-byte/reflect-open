@@ -4,7 +4,6 @@ import { useAiProviders } from '@/hooks/use-ai-providers'
 import { Button } from '@/components/ui/button'
 import { AddAiProviderDialog } from './add-ai-provider-dialog'
 import { AiProviderRow } from './ai-provider-row'
-import { DescribeAssetsField } from './describe-assets-field'
 import { SettingsSection } from './section'
 
 /**
@@ -48,7 +47,6 @@ export function AiProvidersSection(): ReactElement {
         </Button>
       </div>
       {adding ? <AddAiProviderDialog onAdd={addProvider} onClose={() => setAdding(false)} /> : null}
-      <DescribeAssetsField />
     </SettingsSection>
   )
 }
