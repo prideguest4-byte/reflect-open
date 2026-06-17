@@ -6,6 +6,7 @@ import {
 } from '@reflect/core'
 import { startOperation } from '@/lib/operations'
 import { providerFetch } from '@/lib/provider-fetch'
+import { invalidateIndexQueries } from '@/lib/query-client'
 
 let inFlight: { generation: number; promise: Promise<ReconcileAssetDescriptionsOutcome> } | null = null
 
@@ -64,6 +65,10 @@ async function runBackfill(
     } catch (cause) {
       console.warn('asset-description re-index failed:', cause)
     }
+    // The re-index wrote search rows directly (not via the watcher → onApplied
+    // path), so the index-backed query caches (staleTime: Infinity) need a manual
+    // refresh for ⌘K to reflect the new descriptions.
+    invalidateIndexQueries()
   }
   if (outcome.stopped === null || outcome.stopped.reason === 'stale') {
     operation.done()

@@ -21,6 +21,7 @@ const reindexNotesReferencing = vi.hoisted(() =>
   vi.fn<(assetPaths: readonly string[], generation: number) => Promise<void>>(),
 )
 const failOperation = vi.hoisted(() => vi.fn<(message: string) => void>())
+const invalidateIndexQueries = vi.hoisted(() => vi.fn<() => void>())
 
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
@@ -35,6 +36,9 @@ vi.mock('@/lib/provider-fetch', () => ({
 }))
 vi.mock('@/lib/operations', () => ({
   startOperation: () => ({ progress: vi.fn(), done: vi.fn(), fail: failOperation }),
+}))
+vi.mock('@/lib/query-client', () => ({
+  invalidateIndexQueries,
 }))
 
 const PROVIDERS: AiProvidersState = {
@@ -140,6 +144,9 @@ describe('createAssetDescribeController', () => {
     await flush()
 
     expect(reindexNotesReferencing).toHaveBeenCalledWith(['assets/a.png'], 3)
+    // The re-index wrote search rows directly, so the caches must be invalidated
+    // for ⌘K to reflect the new descriptions.
+    expect(invalidateIndexQueries).toHaveBeenCalled()
   })
 
   it('does not re-index when nothing was described this pass', async () => {

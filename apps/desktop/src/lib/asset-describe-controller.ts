@@ -13,6 +13,7 @@ import {
 } from '@reflect/core'
 import { createBackgroundReconciler } from '@/lib/background-reconciler'
 import { providerFetch } from '@/lib/provider-fetch'
+import { invalidateIndexQueries } from '@/lib/query-client'
 
 /**
  * The asset-description lifecycle for one graph session (Plan 20). Built on
@@ -109,6 +110,10 @@ export function createAssetDescribeController(
       } catch (cause) {
         console.warn('asset-description re-index failed:', cause)
       }
+      // The re-index wrote search rows directly (not via the watcher → onApplied
+      // path), so nothing invalidated the index-backed query caches
+      // (staleTime: Infinity). Refresh them so ⌘K reflects the new descriptions.
+      invalidateIndexQueries()
     }
     if (isStale()) {
       return 'stop'
