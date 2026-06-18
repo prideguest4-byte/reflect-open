@@ -8,6 +8,7 @@ import {
   type Ref,
 } from 'react'
 import { openPath, openUrl } from '@tauri-apps/plugin-opener'
+import { errorMessage } from '@reflect/core'
 import { type MarkMode } from '@meowdown/core'
 import {
   MeowdownEditor,
@@ -175,7 +176,9 @@ export function NoteEditor({
   )
   const handleLinkClick = useCallback(
     ({ href }: { href: string; event: MouseEvent }) => {
-      void openUrl(href).catch(() => {})
+      void openUrl(href).catch((cause) => {
+        console.error('open link failed:', errorMessage(cause))
+      })
     },
     [],
   )
@@ -202,7 +205,9 @@ export function NoteEditor({
   )
   const handleOpenLightboxImage = useCallback((image: LightboxImage) => {
     if (image.openPath !== null) {
-      void openPath(image.openPath, 'Preview').catch(() => {})
+      void openPath(image.openPath, 'Preview').catch((cause) => {
+        console.error('open image in Preview failed:', errorMessage(cause))
+      })
     }
   }, [])
 
