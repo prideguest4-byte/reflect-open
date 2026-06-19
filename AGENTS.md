@@ -149,7 +149,7 @@ When writing or modifying code in this project, please adhere to the following c
 3.  **Tests as Documentation**: Rely on comprehensive tests (which will be added later if not present) to document the behavior and usage of the code, rather than extensive comments within the code itself.
 4.  **File naming conventions**: Use kebab-case when naming directories, TypeScript, and other files.
 5.  **Type checking**: after major modifications run `pnpm typecheck` and fix any errors.
-6.  **UX/UI** We are using Tailwind CSS, React, shadcn/ui components and Lucide React icons. Generate responsive designs. Provide default props for React Components. **Always check `apps/desktop/src/components/ui/` first before building any custom UI.** For any popup, popover, dropdown, dialog, tooltip, menu, or overlay — use the existing shadcn component from that directory. Never build a custom implementation when a shadcn primitive already exists.
+6.  **UX/UI** We are using Tailwind CSS, React, shadcn/ui components and Lucide React icons. Generate responsive designs. Provide default props for React Components. **Always check `apps/desktop/src/components/ui/` first before building any custom UI.** For any popup, popover, dropdown, dialog, tooltip, menu, or overlay — use the existing shadcn component from that directory. If shadcn already covers the needed primitive but it is not in `components/ui`, install or generate it there and use it. Never build a custom implementation when a shadcn primitive already exists.
 7.  **Models/db/tables** When pulling in a database type, Kysely.
 8.  **Open-source conventions** Pretend you are writing code for a open-source project. Write best-in-class code.
 
@@ -248,5 +248,5 @@ Non-negotiables:
 # React UI and Styling
 
 - Use Shadcn UI, Radix, and Tailwind Aria for components and styling
-- **Always use the shadcn component from `apps/desktop/src/components/ui/` for any interactive or overlay UI** — dropdown menus, popovers, dialogs, tooltips, comboboxes, etc. Never hand-roll these.
+- **Always use the shadcn component from `apps/desktop/src/components/ui/` for any interactive or overlay UI** — dropdown menus, popovers, dialogs, tooltips, comboboxes, etc. If shadcn already covers the needed primitive but it is missing locally, install or generate it into `components/ui` and use it. Never hand-roll these.
 - Implement responsive design with Tailwind CSS to cater for smaller screens.
