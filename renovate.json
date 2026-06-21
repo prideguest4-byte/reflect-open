@@ -1,4 +1,16 @@
 {
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "dependencyDashboard": true,
-  "extends": ["github>ocavue/config-renovate"]
+  "extends": ["github>ocavue/config-renovate"],
+  "packageRules": [
+    {
+      "matchPackageNames": ["@meowdown/*"],
+      "groupName": "meowdown",
+      "groupSlug": "meowdown",
+      "minimumReleaseAge": "0 days",
+      "prPriority": 100,
+      "dependencyDashboardApproval": false,
+      "draftPR": false
+    }
+  ]
 }
