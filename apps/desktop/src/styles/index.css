@@ -233,23 +233,13 @@ body {
 }
 
 /* ---- Editor (Plan 05) ------------------------------------------------------
-   meowdown ships a default editor theme (`@meowdown/core/style.css`, imported
-   by the editor components) driven by `--meowdown-*` variables, including
-   markdown-syntax visibility per the MarkMode `data-mark-mode` / `.show`
-   contract, tag pills, wikilink styling, and selection colors. We remap those
-   variables to Reflect tokens and keep only the deviations the V1 design calls
-   for.
-
-   The remap lives on `html:root`, not on `.reflect-editor`. meowdown renders
-   the block handle and the slash/tag/wikilink menus as DOM *siblings* of the
-   editable element (and hoists the menus into the top layer via the Popover
-   API), so variables scoped to the editable element never reach those popups
-   by inheritance, so the grip and menu text fall back to meowdown's built-in
-   `light-dark()` defaults and read as unstyled in dark mode. Root-scoped
-   variables do reach them, and `html:root` (0-1-1) outranks meowdown's own
-   `:root` defaults (0-1-0) and loads after them, so our values win wherever the
-   theme is read. (The `--meowdown-autocomplete-*` pair already lived at root for
-   this exact reason; the rest now joins it.) */
+   meowdown reads its theme from `--meowdown-*` variables; we remap them to
+   Reflect tokens. This lives on `html:root`, not `.reflect-editor`: meowdown
+   renders the block handle and slash/tag/wikilink menus as DOM siblings of the
+   editable element (menus hoist into the top layer via the Popover API), so
+   element-scoped vars never reach them and they fall back to meowdown's
+   `light-dark()` defaults (unstyled in dark mode). `html:root` outranks
+   meowdown's own `:root` defaults and loads after them, so our values win. */
 
 html:root {
   --meowdown-text: var(--text);
