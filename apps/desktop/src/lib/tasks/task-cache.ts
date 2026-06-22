@@ -1,5 +1,5 @@
 import { parseNote, type OpenTask } from '@reflect/core'
-import { sameTask } from '@/lib/tasks/task-identity'
+import { sameTask, taskKey } from '@/lib/tasks/task-identity'
 
 /**
  * Pure transforms over a cached task list ({@link OpenTask}[]), the optimistic
@@ -45,6 +45,17 @@ export function asCompleted(
   }
   const kept = rows.filter((row) => !tasks.some((task) => sameTask(row, task)))
   return [...tasks.map((task) => withCheckedMarker(task, true)), ...kept]
+}
+
+/**
+ * Move `tasks` into the open list as unchecked, de-duping any already present.
+ * The open-tasks query is the primary Tasks view data source, so a not-yet-loaded
+ * list materializes as just the reopened rows.
+ */
+export function asOpen(rows: OpenTask[] | undefined, tasks: OpenTask[]): OpenTask[] {
+  const reopened = tasks.map((task) => withCheckedMarker(task, false))
+  const reopenedKeys = new Set(reopened.map(taskKey))
+  return [...(rows ?? []).filter((row) => !reopenedKeys.has(taskKey(row))), ...reopened]
 }
 
 /**

@@ -1,42 +1,33 @@
 import { useMutation } from '@tanstack/react-query'
-import { clearTaskDueDate, setTaskDueDate, type OpenTask } from '@reflect/core'
+import { type OpenTask } from '@reflect/core'
 import { convertTaskToBullet, deleteTask, editTask, insertTask, toggleTask } from '@/lib/note-task'
-import { taskContent } from '@/lib/tasks/task-content'
+import { editAndToggleError, isEditAndToggleError } from '@/lib/tasks/edit-and-toggle-error'
 import {
   archiveRecentlyCompleted,
   forgetRecentlyCompleted,
+  hasRecentlyCompleted,
   markRecentlyCompleted,
 } from '@/lib/tasks/recently-completed'
+import { scheduledContent } from '@/lib/tasks/task-schedule-content'
 import {
   asCompleted,
+  asOpen,
   taskRawWithContent,
-  withCheckedMarker,
   withEditedTask,
   withoutTasks,
 } from '@/lib/tasks/task-cache'
 import { taskKey } from '@/lib/tasks/task-identity'
+import { insertedTaskRow, type InsertTaskTarget } from '@/lib/tasks/task-insert-target'
+import { useTaskCheckboxAction } from '@/lib/tasks/use-task-checkbox-action'
 import { useTaskCacheWriter } from '@/lib/tasks/use-task-cache'
 import { useGraph } from '@/providers/graph-provider'
-
-/**
- * The note a new task is added to (Return-to-add, V1): its path plus the context
- * the optimistic row needs to render and bucket before the reindex — the same
- * fields {@link OpenTask} carries beyond the marker itself.
- */
-export interface InsertTaskTarget {
-  notePath: string
-  noteTitle: string
-  dailyDate: string | null
-  isPinned: boolean
-  pinnedOrder: number | null
-}
 
 /**
  * Bulk task actions for the Tasks view's keyboard shortcuts (Plan 18): complete
  * a selection (⌘↵), delete a selection (⌫/⌘⌫), edit one task from the inline
  * editor, and add a task (Return). They update the open and completed caches
  * optimistically through the shared {@link useTaskCacheWriter} — the same path
- * single-row {@link useCompleteTask} takes — so the selection reacts instantly,
+ * single-row checkbox toggle takes — so the selection reacts instantly,
  * then the reindex reconciles. A failed write rolls every row back and surfaces
  * the reason once.
  *
@@ -56,6 +47,8 @@ export interface TaskActions {
   remove: (tasks: OpenTask[]) => void
   /** Replace one task's content from the inline editor (Plan 18). */
   edit: (task: OpenTask, content: string) => void
+  /** Toggle one row checkbox with exact rollback semantics for inline-editor checkbox clicks. */
+  checkboxToggle: (task: OpenTask) => void
   /**
    * Add a new empty task to `target`'s note (Return-to-add, V1) and return the
    * optimistic row to select — its inline editor opens focused. Resolves to
@@ -74,11 +67,11 @@ export interface TaskActions {
     target: InsertTaskTarget,
   ) => Promise<OpenTask | null>
   /**
-   * Save an inline edit and complete the task in one go (⌘↵ while editing). The
-   * two writes run **sequentially** — edit then toggle the rebuilt line — so they
-   * can't race each other on the same note line.
+   * Save an inline edit and toggle the task checkbox in one go. The two writes
+   * run **sequentially** — edit then toggle the rebuilt line — so they can't race
+   * each other on the same note line.
    */
-  editAndComplete: (task: OpenTask, content: string) => void
+  editAndToggle: (task: OpenTask, content: string) => void
   /**
    * Schedule a selection (⌘⇧S / the calendar, V1): set each task's due date to
    * `isoDate`, or clear it when `isoDate` is null. Written as a content edit that
@@ -96,7 +89,7 @@ export interface TaskActions {
    * editing). The two writes run **sequentially** — edit then strip the marker
    * from the rebuilt line — so the unsaved draft is never lost to the convert
    * landing first; the convert is given the post-edit `raw`, like {@link
-   * editAndComplete}.
+   * editAndToggle}.
    */
   editAndConvertToBullet: (task: OpenTask, content: string) => void
   /** Archive (⌘⇧↵): stop showing the session's completed tasks in the active list. */
@@ -104,16 +97,11 @@ export interface TaskActions {
   isPending: boolean
 }
 
-/** The content a scheduled/unscheduled task line carries after the marker. */
-function scheduledContent(task: OpenTask, isoDate: string | null): string {
-  const content = taskContent(task.raw)
-  return isoDate === null ? clearTaskDueDate(content) : setTaskDueDate(content, isoDate)
-}
-
 export function useTaskActions(): TaskActions {
   const { graph } = useGraph()
   const root = graph?.root ?? null
   const cache = useTaskCacheWriter()
+  const checkboxAction = useTaskCheckboxAction()
 
   const completeMutation = useMutation({
     mutationFn: async (tasks: OpenTask[]) => {
@@ -159,10 +147,8 @@ export function useTaskActions(): TaskActions {
       const snapshot = await cache.snapshot()
       // Put them back in the open list (unchecked), drop them from the completed
       // list and this session's struck set — the inverse of completing.
-      const reopened = tasks.map((task) => withCheckedMarker(task, false))
-      const reopenedKeys = new Set(reopened.map(taskKey))
       cache.patch(
-        (rows) => [...(rows ?? []).filter((row) => !reopenedKeys.has(taskKey(row))), ...reopened],
+        (rows) => asOpen(rows, tasks),
         (rows) => withoutTasks(rows, tasks),
       )
       forgetRecentlyCompleted(root, tasks.map(taskKey))
@@ -320,24 +306,7 @@ export function useTaskActions(): TaskActions {
     onError: (cause) => cache.reconcile('Adding task', cause),
   })
 
-  // Build the optimistic open row for a just-written task. Its `raw` is the empty
-  // checkbox the parser will record (`[ ] ` — trailing space and all), so a
-  // follow-up edit's staleness guard matches disk before the reindex lands.
-  const insertedRow = (target: InsertTaskTarget, markerOffset: number): OpenTask => ({
-    notePath: target.notePath,
-    markerOffset,
-    raw: '[ ] ',
-    checked: false,
-    text: '',
-    noteTitle: target.noteTitle,
-    dueDate: null,
-    dailyDate: target.dailyDate,
-    isPinned: target.isPinned,
-    pinnedOrder: target.pinnedOrder,
-    updatedAt: Date.now(),
-  })
-
-  const editAndCompleteMutation = useMutation({
+  const editAndToggleMutation = useMutation({
     mutationFn: async ({ task, content }: { task: OpenTask; content: string }) => {
       const generation = graph?.generation
       if (generation === undefined) {
@@ -346,26 +315,48 @@ export function useTaskActions(): TaskActions {
       // Edit, then toggle the *rewritten* line — sequential, and the toggle is
       // given the post-edit `raw` so it locates the line the edit just wrote
       // (the marker offset is unchanged; only the content after it moved).
-      await editTask(task, content, generation)
-      await toggleTask({ ...task, raw: taskRawWithContent(task, content) }, generation)
+      try {
+        await editTask(task, content, generation)
+      } catch (cause) {
+        throw editAndToggleError('edit', cause)
+      }
+      try {
+        await toggleTask({ ...task, raw: taskRawWithContent(task, content) }, generation)
+      } catch (cause) {
+        throw editAndToggleError('toggle', cause)
+      }
     },
     onMutate: async ({ task, content }: { task: OpenTask; content: string }) => {
       const snapshot = await cache.snapshot()
-      // Surface the *edited* row struck (its new text), in both the completed
-      // cache (archived on) and the session set (off) — not the pre-edit task.
       const edited = withEditedTask([task], task, content)?.[0] ?? task
-      cache.patch(
-        (rows) => withoutTasks(rows, [task]),
-        (rows) => asCompleted(rows, [edited]),
-      )
-      markRecentlyCompleted(root, [edited])
-      return snapshot
+      const wasRecentlyCompleted = hasRecentlyCompleted(root, taskKey(task))
+      if (task.checked) {
+        cache.patch(
+          (rows) => asOpen(rows, [edited]),
+          (rows) => withoutTasks(rows, [task]),
+        )
+        forgetRecentlyCompleted(root, [taskKey(task)])
+      } else {
+        // Surface the *edited* row struck (its new text), in both the completed
+        // cache (archived on) and the session set (off) — not the pre-edit task.
+        cache.patch(
+          (rows) => withoutTasks(rows, [task]),
+          (rows) => asCompleted(rows, [edited]),
+        )
+        markRecentlyCompleted(root, [edited])
+      }
+      return { snapshot, edited, wasRecentlyCompleted }
     },
-    onError: (cause, { task }) => {
+    onError: (cause, { task }, context) => {
+      const failure = isEditAndToggleError(cause) ? cause : null
       // Two sequential writes (edit then toggle) — if the toggle fails after the
       // edit lands, refetch rather than roll back over the persisted edit.
-      cache.reconcile('Completing task', cause)
-      forgetRecentlyCompleted(root, [taskKey(task)])
+      cache.reconcile(task.checked ? 'Reopening task' : 'Completing task', failure?.cause ?? cause)
+      if (task.checked && context?.wasRecentlyCompleted) {
+        markRecentlyCompleted(root, [failure?.phase === 'toggle' ? context.edited : task])
+      } else if (!task.checked) {
+        forgetRecentlyCompleted(root, [taskKey(task)])
+      }
     },
   })
 
@@ -375,7 +366,8 @@ export function useTaskActions(): TaskActions {
       reopenMutation.isPending ||
       deleteMutation.isPending ||
       editMutation.isPending ||
-      editAndCompleteMutation.isPending ||
+      editAndToggleMutation.isPending ||
+      checkboxAction.isPending ||
       insertMutation.isPending ||
       scheduleMutation.isPending ||
       convertMutation.isPending ||
@@ -414,6 +406,7 @@ export function useTaskActions(): TaskActions {
         editMutation.mutate({ task, content })
       }
     },
+    checkboxToggle: (task) => checkboxAction.toggle(task),
     insert: async (target) => {
       if (graph?.generation === undefined) {
         return null
@@ -424,7 +417,7 @@ export function useTaskActions(): TaskActions {
       } catch {
         return null // reconcile already surfaced the failure
       }
-      const created = insertedRow(target, markerOffset)
+      const created = insertedTaskRow(target, markerOffset)
       cache.addOpen(created)
       return created
     },
@@ -451,13 +444,13 @@ export function useTaskActions(): TaskActions {
       } catch {
         return null
       }
-      const created = insertedRow(target, markerOffset)
+      const created = insertedTaskRow(target, markerOffset)
       cache.addOpen(created)
       return created
     },
-    editAndComplete: (task, content) => {
-      if (graph?.generation !== undefined && !editAndCompleteMutation.isPending) {
-        editAndCompleteMutation.mutate({ task, content })
+    editAndToggle: (task, content) => {
+      if (graph?.generation !== undefined && !editAndToggleMutation.isPending) {
+        editAndToggleMutation.mutate({ task, content })
       }
     },
     schedule: (tasks, isoDate) => {

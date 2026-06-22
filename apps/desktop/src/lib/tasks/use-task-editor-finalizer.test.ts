@@ -9,6 +9,7 @@ function setup(initial = 'milk') {
   const onDeleteEmpty = vi.fn()
   const onCancel = vi.fn()
   const onComplete = vi.fn()
+  const onCheckboxToggle = vi.fn()
   const onConvertToBullet = vi.fn()
   const onFlush = vi.fn()
   const { result, unmount } = renderHook(() =>
@@ -20,6 +21,7 @@ function setup(initial = 'milk') {
       onDeleteEmpty,
       onCancel,
       onComplete,
+      onCheckboxToggle,
       onConvertToBullet,
       onFlush,
     }),
@@ -36,6 +38,7 @@ function setup(initial = 'milk') {
     onDeleteEmpty,
     onCancel,
     onComplete,
+    onCheckboxToggle,
     onConvertToBullet,
     onFlush,
   }
@@ -130,6 +133,23 @@ describe('useTaskEditorFinalizer', () => {
     expect(emptied.onComplete).not.toHaveBeenCalled()
   })
 
+  it('checkbox toggles: unchanged toggles, a change saves first, emptied deletes', () => {
+    const unchanged = setup('milk')
+    unchanged.api().checkboxToggle()
+    expect(unchanged.onCheckboxToggle).toHaveBeenCalledWith(null)
+
+    const changed = setup('milk')
+    changed.type('oat milk')
+    changed.api().checkboxToggle()
+    expect(changed.onCheckboxToggle).toHaveBeenCalledWith('oat milk')
+
+    const emptied = setup('milk')
+    emptied.type('   ')
+    emptied.api().checkboxToggle()
+    expect(emptied.onDelete).toHaveBeenCalled()
+    expect(emptied.onCheckboxToggle).not.toHaveBeenCalled()
+  })
+
   it('converts to a bullet: unchanged converts as-is, a change saves first, emptied deletes', () => {
     const unchanged = setup('milk')
     unchanged.api().convertToBullet()
@@ -192,6 +212,7 @@ describe('useTaskEditorFinalizer', () => {
           onDeleteEmpty: vi.fn(),
           onCancel: vi.fn(),
           onComplete: vi.fn(),
+          onCheckboxToggle: vi.fn(),
           onConvertToBullet: vi.fn(),
           onFlush: props.onFlush,
         }),

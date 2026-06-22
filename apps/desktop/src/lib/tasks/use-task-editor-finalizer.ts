@@ -13,6 +13,8 @@ export interface TaskEditorApi {
   cancel: () => void
   /** ⌘↵: save any change, then complete the task (or delete it if emptied). */
   complete: () => void
+  /** Checkbox click: save any change, then toggle checked state (or delete if emptied). */
+  checkboxToggle: () => void
   /**
    * ⌘⇧K: save any change, then strip the marker so the task becomes a plain
    * bullet and leaves the Tasks view (an emptied row is deleted instead). Saving
@@ -49,6 +51,11 @@ export interface TaskEditorFinalizerOptions {
    */
   onComplete: (content: string | null) => void
   /**
+   * Toggle the task checkbox from the row control. `content` is the new text when
+   * the edit changed it (save **and** toggle), or `null` to toggle unchanged.
+   */
+  onCheckboxToggle: (content: string | null) => void
+  /**
    * Convert the task to a plain bullet and exit (⌘⇧K). `content` is the new text
    * when the edit changed it (save **and** convert), or `null` to convert the
    * unchanged task as-is.
@@ -76,9 +83,10 @@ export interface TaskEditorFinalizer {
  * Finalizing is single-shot — the first finalizer to run `claim()`s the editor,
  * so the row unmounting afterward can't double-fire a write. Two kinds:
  *
- * - **Explicit exit** (the keymap): Enter commits; Escape cancels; ⌘↵ completes
- *   (saving the edit first when changed); ⌘⌫ deletes; empty + Backspace deletes.
- *   Each ends edit mode (the screen clears the sole selection).
+ * - **Explicit exit**: Enter commits; Escape cancels; ⌘↵ completes (saving the
+ *   edit first when changed); a checkbox click toggles (also saving first);
+ *   ⌘⌫ deletes; empty + Backspace deletes. Each ends edit mode (the screen clears
+ *   the sole selection).
  * - **Unmount flush**: when the selection has *already* moved off this row, the
  *   cleanup persists a changed edit via `onFlush` but never clears the selection
  *   (it's the new row's) and never cancels — an unchanged row is simply dropped.
@@ -96,6 +104,7 @@ export function useTaskEditorFinalizer({
   onDeleteEmpty,
   onCancel,
   onComplete,
+  onCheckboxToggle,
   onConvertToBullet,
   onFlush,
 }: TaskEditorFinalizerOptions): TaskEditorFinalizer {
@@ -109,6 +118,7 @@ export function useTaskEditorFinalizer({
     commitAndContinue: () => {},
     cancel: () => {},
     complete: () => {},
+    checkboxToggle: () => {},
     convertToBullet: () => {},
     delete: () => {},
     deleteEmpty: () => {},
@@ -196,6 +206,19 @@ export function useTaskEditorFinalizer({
           onComplete(result.content)
         } else {
           onComplete(null)
+        }
+      },
+      checkboxToggle: () => {
+        if (!claim()) {
+          return
+        }
+        const result = resolveTaskEdit(initial, currentRef.current)
+        if (result.type === 'delete') {
+          onDelete()
+        } else if (result.type === 'commit') {
+          onCheckboxToggle(result.content)
+        } else {
+          onCheckboxToggle(null)
         }
       },
       convertToBullet: () => {

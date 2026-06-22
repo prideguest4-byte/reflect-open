@@ -1,9 +1,9 @@
-import type { MouseEvent, MutableRefObject, ReactElement } from 'react'
+import { useRef, type MouseEvent, type MutableRefObject, type ReactElement } from 'react'
 import { ArrowRight, Circle, CircleCheck } from 'lucide-react'
 import type { OpenTask } from '@reflect/core'
 import { formatDayLabel } from '@/lib/dates'
 import { taskKey } from '@/lib/tasks/task-identity'
-import { useCompleteTask } from '@/lib/tasks/use-complete-task'
+import { useTaskCheckboxToggle } from '@/lib/tasks/use-task-checkbox-toggle'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/providers/settings-provider'
 import { TaskEditor, type TaskNavigate } from './task-editor'
@@ -17,6 +17,8 @@ interface TaskRowProps {
   selected: boolean
   /** Whether this row is the sole selection — it shows the inline editor. */
   editing: boolean
+  /** Whether a Tasks-view write is already in flight. */
+  taskActionPending: boolean
   /** Select the row, honoring ⌘/Ctrl (toggle) and Shift (range) modifiers. */
   onSelect: (event: MouseEvent) => void
   /** Persist an inline edit (content after the marker) and exit edit mode. */
@@ -31,6 +33,8 @@ interface TaskRowProps {
   onEditCancel: () => void
   /** ⌘↵ in the editor: complete the task, saving the edit first when `content` isn't null. */
   onEditComplete: (content: string | null) => void
+  /** Checkbox click while editing: save any draft, then toggle checked state. */
+  onEditCheckboxToggle: (content: string | null) => void
   /** ⌘⇧K in the editor: convert the task to a bullet, saving the edit first when changed. */
   onEditConvertToBullet: (content: string | null) => void
   /** Persist a changed edit when the row unmounts (selection moved), without exiting. */
@@ -43,7 +47,7 @@ interface TaskRowProps {
 }
 
 /**
- * One task row in the Tasks view (V1 design): a circle checkbox that completes
+ * One task row in the Tasks view (V1 design): a circle checkbox that toggles
  * the task (the guarded write-back, Plan 18), the task content with inline date
  * and link chips ({@link TaskText}), the source-note date on the right, and an
  * arrow that opens the source note. Clicking the row body **selects** it (V1's
@@ -56,6 +60,7 @@ export function TaskRow({
   showSource,
   selected,
   editing,
+  taskActionPending,
   onSelect,
   onEditCommit,
   onEditContinue,
@@ -63,6 +68,7 @@ export function TaskRow({
   onEditDeleteEmpty,
   onEditCancel,
   onEditComplete,
+  onEditCheckboxToggle,
   onEditConvertToBullet,
   onEditFlush,
   onEditNavigate,
@@ -70,28 +76,34 @@ export function TaskRow({
   onOpen,
 }: TaskRowProps): ReactElement {
   const { settings } = useSettings()
-  const { complete, isPending } = useCompleteTask(task)
-  const done = task.checked || isPending
+  const { toggle, isPending } = useTaskCheckboxToggle(task)
+  const checkboxToggleControllerRef = useRef<(() => void) | null>(null)
+  const checkboxPending = isPending || taskActionPending
+  const done = task.checked
   const label = task.text || 'Empty task'
 
   return (
     <li
       data-task-key={taskKey(task)}
       className={cn(
-        'group/task flex min-h-10 items-start gap-3 rounded-md bg-surface px-2 py-2 shadow-sm',
+        'group/task flex min-h-10 items-start gap-3 border-b border-border bg-surface px-4 py-2 transition-colors duration-100 lg:px-12',
         selected
-          ? 'ring-2 ring-inset ring-purple-400'
+          ? 'bg-accent-soft ring-1 ring-inset ring-accent/20 dark:ring-accent/10'
           : 'hover:bg-surface-hover dark:bg-surface dark:hover:bg-surface-hover',
       )}
     >
       <button
         type="button"
         data-task-row
-        aria-label={task.checked ? 'Completed task' : `Complete: ${label}`}
-        // Disabled while editing so a checkbox click can't race the editor's
-        // write-back (and so focus can't drift off the editor onto it).
-        disabled={task.checked || isPending || editing}
-        onClick={complete}
+        aria-label={task.checked ? `Reopen: ${label}` : `Complete: ${label}`}
+        disabled={checkboxPending}
+        onClick={() => {
+          if (editing) {
+            checkboxToggleControllerRef.current?.()
+            return
+          }
+          toggle()
+        }}
         // h-6 matches the text/editor's leading-6 line so the circle centers on
         // the first line (items-start keeps it there when a task wraps).
         className="flex h-6 shrink-0 items-center text-text-muted transition-colors hover:text-text focus-visible:text-text focus-visible:outline-none disabled:cursor-default"
@@ -111,9 +123,11 @@ export function TaskRow({
           onDeleteEmpty={onEditDeleteEmpty}
           onCancel={onEditCancel}
           onComplete={onEditComplete}
+          onCheckboxToggle={onEditCheckboxToggle}
           onConvertToBullet={onEditConvertToBullet}
           onFlush={onEditFlush}
           onNavigate={onEditNavigate}
+          checkboxToggleControllerRef={checkboxToggleControllerRef}
           convertControllerRef={convertControllerRef}
         />
       ) : (

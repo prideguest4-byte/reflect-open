@@ -1,9 +1,9 @@
 import type { MutableRefObject, ReactElement } from 'react'
 import { AlarmClock, Calendar, FileText, Pin, Plus, Star } from 'lucide-react'
 import type { OpenTask, TaskGroup } from '@reflect/core'
+import type { InsertTaskTarget } from '@/lib/tasks/task-insert-target'
 import { taskKey } from '@/lib/tasks/task-identity'
 import { insertTargetForTask, todaysDailyTarget } from '@/lib/tasks/task-navigation'
-import type { InsertTaskTarget } from '@/lib/tasks/use-task-actions'
 import type { TaskSelection } from '@/lib/tasks/use-task-selection'
 import type { TaskRowEditHandlers } from '@/lib/tasks/use-task-row-handlers'
 import { cn } from '@/lib/utils'
@@ -14,6 +14,8 @@ interface TaskGroupSectionProps {
   selection: TaskSelection
   /** The inline-editor callbacks for a row, built once by the screen. */
   editHandlers: (task: OpenTask) => TaskRowEditHandlers
+  /** Whether a Tasks-view write is already in flight. */
+  taskActionPending: boolean
   /** Today's ISO date — the Current group's "+ Add" targets today's daily. */
   today: string
   /** Add a task to this group and open its editor (the header's "+ Add", V1). */
@@ -62,6 +64,7 @@ export function TaskGroupSection({
   group,
   selection,
   editHandlers,
+  taskActionPending,
   today,
   onAdd,
   convertControllerRef,
@@ -101,9 +104,9 @@ export function TaskGroupSection({
           </button>
         ) : null}
       </div>
-      <ul className="flex flex-col gap-1.5 px-4 py-1 lg:px-12">
+      <ul className="flex flex-col py-1">
         {group.tasks.length === 0 ? (
-          <li className="px-2 py-1.5 text-sm text-text-muted">No tasks</li>
+          <li className="px-4 py-1.5 text-sm text-text-muted lg:px-12">No tasks</li>
         ) : (
           group.tasks.map((task) => {
             const key = taskKey(task)
@@ -114,6 +117,7 @@ export function TaskGroupSection({
                 showSource={showSource}
                 selected={selection.isSelected(key)}
                 editing={selection.isSoleSelected(key)}
+                taskActionPending={taskActionPending}
                 onSelect={(event) => selection.clickSelect(key, event)}
                 {...editHandlers(task)}
                 convertControllerRef={convertControllerRef}

@@ -40,7 +40,7 @@ export interface TaskCacheWriter {
  * the completed ("archived") list — keyed on the active graph. Every Tasks-view
  * mutation (single-row checkbox, bulk complete, delete, inline edit) goes
  * through the same snapshot → patch → rollback path, so the optimistic shapes
- * (see {@link withoutTasks}/{@link asCompleted}/{@link withEditedTask}) can't
+ * (see {@link withoutTasks}/{@link asCompleted}/{@link asOpen}/{@link withEditedTask}) can't
  * drift between the single-row and bulk code paths.
  *
  * `patch` mirrors a change across BOTH lists; a list that isn't loaded (the
