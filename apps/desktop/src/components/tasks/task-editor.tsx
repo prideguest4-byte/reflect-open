@@ -46,12 +46,16 @@ interface TaskEditorProps {
   onCancel: () => void
   /** ⌘↵: complete the task (saving the edit first when `content` isn't null). */
   onComplete: (content: string | null) => void
+  /** Checkbox click: save any change, then toggle the checked state. */
+  onCheckboxToggle: (content: string | null) => void
   /** ⌘⇧K: convert the task to a plain bullet (saving the edit first when changed). */
   onConvertToBullet: (content: string | null) => void
   /** Persist a changed edit when the row unmounts (selection moved), without exiting. */
   onFlush: (content: string) => void
   /** ↑/↓ (Shift to extend): move the selection between rows while editing (V1). */
   onNavigate: TaskNavigate
+  /** Lets the row checkbox toggle through the editor finalizer while editing. */
+  checkboxToggleControllerRef?: MutableRefObject<(() => void) | null>
   /**
    * Lets the toolbar's "Convert to bullet" button drive the same flush-then-convert
    * the ⌘⇧K keymap does. While this row is the sole selection it holds a trigger
@@ -146,9 +150,11 @@ export function TaskEditor({
   onDeleteEmpty,
   onCancel,
   onComplete,
+  onCheckboxToggle,
   onConvertToBullet,
   onFlush,
   onNavigate,
+  checkboxToggleControllerRef,
   convertControllerRef,
 }: TaskEditorProps): ReactElement {
   const { graph } = useGraph()
@@ -168,9 +174,20 @@ export function TaskEditor({
     onDeleteEmpty,
     onCancel,
     onComplete,
+    onCheckboxToggle,
     onConvertToBullet,
     onFlush,
   })
+
+  useEffect(() => {
+    if (checkboxToggleControllerRef === undefined) {
+      return
+    }
+    checkboxToggleControllerRef.current = () => apiRef.current.checkboxToggle()
+    return () => {
+      checkboxToggleControllerRef.current = null
+    }
+  }, [checkboxToggleControllerRef, apiRef])
 
   // Expose the flush-then-convert trigger to the screen while this row is edited,
   // so the toolbar button converts through the same path the ⌘⇧K keymap uses —

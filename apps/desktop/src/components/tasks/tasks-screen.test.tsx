@@ -1,9 +1,9 @@
-import { fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenTask } from '@reflect/core'
-import { useEffect, type MutableRefObject, type ReactNode } from 'react'
+import { useEffect, useState, type MutableRefObject, type ReactNode } from 'react'
 import { resetRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { TasksScreen } from './tasks-screen'
@@ -54,9 +54,11 @@ vi.mock('./task-editor', () => ({
     onDeleteEmpty,
     onCancel,
     onComplete,
+    onCheckboxToggle,
     onConvertToBullet,
     onFlush,
     onNavigate,
+    checkboxToggleControllerRef,
     convertControllerRef,
   }: {
     task: { text: string }
@@ -66,11 +68,23 @@ vi.mock('./task-editor', () => ({
     onDeleteEmpty: () => void
     onCancel: () => void
     onComplete: (content: string | null) => void
+    onCheckboxToggle: (content: string | null) => void
     onConvertToBullet: (content: string | null) => void
     onFlush: (content: string) => void
     onNavigate: (direction: -1 | 1, options: { span: boolean }) => void
+    checkboxToggleControllerRef?: MutableRefObject<(() => void) | null>
     convertControllerRef?: MutableRefObject<(() => void) | null>
   }) => {
+    const [checkboxDraft, setCheckboxDraft] = useState<string | null>(null)
+    useEffect(() => {
+      if (checkboxToggleControllerRef === undefined) {
+        return
+      }
+      checkboxToggleControllerRef.current = () => onCheckboxToggle(checkboxDraft)
+      return () => {
+        checkboxToggleControllerRef.current = null
+      }
+    }, [checkboxDraft, checkboxToggleControllerRef, onCheckboxToggle])
     // Mirror the real editor: expose a flush-then-convert trigger (simulating a
     // changed draft) so the toolbar button routes the sole row through it.
     useEffect(() => {
@@ -111,6 +125,9 @@ vi.mock('./task-editor', () => ({
       </button>
       <button type="button" onClick={() => onComplete(null)}>
         complete-unchanged
+      </button>
+      <button type="button" onClick={() => setCheckboxDraft('edited content')}>
+        stage-checkbox-edit
       </button>
       <button type="button" onClick={() => onConvertToBullet('edited content')}>
         convert-edited
@@ -192,6 +209,10 @@ beforeEach(() => {
   fail.mockReset()
   resetRecentlyCompleted()
   scrollIntoView.mockClear()
+})
+
+afterEach(() => {
+  cleanup()
 })
 
 describe('TasksScreen', () => {
@@ -508,7 +529,7 @@ describe('TasksScreen', () => {
     await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
     await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(2))
     // Completing keeps both showing struck (the middle state), not dropped.
-    await waitFor(() => expect(view.getAllByRole('button', { name: 'Completed task' })).toHaveLength(2))
+    await waitFor(() => expect(view.getAllByRole('button', { name: /^Reopen:/ })).toHaveLength(2))
     expect(view.getByText('first')).toBeDefined()
     view.unmount()
   })
@@ -886,8 +907,316 @@ describe('TasksScreen', () => {
       ),
     )
     // V1's middle state: the row stays visible, struck, until archived.
-    await view.findByRole('button', { name: 'Completed task' })
+    await view.findByRole('button', { name: 'Reopen: project task' })
     expect(view.getByText('project task')).toBeDefined()
+    view.unmount()
+  })
+
+  it('completes a selected task when its checkbox is clicked', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[ ] project task',
+        text: 'project task',
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'project task' }))
+    expect(view.getByTestId('task-editor')).toBeDefined()
+    await userEvent.click(view.getByRole('button', { name: 'Complete: project task' }))
+
+    await waitFor(() =>
+      expect(toggleTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 5, raw: '[ ] project task' }),
+        1,
+      ),
+    )
+    view.unmount()
+  })
+
+  it('saves an edited selected task before completing it from the checkbox', async () => {
+    editTask.mockResolvedValue(undefined)
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[ ] project task',
+        text: 'project task',
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'project task' }))
+    await userEvent.click(view.getByRole('button', { name: 'stage-checkbox-edit' }))
+    await userEvent.click(view.getByRole('button', { name: 'Complete: project task' }))
+
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 5, raw: '[ ] project task' }),
+        'edited content',
+        1,
+      ),
+    )
+    await waitFor(() =>
+      expect(toggleTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 5, raw: '[ ] edited content' }),
+        1,
+      ),
+    )
+    view.unmount()
+  })
+
+  it('disables row checkboxes while an edit-and-toggle write is pending', async () => {
+    let resolveEdit = (): void => {
+      throw new Error('edit promise was not created')
+    }
+    editTask.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveEdit = resolve
+        }),
+    )
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[ ] project task',
+        text: 'project task',
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'project task' }))
+    await userEvent.click(view.getByRole('button', { name: 'stage-checkbox-edit' }))
+    await userEvent.click(view.getByRole('button', { name: 'Complete: project task' }))
+
+    await waitFor(() => expect(editTask).toHaveBeenCalledTimes(1))
+    const reopen = await view.findByRole('button', { name: 'Reopen: edited content' })
+    await waitFor(() => expect((reopen as HTMLButtonElement).disabled).toBe(true))
+    await userEvent.click(reopen)
+    expect(toggleTask).not.toHaveBeenCalled()
+
+    resolveEdit()
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(1))
+    view.unmount()
+  })
+
+  it('reopens a completed task when its checkbox is clicked', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[ ] project task',
+        text: 'project task',
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'Complete: project task' }))
+    await userEvent.click(await view.findByRole('button', { name: 'Reopen: project task' }))
+
+    await waitFor(() =>
+      expect(toggleTask).toHaveBeenLastCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 5, raw: '[x] project task' }),
+        1,
+      ),
+    )
+    await view.findByRole('button', { name: 'Complete: project task' })
+    view.unmount()
+  })
+
+  it('reopens an archived completed task when its checkbox is clicked', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([])
+    getCompletedTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[x] project task',
+        text: 'project task',
+        checked: true,
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'Reopen: project task' }))
+
+    await waitFor(() =>
+      expect(toggleTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 5, raw: '[x] project task' }),
+        1,
+      ),
+    )
+    await view.findByRole('button', { name: 'Complete: project task' })
+    view.unmount()
+  })
+
+  it('shows an open checkbox while a reopen write is pending', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    let resolveToggle = (): void => {
+      throw new Error('toggle promise was not created')
+    }
+    toggleTask.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveToggle = resolve
+        }),
+    )
+    getOpenTasks.mockResolvedValue([])
+    getCompletedTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[x] project task',
+        text: 'project task',
+        checked: true,
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'Reopen: project task' }))
+    const complete = await view.findByRole('button', { name: 'Complete: project task' })
+    await waitFor(() => expect((complete as HTMLButtonElement).disabled).toBe(true))
+    expect(complete.querySelector('.lucide-circle-check')).toBeNull()
+    expect(complete.querySelector('.lucide-circle')).not.toBeNull()
+
+    resolveToggle()
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(1))
+    view.unmount()
+  })
+
+  it('restores a struck task when an unchanged editor checkbox reopen fails', async () => {
+    toggleTask.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('stale index'))
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[ ] project task',
+        text: 'project task',
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'Complete: project task' }))
+    await view.findByRole('button', { name: 'Reopen: project task' })
+    getOpenTasks.mockResolvedValue([])
+
+    await userEvent.click(view.getByText('project task'))
+    await view.findByTestId('task-editor')
+    await userEvent.click(view.getByRole('button', { name: 'Reopen: project task' }))
+
+    await waitFor(() => expect(fail).toHaveBeenCalledWith('stale index'))
+    expect(startOperation).toHaveBeenCalledWith('Reopening task')
+    await view.findByRole('button', { name: 'Reopen: project task' })
+    view.unmount()
+  })
+
+  it('reopens a selected completed task when its checkbox is clicked', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([])
+    getCompletedTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[x] project task',
+        text: 'project task',
+        checked: true,
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'project task' }))
+    expect(view.getByTestId('task-editor')).toBeDefined()
+    await userEvent.click(view.getByRole('button', { name: 'Reopen: project task' }))
+
+    await waitFor(() =>
+      expect(toggleTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 5, raw: '[x] project task' }),
+        1,
+      ),
+    )
+    view.unmount()
+  })
+
+  it('saves an edited selected completed task before reopening it from the checkbox', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    editTask.mockResolvedValue(undefined)
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([])
+    getCompletedTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[x] project task',
+        text: 'project task',
+        checked: true,
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'project task' }))
+    await userEvent.click(view.getByRole('button', { name: 'stage-checkbox-edit' }))
+    await userEvent.click(view.getByRole('button', { name: 'Reopen: project task' }))
+
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 5, raw: '[x] project task' }),
+        'edited content',
+        1,
+      ),
+    )
+    await waitFor(() =>
+      expect(toggleTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 5, raw: '[x] edited content' }),
+        1,
+      ),
+    )
+    view.unmount()
+  })
+
+  it('restores persisted text when an edited struck task fails before reopening', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    editTask.mockRejectedValue(new Error('disk full'))
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 5,
+        raw: '[ ] project task',
+        text: 'project task',
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'Complete: project task' }))
+    await view.findByRole('button', { name: 'Reopen: project task' })
+    getOpenTasks.mockResolvedValue([])
+
+    await userEvent.click(view.getByText('project task'))
+    await userEvent.click(view.getByRole('button', { name: 'stage-checkbox-edit' }))
+    await userEvent.click(view.getByRole('button', { name: 'Reopen: project task' }))
+
+    await waitFor(() => expect(fail).toHaveBeenCalledWith('disk full'))
+    expect(startOperation).toHaveBeenCalledWith('Reopening task')
+    await view.findByRole('button', { name: 'Reopen: project task' })
+    expect(view.queryByText('edited content')).toBeNull()
     view.unmount()
   })
 
@@ -910,7 +1239,7 @@ describe('TasksScreen', () => {
 
     await userEvent.click(await view.findByRole('button', { name: 'Complete: project task' }))
     // Flipped to completed in place — still on screen, now marked done.
-    await view.findByRole('button', { name: 'Completed task' })
+    await view.findByRole('button', { name: 'Reopen: project task' })
     expect(view.getByText('project task')).toBeDefined()
     view.unmount()
   })
@@ -942,7 +1271,7 @@ describe('TasksScreen', () => {
     const view = renderScreen()
 
     await userEvent.click(await view.findByRole('button', { name: 'Complete: project task' }))
-    await view.findByRole('button', { name: 'Completed task' })
+    await view.findByRole('button', { name: 'Reopen: project task' })
     await userEvent.keyboard('{Meta>}{Shift>}{Enter}{/Shift}{/Meta}')
     await waitFor(() => expect(view.queryByText('project task')).toBeNull())
     view.unmount()
@@ -958,14 +1287,14 @@ describe('TasksScreen', () => {
 
     // Complete it → struck (kept showing via the session set), then try to delete.
     await userEvent.click(await view.findByRole('button', { name: 'Complete: one' }))
-    await view.findByRole('button', { name: 'Completed task' })
+    await view.findByRole('button', { name: 'Reopen: one' })
     await userEvent.click(view.getByText('one')) // select the struck row → editor opens
     await view.findByTestId('task-editor')
     await userEvent.click(view.getByRole('button', { name: 'delete-edit' }))
 
     await waitFor(() => expect(deleteTask).toHaveBeenCalled())
     // The write failed, so the struck row is restored, not lost.
-    await view.findByRole('button', { name: 'Completed task' })
+    await view.findByRole('button', { name: 'Reopen: one' })
     view.unmount()
   })
 

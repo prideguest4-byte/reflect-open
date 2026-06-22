@@ -2,6 +2,7 @@ import { type OpenTask } from '@reflect/core'
 import { describe, expect, it } from 'vitest'
 import {
   asCompleted,
+  asOpen,
   taskRawWithContent,
   withCheckedMarker,
   withEditedTask,
@@ -60,6 +61,18 @@ describe('asCompleted', () => {
 
   it('is a no-op when the completed list is not loaded', () => {
     expect(asCompleted(undefined, [a])).toBeUndefined()
+  })
+})
+
+describe('asOpen', () => {
+  it('appends the tasks as unchecked, de-duping any already present', () => {
+    const checked = withCheckedMarker(a, true)
+    const result = asOpen([b, checked], [checked])
+    expect(result).toEqual([b, a])
+  })
+
+  it('materializes an undefined open list with the reopened rows', () => {
+    expect(asOpen(undefined, [withCheckedMarker(a, true)])).toEqual([a])
   })
 })
 

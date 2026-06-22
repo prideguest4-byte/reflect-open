@@ -14,6 +14,7 @@ export interface TaskRowEditHandlers {
   onEditDeleteEmpty: () => void
   onEditCancel: () => void
   onEditComplete: (content: string | null) => void
+  onEditCheckboxToggle: (content: string | null) => void
   onEditConvertToBullet: (content: string | null) => void
   onEditFlush: (content: string) => void
   onEditNavigate: TaskNavigate
@@ -110,7 +111,15 @@ export function useTaskRowHandlers({
         } else if (content === null) {
           actions.complete([task])
         } else {
-          actions.editAndComplete(task, content)
+          actions.editAndToggle(task, content)
+        }
+        selection.clear()
+      },
+      onEditCheckboxToggle: (content) => {
+        if (content === null) {
+          actions.checkboxToggle(task)
+        } else {
+          actions.editAndToggle(task, content)
         }
         selection.clear()
       },

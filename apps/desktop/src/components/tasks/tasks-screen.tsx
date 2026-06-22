@@ -21,8 +21,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { sameTask, taskKey } from '@/lib/tasks/task-identity'
+import { type InsertTaskTarget } from '@/lib/tasks/task-insert-target'
 import { scrollTaskIntoView } from '@/lib/tasks/task-navigation'
-import { useTaskActions, type InsertTaskTarget } from '@/lib/tasks/use-task-actions'
+import { useTaskActions } from '@/lib/tasks/use-task-actions'
 import { useTaskRowHandlers } from '@/lib/tasks/use-task-row-handlers'
 import { useTaskFilters, type TaskFilters } from '@/lib/tasks/task-filters'
 import { useTaskKeyboard } from '@/lib/tasks/use-task-keyboard'
@@ -327,18 +328,21 @@ export function TasksScreen(): ReactElement {
             {needle ? 'No matching tasks.' : 'No tasks to show.'}
           </p>
         ) : (
-          groups.map((group: TaskGroup) => (
-            <TaskGroupSection
-              key={group.kind === 'note' ? `note:${group.notePath}` : group.kind}
-              group={group}
-              selection={selection}
-              editHandlers={editHandlers}
-              today={today}
-              onAdd={onAdd}
-              convertControllerRef={convertControllerRef}
-              onOpen={(path) => navigate(routeForPath(path))}
-            />
-          ))
+          <div className="flex flex-col gap-5">
+            {groups.map((group: TaskGroup) => (
+              <TaskGroupSection
+                key={group.kind === 'note' ? `note:${group.notePath}` : group.kind}
+                group={group}
+                selection={selection}
+                editHandlers={editHandlers}
+                taskActionPending={actions.isPending}
+                today={today}
+                onAdd={onAdd}
+                convertControllerRef={convertControllerRef}
+                onOpen={(path) => navigate(routeForPath(path))}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>

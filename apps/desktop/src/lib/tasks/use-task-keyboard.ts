@@ -6,7 +6,8 @@ import {
   previousTaskKey,
   todaysDailyTarget,
 } from '@/lib/tasks/task-navigation'
-import { type InsertTaskTarget, type TaskActions } from '@/lib/tasks/use-task-actions'
+import { type InsertTaskTarget } from '@/lib/tasks/task-insert-target'
+import { type TaskActions } from '@/lib/tasks/use-task-actions'
 import { type TaskSelection } from '@/lib/tasks/use-task-selection'
 
 export interface TaskKeyboardOptions {

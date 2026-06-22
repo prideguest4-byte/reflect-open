@@ -1,6 +1,6 @@
 import { dailyPath, taskDateBucket, type OpenTask } from '@reflect/core'
+import { type InsertTaskTarget } from '@/lib/tasks/task-insert-target'
 import { sameTask, taskKey } from '@/lib/tasks/task-identity'
-import { type InsertTaskTarget } from '@/lib/tasks/use-task-actions'
 
 /**
  * Shared Tasks-view navigation helpers (Plan 18, V1 parity). The keyboard

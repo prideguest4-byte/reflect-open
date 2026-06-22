@@ -71,6 +71,11 @@ export function forgetRecentlyCompleted(root: string | null, keys: readonly stri
   }
 }
 
+/** Whether a task is currently being kept visible by the session's struck set. */
+export function hasRecentlyCompleted(root: string | null, key: string): boolean {
+  return root === graphRoot && tasks.some((task) => taskKey(task) === key)
+}
+
 /** Archive: stop showing the session's completed tasks (they stay `[x]` on disk). */
 export function archiveRecentlyCompleted(root: string | null): void {
   adopt(root)
