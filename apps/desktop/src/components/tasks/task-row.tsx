@@ -78,8 +78,10 @@ export function TaskRow({
     <li
       data-task-key={taskKey(task)}
       className={cn(
-        'group/task flex items-start gap-3 rounded-md px-2 py-1.5',
-        selected ? 'bg-surface-hover ring-1 ring-inset ring-accent' : 'hover:bg-surface-hover',
+        'group/task flex min-h-10 items-start gap-3 rounded-md bg-surface px-2 py-2 shadow-sm',
+        selected
+          ? 'ring-2 ring-inset ring-purple-400'
+          : 'hover:bg-surface-hover dark:bg-surface dark:hover:bg-surface-hover',
       )}
     >
       <button

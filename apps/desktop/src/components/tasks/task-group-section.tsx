@@ -101,7 +101,7 @@ export function TaskGroupSection({
           </button>
         ) : null}
       </div>
-      <ul className="px-4 py-1 lg:px-12">
+      <ul className="flex flex-col gap-1.5 px-4 py-1 lg:px-12">
         {group.tasks.length === 0 ? (
           <li className="px-2 py-1.5 text-sm text-text-muted">No tasks</li>
         ) : (
