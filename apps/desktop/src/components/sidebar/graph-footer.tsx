@@ -164,7 +164,7 @@ export function GraphFooter({ graph, context }: GraphFooterProps): ReactElement 
             className={MENU_ITEM_CLASS}
           >
             <LocateFixed aria-hidden strokeWidth={1.75} className="size-3.5 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">Open graph in Finder</span>
+            <span className="min-w-0 flex-1 truncate">Reveal graph in Finder</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => void pickAndOpen()}
