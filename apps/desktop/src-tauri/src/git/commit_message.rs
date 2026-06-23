@@ -28,6 +28,12 @@ struct NoteChange {
     old_label: Option<String>,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+enum AuthoredNoteTitle {
+    Public(String),
+    Private,
+}
+
 /// Return a staged-tree-derived commit subject, falling back when the staged
 /// tree is metadata-only or otherwise too noisy to summarize clearly.
 pub(super) fn message_for_commit(
@@ -50,7 +56,8 @@ fn tree_changes(
         None => None,
     };
     let mut options = DiffOptions::new();
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(tree), Some(&mut options))?;
+    let mut diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(tree), Some(&mut options))?;
+    diff.find_similar(None)?;
 
     let mut changes = Vec::new();
     diff.foreach(
@@ -134,8 +141,10 @@ fn describe_changes(
         )));
     }
     if !note_changes.is_empty() {
+        let action = group_action(content_changes.iter().map(|change| change.action));
         return Some(limit_subject(format!(
-            "Update {} and {}",
+            "{} {} and {}",
+            action.verb(),
             count_phrase(note_changes.len(), "note", "notes"),
             count_phrase(content_changes.len() - note_changes.len(), "file", "files")
         )));
@@ -230,25 +239,40 @@ fn staged_note_label(
 
 fn current_note_label(repo: &Repository, tree: &Tree<'_>, path: &str) -> Option<String> {
     let fallback = note_label(path)?;
-    Some(note_title_from_tree(repo, tree, path).unwrap_or(fallback))
+    Some(match note_title_from_tree(repo, tree, path) {
+        Some(AuthoredNoteTitle::Public(title)) => title,
+        Some(AuthoredNoteTitle::Private) => "private note".to_string(),
+        None => fallback,
+    })
 }
 
 fn old_note_label(repo: &Repository, parent: Option<&Commit<'_>>, path: &str) -> Option<String> {
     let fallback = note_label(path)?;
     let parent_tree = parent.and_then(|parent| parent.tree().ok());
     Some(
-        parent_tree
+        match parent_tree
             .as_ref()
             .and_then(|tree| note_title_from_tree(repo, tree, path))
-            .unwrap_or(fallback),
+        {
+            Some(AuthoredNoteTitle::Public(title)) => title,
+            Some(AuthoredNoteTitle::Private) => "private note".to_string(),
+            None => fallback,
+        },
     )
 }
 
-fn note_title_from_tree(repo: &Repository, tree: &Tree<'_>, path: &str) -> Option<String> {
+fn note_title_from_tree(
+    repo: &Repository,
+    tree: &Tree<'_>,
+    path: &str,
+) -> Option<AuthoredNoteTitle> {
+    let source = blob_text(repo, tree, path)?;
+    if note_is_private(&source) {
+        return Some(AuthoredNoteTitle::Private);
+    }
     if daily_date(path).is_some() {
         return None;
     }
-    let source = blob_text(repo, tree, path)?;
     authored_note_title(&source)
 }
 
@@ -273,15 +297,19 @@ fn note_label(path: &str) -> Option<String> {
     (!label.is_empty()).then_some(label)
 }
 
-fn authored_note_title(source: &str) -> Option<String> {
+fn authored_note_title(source: &str) -> Option<AuthoredNoteTitle> {
     let split = split_frontmatter(source);
-    if split.raw.is_some_and(frontmatter_private) {
-        return None;
-    }
     frontmatter_title(split.raw)
         .or_else(|| first_h1(split.body))
         .map(|title| collapse_spaces(&title))
         .filter(|title| !title.is_empty())
+        .map(AuthoredNoteTitle::Public)
+}
+
+fn note_is_private(source: &str) -> bool {
+    split_frontmatter(source)
+        .raw
+        .is_some_and(frontmatter_private)
 }
 
 struct FrontmatterSplit<'source> {
@@ -367,20 +395,29 @@ fn frontmatter_scalar(raw: &str, key: &str) -> Option<String> {
 }
 
 fn unquote_scalar(value: &str) -> String {
-    let without_comment = value
-        .split_once(" #")
-        .map(|(head, _comment)| head)
-        .unwrap_or(value)
-        .trim();
-    if without_comment.len() >= 2 {
-        let bytes = without_comment.as_bytes();
-        let first = bytes[0];
-        let last = bytes[without_comment.len() - 1];
-        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
-            return without_comment[1..without_comment.len() - 1].to_string();
+    let trimmed = value.trim();
+    if trimmed.len() >= 2 {
+        let bytes = trimmed.as_bytes();
+        let quote = bytes[0];
+        if quote == b'"' || quote == b'\'' {
+            if let Some(end) = trimmed[1..]
+                .bytes()
+                .position(|byte| byte == quote)
+                .map(|index| index + 1)
+            {
+                let trailing = trimmed[end + 1..].trim_start();
+                if trailing.is_empty() || trailing.starts_with('#') {
+                    return trimmed[1..end].to_string();
+                }
+            }
         }
     }
-    without_comment.to_string()
+    trimmed
+        .split_once(" #")
+        .map(|(head, _comment)| head)
+        .unwrap_or(trimmed)
+        .trim()
+        .to_string()
 }
 
 fn first_h1(body: &str) -> Option<String> {

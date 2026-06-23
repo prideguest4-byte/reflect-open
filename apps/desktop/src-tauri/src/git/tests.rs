@@ -170,10 +170,10 @@ fn commit_uses_authored_note_subjects() {
     write(
         root,
         "notes/01arz3ndektsv4rrffq69g5fav.md",
-        "---\ntitle: Project Atlas\n---\n# Ignored H1\n",
+        "---\ntitle: \"Project #1\"\n---\n# Ignored H1\n",
     );
     commit_all(root, "Update notes", MAX_FILE_BYTES).unwrap();
-    assert_eq!(head_message(root), "Add Project Atlas");
+    assert_eq!(head_message(root), "Add Project #1");
 
     write(
         root,
@@ -189,6 +189,28 @@ fn commit_uses_authored_note_subjects() {
 }
 
 #[test]
+fn commit_describes_note_renames() {
+    let fixture = fixture();
+    let root = &fixture.graph_a;
+
+    write(
+        root,
+        "notes/original.md",
+        "# Original Name\n\n- stable body line one\n- stable body line two\n- stable body line three\n",
+    );
+    commit_all(root, "Update notes", MAX_FILE_BYTES).unwrap();
+
+    fs::remove_file(root.join("notes/original.md")).unwrap();
+    write(
+        root,
+        "notes/renamed.md",
+        "# Renamed Name\n\n- stable body line one\n- stable body line two\n- stable body line three\n",
+    );
+    commit_all(root, "Update notes", MAX_FILE_BYTES).unwrap();
+    assert_eq!(head_message(root), "Rename Original Name to Renamed Name");
+}
+
+#[test]
 fn commit_does_not_leak_private_authored_titles() {
     let fixture = fixture();
     let root = &fixture.graph_a;
@@ -199,7 +221,7 @@ fn commit_does_not_leak_private_authored_titles() {
         "---\nprivate: true\ntitle: Secret Plan\n---\n# Secret Heading\n",
     );
     commit_all(root, "Update notes", MAX_FILE_BYTES).unwrap();
-    assert_eq!(head_message(root), "Add Private Project");
+    assert_eq!(head_message(root), "Add private note");
 }
 
 #[test]
@@ -231,6 +253,17 @@ fn commit_mentions_note_and_attachment_batches() {
     write(root, "assets/screenshot.png", "not really a png\n");
     commit_all(root, "Update notes", MAX_FILE_BYTES).unwrap();
     assert_eq!(head_message(root), "Add 1 note and 1 attachment");
+}
+
+#[test]
+fn commit_describes_mixed_note_and_file_batches_by_action() {
+    let fixture = fixture();
+    let root = &fixture.graph_a;
+
+    write(root, "notes/capture.md", "# Capture\n");
+    write(root, "books/book.json", "{}\n");
+    commit_all(root, "Update notes", MAX_FILE_BYTES).unwrap();
+    assert_eq!(head_message(root), "Add 1 note and 1 file");
 }
 
 #[test]
