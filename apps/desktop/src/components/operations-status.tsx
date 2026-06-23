@@ -10,6 +10,10 @@ import { type Operation, useOperations } from '@/lib/operations'
  */
 
 const TOAST_DURATION_MS = Number.POSITIVE_INFINITY
+const NON_DISMISSIBLE_OPERATION_OPTIONS = {
+  closeButton: false,
+  dismissible: false,
+}
 
 function toastId(operation: Operation): string {
   return `operation-${operation.id}`
@@ -38,16 +42,22 @@ export function OperationsStatus(): ReactElement | null {
     }
 
     for (const operation of operations) {
-      const action = operation.action
+      const operationAction = operation.action
+      const action = operationAction
         ? {
-            label: operation.action.label,
-            onClick: () => void operation.action?.run(),
+            label: operationAction.label,
+            onClick: () => {
+              void Promise.resolve(operationAction.run()).catch((error: unknown) => {
+                console.error('operation action failed:', error)
+              })
+            },
           }
         : undefined
       const options = {
         id: toastId(operation),
         description: descriptionFor(operation),
         duration: TOAST_DURATION_MS,
+        ...NON_DISMISSIBLE_OPERATION_OPTIONS,
         action,
       }
 

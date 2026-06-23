@@ -9,6 +9,12 @@ const NON_DISMISSIBLE_UPDATE_OPTIONS = {
   dismissible: false,
 }
 
+function runToastAction(action: () => Promise<void>): void {
+  void action().catch((error: unknown) => {
+    console.error('update toast action failed:', error)
+  })
+}
+
 /** Mirrors the auto-update lifecycle into the global Sonner notification surface. */
 export function UpdateToast(): ReactElement | null {
   const { state, install, restart } = useUpdate()
@@ -23,7 +29,7 @@ export function UpdateToast(): ReactElement | null {
           ...NON_DISMISSIBLE_UPDATE_OPTIONS,
           action: {
             label: 'Install',
-            onClick: () => void install(),
+            onClick: () => runToastAction(install),
           },
         })
         break
@@ -43,7 +49,7 @@ export function UpdateToast(): ReactElement | null {
           ...NON_DISMISSIBLE_UPDATE_OPTIONS,
           action: {
             label: 'Restart',
-            onClick: () => void restart(),
+            onClick: () => runToastAction(restart),
           },
         })
         break
@@ -56,7 +62,7 @@ export function UpdateToast(): ReactElement | null {
             ...NON_DISMISSIBLE_UPDATE_OPTIONS,
             action: {
               label: 'Retry install',
-              onClick: () => void install(),
+              onClick: () => runToastAction(install),
             },
           })
         } else {

@@ -86,7 +86,9 @@ describe('OperationsStatus', () => {
         'Update available',
         expect.objectContaining({
           id: 'operation-1',
+          closeButton: false,
           action: expect.objectContaining({ label: 'Install' }),
+          dismissible: false,
         }),
       ),
     )
@@ -119,5 +121,25 @@ describe('OperationsStatus', () => {
         expect.objectContaining({ id: 'operation-1', description: 'disk full' }),
       ),
     )
+  })
+
+  it('consumes rejected action promises', async () => {
+    const error = new Error('network down')
+    const run = vi.fn(async () => {
+      throw error
+    })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<OperationsStatus />)
+
+    act(() => {
+      startOperation('Update available', { action: { label: 'Install', run } })
+    })
+
+    await waitFor(() => expect(toast.message).toHaveBeenCalled())
+    const options = toast.message.mock.lastCall?.[1]
+    options?.action?.onClick()
+    await waitFor(() => expect(consoleError).toHaveBeenCalledWith('operation action failed:', error))
+
+    consoleError.mockRestore()
   })
 })
