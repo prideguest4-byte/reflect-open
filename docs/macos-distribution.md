@@ -171,7 +171,7 @@ Three flavors ship as distinct, coexisting apps:
 | ------------ | -------- | ------------ | -------------------------- | ------------ | ----------------- |
 | Reflect      | `master` | Reflect      | `app.reflect.desktop`      | blue/violet  | `releases/latest` |
 | Reflect Beta | `next`   | Reflect Beta | `app.reflect.desktop.beta` | magenta/pink | `updater-beta`    |
-| Reflect Dev  | local    | Reflect Dev  | `app.reflect.desktop.dev`  | green        | none (no updates) |
+| Reflect Dev  | local    | Reflect Dev  | `app.reflect.desktop.dev`  | green        | `updater-dev-noop` (no-op) |
 
 The base `tauri.conf.json` is the stable flavor and uses the shipped gradient icon
 (`icons/`). Beta and dev are config overlays (`src-tauri/tauri.beta.conf.json`,
@@ -180,6 +180,11 @@ artwork recolored via `magick -modulate` (beta `104,100,151`, dev `92,100,231`; 
 `src-tauri/icons/README.md`). `release:macos` picks the flavor from the version
 (prerelease → beta, else stable), so a release always matches the updater feed compiled
 into it; `release.yml` needs no flavor knowledge and `release:bump` is unchanged.
+
+Each overlay pins its own updater feed so the flavor is self-consistent regardless of the
+base config's channel: beta → `updater-beta`, dev → a deliberately non-existent
+`updater-dev-noop` feed so dev builds never find an update (in `tauri dev` the updater is
+off anyway). The stable feed lives on the base config and is managed by `release:bump`.
 
 Distinct identifiers give each flavor its own webview storage and embeddings cache.
 Settings, recent graphs and keychain secrets are currently **shared** across flavors (the
