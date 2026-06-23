@@ -17,17 +17,17 @@ const MARKDOWN_SYNTAX_OPTIONS: MarkdownSyntaxOption[] = [
   {
     value: 'hide',
     label: 'Hide',
-    description: 'Markdown syntax characters stay hidden while you edit.',
+    description: 'Always hidden',
   },
   {
     value: 'hybrid',
     label: 'Hybrid',
-    description: 'Markdown syntax characters appear only around the cursor.',
+    description: 'Appear only around the cursor',
   },
   {
     value: 'show',
     label: 'Show',
-    description: 'Markdown syntax characters are always visible.',
+    description: 'Always visible',
   },
 ]
 
@@ -38,7 +38,7 @@ export function EditorSection(): ReactElement {
     <SettingsSection id="editor">
       <SettingsField
         legend="Markdown syntax"
-        description="How literal markdown characters (#, **, [[ ]]) are displayed while editing."
+        description="How literal markdown characters (**, `, etc.) are displayed while editing."
       >
         <div className="mt-3 @container">
           <div className="grid grid-cols-1 gap-2 @xl:grid-cols-3">
