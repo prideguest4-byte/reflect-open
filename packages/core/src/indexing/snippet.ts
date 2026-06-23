@@ -51,7 +51,7 @@ export function lineSnippet(content: string, pos: number, maxLength = DEFAULT_MA
   if (line.length <= maxLength) {
     return line
   }
-  // Window around the link's position within the *trimmed* line — the trim
+  // Window around the link's position within the *trimmed* line: the trim
   // shifted offsets by the leading whitespace, and on a long indented line an
   // unadjusted position could window the link right out of the snippet.
   const at = Math.max(0, Math.min(pos, content.length))
