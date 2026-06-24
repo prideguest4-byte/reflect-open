@@ -15,8 +15,8 @@ import { base64Of } from '@/lib/base64'
  * and pre-validate a drop without a round-trip; Rust re-validates for real.
  */
 
-/** Top-level directories an import must never copy (rebuildable / VCS). */
-const SKIP_TOP_LEVEL = new Set(['.reflect', '.git'])
+/** Top-level directories an import must never copy (rebuildable / VCS / macOS). */
+const SKIP_TOP_LEVEL = new Set(['.reflect', '.git', '__MACOSX'])
 
 /** Whether `name` looks like a zip archive (by extension). */
 export function isZipFileName(name: string): boolean {
@@ -25,8 +25,9 @@ export function isZipFileName(name: string): boolean {
 
 /**
  * Whether an archive-relative path should be skipped during import: the
- * rebuildable `.reflect/` index, VCS metadata, and OS/editor junk. Skipping
- * these in the browser also avoids reading bytes Rust would only discard.
+ * rebuildable `.reflect/` index, VCS metadata, macOS's `__MACOSX/` tree and
+ * AppleDouble `._*` siblings, and OS/editor junk. Mirrors Rust's own rules;
+ * skipping here also avoids reading bytes Rust would only discard.
  */
 export function shouldSkipImportEntry(relPath: string): boolean {
   const parts = relPath.split('/').filter(Boolean)
@@ -37,7 +38,12 @@ export function shouldSkipImportEntry(relPath: string): boolean {
     return true
   }
   const name = parts[parts.length - 1]!
-  return name === '.DS_Store' || name === 'Thumbs.db' || name.endsWith('.swp')
+  return (
+    name === '.DS_Store' ||
+    name === 'Thumbs.db' ||
+    name.endsWith('.swp') ||
+    name.startsWith('._')
+  )
 }
 
 /**

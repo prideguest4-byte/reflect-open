@@ -166,9 +166,16 @@ fn write_file(target: &Path, bytes: &[u8]) -> AppResult<()> {
 /// graph directory — i.e. a wrapper folder a zip commonly nests the graph under
 /// (`my-graph/daily/...`). Returns `None` when entries live at the top level
 /// (`daily/...`, `notes/...`) or span multiple top-level directories.
+///
+/// Archive noise ([`is_noise`]) is ignored: macOS zips sprinkle `__MACOSX/` and
+/// root `.DS_Store`/`Thumbs.db` siblings next to the wrapper, and counting those
+/// as extra top-level entries would defeat stripping and bury the real notes.
 fn wrapper_prefix(entries: &[(String, Vec<u8>)]) -> Option<String> {
     let mut shared: Option<&str> = None;
     for (path, _) in entries {
+        if is_noise(path) {
+            continue;
+        }
         let first = path
             .split('/')
             .find(|part| !part.is_empty() && *part != ".")?;
@@ -186,12 +193,12 @@ fn wrapper_prefix(entries: &[(String, Vec<u8>)]) -> Option<String> {
 }
 
 /// Turn an archive-relative path into a safe path under the graph root, or
-/// `None` to skip it. Strips `prefix` (the wrapper dir), rejects traversal, and
-/// drops the rebuildable index (`.reflect/`), VCS metadata (`.git/`), and OS
-/// junk so they never enter a fresh graph.
+/// `None` to skip it. Drops archive noise ([`is_noise`]), strips `prefix` (the
+/// wrapper dir), rejects traversal, and drops the rebuildable index
+/// (`.reflect/`) and VCS metadata (`.git/`) so they never enter a fresh graph.
 fn sanitized_relative(raw: &str, prefix: Option<&str>) -> Option<PathBuf> {
-    if raw.starts_with('/') {
-        return None; // absolute — never trust it
+    if raw.starts_with('/') || is_noise(raw) {
+        return None; // absolute or archive noise — never write it
     }
     let normalized = raw.replace('\\', "/");
     let mut parts: Vec<&str> = normalized
@@ -206,16 +213,30 @@ fn sanitized_relative(raw: &str, prefix: Option<&str>) -> Option<PathBuf> {
             parts.remove(0);
         }
     }
-    let (&first, &last) = parts.first().zip(parts.last())?;
-    if matches!(first, ".reflect" | ".git") || is_junk(last) {
+    let &first = parts.first()?;
+    if matches!(first, ".reflect" | ".git") {
         return None;
     }
     Some(parts.iter().collect())
 }
 
-/// OS/editor noise that should never be copied into a graph.
-fn is_junk(name: &str) -> bool {
-    name == ".DS_Store" || name == "Thumbs.db" || name.ends_with(".swp")
+/// OS/editor/archive noise that must never enter a graph and must not disturb
+/// wrapper detection: macOS's `__MACOSX/` resource-fork tree and AppleDouble
+/// `._*` siblings, plus `.DS_Store`/`Thumbs.db`/editor swap files.
+fn is_noise(raw: &str) -> bool {
+    let normalized = raw.replace('\\', "/");
+    let parts: Vec<&str> = normalized
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    let Some(&first) = parts.first() else {
+        return true; // empty / dot-only path
+    };
+    if first == "__MACOSX" {
+        return true;
+    }
+    let last = *parts.last().unwrap_or(&first);
+    last == ".DS_Store" || last == "Thumbs.db" || last.ends_with(".swp") || last.starts_with("._")
 }
 
 /// Whether `root` holds at least one markdown note under `daily/` or `notes/` —
@@ -318,6 +339,30 @@ mod tests {
     }
 
     #[test]
+    fn strips_the_wrapper_despite_macos_zip_noise() {
+        // A macOS-created zip nests the graph under a wrapper and sprinkles
+        // `__MACOSX/` + root junk beside it; none of that may defeat stripping.
+        let parent = tempdir().unwrap();
+        let root = import_into(
+            parent.path(),
+            "export.zip",
+            files(&[
+                ("export/notes/a.md", "a"),
+                ("export/daily/b.md", "b"),
+                ("__MACOSX/export/._a.md", "rsrc"),
+                (".DS_Store", "junk"),
+                ("Thumbs.db", "junk"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(root, parent.path().join("export"));
+        assert!(root.join("notes/a.md").is_file());
+        assert!(!root.join("export").exists()); // wrapper stripped
+        assert!(!root.join("__MACOSX").exists()); // archive noise dropped
+        assert!(!root.join(".DS_Store").exists());
+    }
+
+    #[test]
     fn skips_index_vcs_and_junk() {
         let parent = tempdir().unwrap();
         let root = import_into(
@@ -404,5 +449,25 @@ mod tests {
             None
         );
         assert_eq!(wrapper_prefix(&files(&[("notes/a.md", "a")])), None);
+        // Archive noise next to the wrapper must not count as a sibling top dir.
+        assert_eq!(
+            wrapper_prefix(&files(&[
+                ("export/notes/a.md", "a"),
+                ("__MACOSX/foo", "x"),
+                (".DS_Store", "junk"),
+            ])),
+            Some("export".into())
+        );
+    }
+
+    #[test]
+    fn is_noise_matches_archive_cruft() {
+        assert!(is_noise("__MACOSX/export/._a.md"));
+        assert!(is_noise("notes/._a.md"));
+        assert!(is_noise(".DS_Store"));
+        assert!(is_noise("notes/Thumbs.db"));
+        assert!(is_noise("notes/draft.md.swp"));
+        assert!(!is_noise("notes/a.md"));
+        assert!(!is_noise("export/daily/2026-06-24.md"));
     }
 }

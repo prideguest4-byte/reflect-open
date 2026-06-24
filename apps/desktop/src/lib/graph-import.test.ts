@@ -16,9 +16,11 @@ describe('isZipFileName', () => {
 })
 
 describe('shouldSkipImportEntry', () => {
-  it('skips the rebuildable index, VCS metadata, and OS junk', () => {
+  it('skips the rebuildable index, VCS metadata, macOS noise, and OS junk', () => {
     expect(shouldSkipImportEntry('.reflect/index.sqlite')).toBe(true)
     expect(shouldSkipImportEntry('.git/config')).toBe(true)
+    expect(shouldSkipImportEntry('__MACOSX/export/._a.md')).toBe(true)
+    expect(shouldSkipImportEntry('notes/._a.md')).toBe(true)
     expect(shouldSkipImportEntry('notes/.DS_Store')).toBe(true)
     expect(shouldSkipImportEntry('notes/draft.md.swp')).toBe(true)
     expect(shouldSkipImportEntry('Thumbs.db')).toBe(true)
