@@ -57,13 +57,13 @@ export const editorDefaultBulletSchema = z.boolean().catch(true)
 export const editorBulletAfterHeadingSchema = z.boolean().catch(true)
 
 /**
- * The editor's reading text size. `medium` (the default) is the design-system
- * prose size (16px); `small` and `large` step one DS size down/up (14px/18px).
- * Display-only — it scales the editor body via a CSS variable on the document
- * root (`--editor-font-size`, applied by `EditorTextSizeEffect`) and never
- * touches the stored markdown.
+ * The editor's reading text size. `small` (the default) is one design-system
+ * size down from the prose size (14px); `medium` is the DS prose size (16px)
+ * and `large` steps one DS size up (18px). Display-only — it scales the editor
+ * body via a CSS variable on the document root (`--editor-font-size`, applied
+ * by `EditorTextSizeEffect`) and never touches the stored markdown.
  */
-export const editorTextSizeSchema = z.enum(['small', 'medium', 'large']).catch('medium')
+export const editorTextSizeSchema = z.enum(['small', 'medium', 'large']).catch('small')
 
 export type EditorTextSize = z.infer<typeof editorTextSizeSchema>
 
