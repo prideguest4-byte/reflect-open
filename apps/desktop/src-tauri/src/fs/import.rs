@@ -44,7 +44,11 @@ const FALLBACK_NAME: &str = "Reflect Graph";
 /// Extract a dropped `.zip` (base64-encoded) into a fresh graph under
 /// `~/Documents/Reflect/<name>` and return its absolute path. The frontend then
 /// opens it through the normal graph-open flow.
-pub(super) fn import_zip(name: &str, zip_base64: &str, app: &tauri::AppHandle) -> AppResult<String> {
+pub(super) fn import_zip(
+    name: &str,
+    zip_base64: &str,
+    app: &tauri::AppHandle,
+) -> AppResult<String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(zip_base64.as_bytes())
         .map_err(|err| AppError::io(format!("invalid base64 zip payload: {err}")))?;
@@ -165,7 +169,9 @@ fn write_file(target: &Path, bytes: &[u8]) -> AppResult<()> {
 fn wrapper_prefix(entries: &[(String, Vec<u8>)]) -> Option<String> {
     let mut shared: Option<&str> = None;
     for (path, _) in entries {
-        let first = path.split('/').find(|part| !part.is_empty() && *part != ".")?;
+        let first = path
+            .split('/')
+            .find(|part| !part.is_empty() && *part != ".")?;
         match shared {
             None => shared = Some(first),
             Some(existing) if existing == first => {}
@@ -281,7 +287,10 @@ mod tests {
         let root = import_into(
             parent.path(),
             "My Graph",
-            files(&[("notes/Welcome.md", "# Welcome"), ("daily/2026-06-24.md", "today")]),
+            files(&[
+                ("notes/Welcome.md", "# Welcome"),
+                ("daily/2026-06-24.md", "today"),
+            ]),
         )
         .unwrap();
 
@@ -368,7 +377,10 @@ mod tests {
             std::fs::read_to_string(root.join("notes/Hello.md")).unwrap(),
             "# Hello"
         );
-        assert_eq!(std::fs::read(root.join("assets/pic.bin")).unwrap(), [0, 1, 2, 3]);
+        assert_eq!(
+            std::fs::read(root.join("assets/pic.bin")).unwrap(),
+            [0, 1, 2, 3]
+        );
     }
 
     #[test]
@@ -383,8 +395,14 @@ mod tests {
 
     #[test]
     fn wrapper_prefix_ignores_real_graph_dirs() {
-        assert_eq!(wrapper_prefix(&files(&[("wrap/notes/a.md", "a")])), Some("wrap".into()));
-        assert_eq!(wrapper_prefix(&files(&[("notes/a.md", "a"), ("daily/b.md", "b")])), None);
+        assert_eq!(
+            wrapper_prefix(&files(&[("wrap/notes/a.md", "a")])),
+            Some("wrap".into())
+        );
+        assert_eq!(
+            wrapper_prefix(&files(&[("notes/a.md", "a"), ("daily/b.md", "b")])),
+            None
+        );
         assert_eq!(wrapper_prefix(&files(&[("notes/a.md", "a")])), None);
     }
 }
