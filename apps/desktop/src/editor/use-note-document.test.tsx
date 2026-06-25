@@ -32,6 +32,7 @@ function fakeEditor(): NoteEditorHandle & { applied: string[] } {
     },
     getMarkdown: () => '',
     focus: () => {},
+    setSelection: () => {},
   }
 }
 

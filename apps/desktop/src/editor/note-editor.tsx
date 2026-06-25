@@ -1,7 +1,7 @@
 import {
   useCallback,
-  useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   type ReactElement,
   type ReactNode,
@@ -9,7 +9,7 @@ import {
 } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { errorMessage } from '@reflect/core'
-import { type MarkMode } from '@meowdown/core'
+import { type ExitBoundaryHandler, type MarkMode } from '@meowdown/core'
 import {
   MeowdownEditor,
   type EditorHandle,
@@ -47,6 +47,12 @@ export interface NoteEditorHandle {
   /** Replace the document (note switch / external reload). */
   setMarkdown(markdown: string): void
   focus(): void
+  /**
+   * Move the caret to a document edge and scroll it into view. Used for
+   * cross-note arrow navigation in the daily stream (jump to the end of the
+   * previous day / the start of the next day).
+   */
+  setSelection(position: 'start' | 'end'): void
 }
 
 interface NoteEditorProps {
@@ -92,6 +98,8 @@ interface NoteEditorProps {
   onWikilinkSearch?: WikilinkSearchHandler
   /** Search tags for the `#` autocomplete menu. */
   onTagSearch?: TagSearchHandler
+  /** Handler when pressing ArrowUp/ArrowDown at the document edge. */
+  onExitBoundary?: ExitBoundaryHandler
   /**
    * Ghost text over a leading empty H1 (the new-note flow's "Untitled");
    * omitted for documents without title semantics (the daily stream).
@@ -129,6 +137,7 @@ export function NoteEditor({
   onTagClick,
   onWikilinkSearch,
   onTagSearch,
+  onExitBoundary,
   children,
   titlePlaceholder,
   className,
@@ -147,7 +156,8 @@ export function NoteEditor({
   const openImageRef = useRef(openImage)
   const saveImageRef = useRef(saveImage)
   const onImageSaveErrorRef = useRef(onImageSaveError)
-  useEffect(() => {
+  const onExitBoundaryRef = useRef(onExitBoundary)
+  useLayoutEffect(() => {
     onChangeRef.current = onChange
     onWikiLinkClickRef.current = onWikiLinkClick
     onTagClickRef.current = onTagClick
@@ -156,6 +166,7 @@ export function NoteEditor({
     openImageRef.current = openImage
     saveImageRef.current = saveImage
     onImageSaveErrorRef.current = onImageSaveError
+    onExitBoundaryRef.current = onExitBoundary
   })
 
   const {
@@ -170,6 +181,7 @@ export function NoteEditor({
       getMarkdown: () => innerRef.current?.getMarkdown() ?? '',
       setMarkdown: (markdown) => innerRef.current?.setMarkdown(markdown),
       focus: () => innerRef.current?.focus(),
+      setSelection: (position) => innerRef.current?.setSelection(position),
     }),
     [],
   )
@@ -177,6 +189,12 @@ export function NoteEditor({
   const handleDocChange = useCallback(() => {
     onChangeRef.current?.(innerRef.current?.getMarkdown() ?? '')
   }, [])
+
+  const handleExitBoundary: ExitBoundaryHandler = useCallback(
+    (options) => onExitBoundaryRef.current?.(options) ?? false,
+    [],
+  )
+
   const handleWikilinkClick = useCallback(
     (payload: { target: string }) => onWikiLinkClickRef.current?.(payload.target),
     [],
@@ -256,6 +274,7 @@ export function NoteEditor({
         resolveImageUrl={handleResolveImageUrl}
         onImagePaste={handleImagePaste}
         onImageSaveError={handleImageSaveError}
+        onExitBoundary={ handleExitBoundary }
       >
         {children}
       </MeowdownEditor>

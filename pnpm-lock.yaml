@@ -30,11 +30,11 @@ importers:
         specifier: ^3.2.2
         version: 3.2.2(react@19.2.7)
       '@meowdown/core':
-        specifier: 0.23.0
-        version: 0.23.0(@shikijs/types@4.2.0)(@types/hast@3.0.4)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)
+        specifier: 0.24.0
+        version: 0.24.0(@shikijs/types@4.2.0)(@types/hast@3.0.4)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)
       '@meowdown/react':
-        specifier: 0.23.0
-        version: 0.23.0(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@shikijs/types@4.2.0)(@types/hast@3.0.4)(@types/react@19.2.17)(date-fns@4.4.0)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: 0.24.0
+        version: 0.24.0(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@shikijs/types@4.2.0)(@types/hast@3.0.4)(@types/react@19.2.17)(date-fns@4.4.0)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@reflect/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -556,8 +556,8 @@ packages:
   '@codemirror/autocomplete@6.20.3':
     resolution: {integrity: sha512-tlosUqb+3BbxCxZdu4tKeRghPFC+QM7q4X5YhKV2eCmPG+1r2F3f4AaSz5sCrFqUtX4Jh20VFTKecl16MgiV9g==}
 
-  '@codemirror/commands@6.10.3':
-    resolution: {integrity: sha512-JFRiqhKu+bvSkDLI+rUhJwSxQxYb759W5GBezE8Uc8mHLqC9aV/9aTC7yJSqCtB3F00pylrLCwnyS91Ap5ej4Q==}
+  '@codemirror/commands@6.10.4':
+    resolution: {integrity: sha512-Ryk9y9T0FFVF0cUGhAknveAyUOl/A1qReTFi+qPKtOh2Z9F4AUBz3XOrYD4ZEgZirdugVzHvd/2/Wcwy5OliTg==}
 
   '@codemirror/lang-angular@0.1.4':
     resolution: {integrity: sha512-oap+gsltb/fzdlTQWD6BFF4bSLKcDnlxDsLdePiJpCVNKWXSTAbiiQeYI3UmES+BLAdkmIC1WjyztC1pi/bX4g==}
@@ -634,8 +634,8 @@ packages:
   '@codemirror/lint@6.9.7':
     resolution: {integrity: sha512-28/+iWLYxKxsvGYhSYL7zaCZqLz5+FFFDq9tVsvGv9kv8RY4fFAchJ5WX9M3YrrRlTIsECjsXPqeNgnSmNP2dg==}
 
-  '@codemirror/state@6.6.0':
-    resolution: {integrity: sha512-4nbvra5R5EtiCzr9BTHiTLc+MLXK2QGiAVYMyi8PkQd3SR+6ixar/Q/01Fa21TBIDOZXgeWV4WppsQolSreAPQ==}
+  '@codemirror/state@6.7.0':
+    resolution: {integrity: sha512-Zbl9NyscLMZkfXPQnNAIIAFftidrA1UbcJEIMp24C0Bukc2I5T8wJS0wsXYsnDOqCFJUeJ1BITGNs5CqPDSmSg==}
 
   '@codemirror/view@6.43.1':
     resolution: {integrity: sha512-+BIjw/AG3tDQ4pJgTLPYdAW25eDE66YsvM4LKyVPgGzVgZ4a9Wj1SRX8kPVKgBDdPt8oHtZ15F0qx7p0oOHdHw==}
@@ -1039,11 +1039,11 @@ packages:
   '@marijn/find-cluster-break@1.0.2':
     resolution: {integrity: sha512-l0h88YhZFyKdXIFNfSWpyjStDjGHwZ/U7iobcK1cQQD8sejsONdQtTVU+1wVN1PBw40PiiHB1vA5S7VTfQiP9g==}
 
-  '@meowdown/core@0.23.0':
-    resolution: {integrity: sha512-5eeHCzvbSXbcgFq3nhrouNQq6BAGuTuegyntcW5wLDco6YVrypqf7nfqN7N6dWSBid4guFwPL2tqRQQ9aE+BxA==}
+  '@meowdown/core@0.24.0':
+    resolution: {integrity: sha512-U2FsHeYEmV+YhR6avZa7g1KhlCB+YjoDs3iz+v6dNJPrht9c1KjNgZEqclpsGM6+YZco24bZroP8/JMgFL6rkA==}
 
-  '@meowdown/react@0.23.0':
-    resolution: {integrity: sha512-6Uh3tCQv1CQacrQ36AGXF5lNbh1FZ5IIgB0k8qvLOktQEr2nNO8zILT0NSrVZd9DeFPIVCbaDVf7xyaI8ZclMw==}
+  '@meowdown/react@0.24.0':
+    resolution: {integrity: sha512-Q53/COBBYx/rYSQND9KW0d2BHgKR3RY4Jjsct8b48OwVoBKJM64YOMlTewDsdXyFoTroTStSeyQKsuPKHRDt1A==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
@@ -6363,14 +6363,14 @@ snapshots:
   '@codemirror/autocomplete@6.20.3':
     dependencies:
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
 
-  '@codemirror/commands@6.10.3':
+  '@codemirror/commands@6.10.4':
     dependencies:
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
 
@@ -6392,7 +6392,7 @@ snapshots:
     dependencies:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@lezer/common': 1.5.2
       '@lezer/css': 1.3.3
 
@@ -6400,7 +6400,7 @@ snapshots:
     dependencies:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@lezer/common': 1.5.2
       '@lezer/go': 1.0.1
 
@@ -6410,7 +6410,7 @@ snapshots:
       '@codemirror/lang-css': 6.3.1
       '@codemirror/lang-javascript': 6.2.5
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/css': 1.3.3
@@ -6426,7 +6426,7 @@ snapshots:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/language': 6.12.3
       '@codemirror/lint': 6.9.7
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/javascript': 1.5.4
@@ -6436,7 +6436,7 @@ snapshots:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/lang-html': 6.4.11
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3
@@ -6460,7 +6460,7 @@ snapshots:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/lang-html': 6.4.11
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3
@@ -6471,7 +6471,7 @@ snapshots:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/lang-html': 6.4.11
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/markdown': 1.6.4
@@ -6480,7 +6480,7 @@ snapshots:
     dependencies:
       '@codemirror/lang-html': 6.4.11
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@lezer/common': 1.5.2
       '@lezer/php': 1.0.5
 
@@ -6488,7 +6488,7 @@ snapshots:
     dependencies:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@lezer/common': 1.5.2
       '@lezer/python': 1.1.19
 
@@ -6501,7 +6501,7 @@ snapshots:
     dependencies:
       '@codemirror/lang-css': 6.3.1
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@lezer/common': 1.5.2
       '@lezer/sass': 1.1.0
 
@@ -6509,7 +6509,7 @@ snapshots:
     dependencies:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3
       '@lezer/lr': 1.4.10
@@ -6534,7 +6534,7 @@ snapshots:
     dependencies:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/xml': 1.0.6
@@ -6543,7 +6543,7 @@ snapshots:
     dependencies:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3
       '@lezer/lr': 1.4.10
@@ -6577,7 +6577,7 @@ snapshots:
 
   '@codemirror/language@6.12.3':
     dependencies:
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3
@@ -6590,17 +6590,17 @@ snapshots:
 
   '@codemirror/lint@6.9.7':
     dependencies:
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       crelt: 1.0.6
 
-  '@codemirror/state@6.6.0':
+  '@codemirror/state@6.7.0':
     dependencies:
       '@marijn/find-cluster-break': 1.0.2
 
   '@codemirror/view@6.43.1':
     dependencies:
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       crelt: 1.0.6
       style-mod: 4.1.3
       w3c-keyname: 2.2.8
@@ -6969,7 +6969,7 @@ snapshots:
 
   '@marijn/find-cluster-break@1.0.2': {}
 
-  '@meowdown/core@0.23.0(@shikijs/types@4.2.0)(@types/hast@3.0.4)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)':
+  '@meowdown/core@0.24.0(@shikijs/types@4.2.0)(@types/hast@3.0.4)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)':
     dependencies:
       '@codemirror/language': 6.12.3
       '@codemirror/language-data': 6.5.2
@@ -7004,15 +7004,15 @@ snapshots:
       - y-prosemirror
       - yjs
 
-  '@meowdown/react@0.23.0(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@shikijs/types@4.2.0)(@types/hast@3.0.4)(@types/react@19.2.17)(date-fns@4.4.0)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@meowdown/react@0.24.0(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@shikijs/types@4.2.0)(@types/hast@3.0.4)(@types/react@19.2.17)(date-fns@4.4.0)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@base-ui/react': 1.6.0(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@codemirror/commands': 6.10.3
+      '@codemirror/commands': 6.10.4
       '@codemirror/lang-markdown': 6.5.0
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
-      '@meowdown/core': 0.23.0(@shikijs/types@4.2.0)(@types/hast@3.0.4)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)
+      '@meowdown/core': 0.24.0(@shikijs/types@4.2.0)(@types/hast@3.0.4)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.41.9)
       '@ocavue/utils': 1.7.0
       '@prosekit/core': 0.13.0-beta.3(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)
       '@prosekit/pm': 0.1.19-beta.0
