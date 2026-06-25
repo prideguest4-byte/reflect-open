@@ -101,9 +101,9 @@ into the [Developer Dashboard](https://chrome.google.com/webstore/devconsole).
 >
 > Requires the Reflect desktop app: https://github.com/team-reflect/reflect-open
 
-**Privacy policy URL:** `https://github.com/team-reflect/reflect-open/blob/next/docs/privacy.md`
-(the "Browser capture" section) — `next` is the repo's default branch, so the URL
-resolves as soon as this lands.
+**Privacy policy URL:** `https://github.com/team-reflect/reflect-open/blob/master/docs/privacy.md`
+(the "Browser capture" section). Must be live on the public `master` branch before
+submission.
 
 ### Store assets to attach
 
