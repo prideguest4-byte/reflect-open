@@ -124,11 +124,16 @@ function renderSidebar(overrides?: Partial<CommandContext>, initialRoute?: Route
 }
 
 describe('Sidebar', () => {
-  it('nav rows run their registered commands', async () => {
+  it('nav rows navigate, with Daily notes preserving its tab scroll', async () => {
     const { view, navigate } = renderSidebar()
 
     await userEvent.click(view.getByRole('button', { name: /daily notes/i }))
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ kind: 'today' }))
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        { kind: 'today' },
+        { restoreSurfaceScroll: true },
+      ),
+    )
 
     await userEvent.click(view.getByRole('button', { name: /settings/i }))
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ kind: 'settings' }))

@@ -87,6 +87,25 @@ describe('router', () => {
     expect(result.current.arrivalSeq).toBe(seqBefore + 1) // views are notified
   })
 
+  it('can restore the daily surface scroll when a tab switch returns to today', () => {
+    const { result } = routerHook()
+    act(() => result.current.saveScrollState(500)) // user scrolled the daily stream
+    act(() => result.current.navigate({ kind: 'note', path: 'notes/a.md' }))
+    act(() => result.current.navigate({ kind: 'today' }, { restoreSurfaceScroll: true }))
+
+    expect(result.current.route).toEqual({ kind: 'today' })
+    expect(result.current.savedScroll()).toBe(500)
+  })
+
+  it('keeps default fresh navigations to daily routes anchor-only', () => {
+    const { result } = routerHook()
+    act(() => result.current.saveScrollState(500))
+    act(() => result.current.navigate({ kind: 'note', path: 'notes/a.md' }))
+    act(() => result.current.navigate({ kind: 'today' }))
+
+    expect(result.current.savedScroll()).toBeNull()
+  })
+
   it('entryId is stable per entry and changes across back/forward', () => {
     const { result } = routerHook()
     const todayId = result.current.entryId

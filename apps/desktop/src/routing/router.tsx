@@ -33,7 +33,7 @@ interface RouterValue {
    * while already on today re-scrolls the stream to today).
    */
   arrivalSeq: number
-  navigate: (route: Route) => void
+  navigate: (route: Route, options?: NavigateOptions) => void
   back: () => void
   forward: () => void
   canBack: boolean
@@ -45,6 +45,16 @@ interface RouterValue {
 }
 
 const RouterContext = createContext<RouterValue | null>(null)
+
+export interface NavigateOptions {
+  /**
+   * Restore the last saved scroll position for this route's surface into the
+   * new history entry. Primary nav tabs use this so switching away and back
+   * does not reset long-lived list surfaces; ordinary command/navigation
+   * arrivals omit it and re-anchor as before.
+   */
+  restoreSurfaceScroll?: boolean
+}
 
 interface RouterProviderProps {
   /** The launch route; defaults to today (the daily note is the spine). */
@@ -63,6 +73,16 @@ interface HistoryState {
   index: number
 }
 
+function scrollSurfaceForRoute(route: Route): string | null {
+  switch (route.kind) {
+    case 'today':
+    case 'daily':
+      return 'daily'
+    default:
+      return null
+  }
+}
+
 export function RouterProvider({
   initialRoute = { kind: 'today' },
   children,
@@ -75,33 +95,57 @@ export function RouterProvider({
   const nextId = useRef(1)
   /** Scroll offsets by entry id — a ref so scroll reporting never re-renders. */
   const scrollById = useRef(new Map<number, number>())
+  /** Last scroll offset for long-lived route surfaces, independent of history. */
+  const scrollBySurface = useRef(new Map<string, number>())
   /** The active entry id, readable without depending on render order. */
   const currentId = useRef(0)
+  /** The active route, readable from scroll handlers without re-rendering. */
+  const currentRoute = useRef<Route>(history.stack[history.index]!.route)
   // Written during render, not in an effect: descendant scroll-restoration
   // effects read this id (through saveScrollState/savedScroll) on the same
   // commit, and React runs effects child-before-parent — so updating it in an
   // effect here would lag a frame and restore or save the wrong entry's offset.
   // eslint-disable-next-line react-hooks/refs
   currentId.current = history.stack[history.index]!.id
+  // eslint-disable-next-line react-hooks/refs
+  currentRoute.current = history.stack[history.index]!.route
 
-  const navigate = useCallback((route: Route) => {
+  const navigate = useCallback((route: Route, options?: NavigateOptions) => {
     const target = normalizeRoute(route)
     setHistory((current) => {
       const currentEntry = current.stack[current.index]!
       if (routesEqual(currentEntry.route, target)) {
-        // No stack growth — but this is still an explicit arrival: forget the
-        // entry's saved offset so the view re-anchors to its target instead of
-        // restoring the old scroll position.
-        scrollById.current.delete(currentEntry.id)
+        const surface = scrollSurfaceForRoute(target)
+        const restored =
+          options?.restoreSurfaceScroll === true && surface !== null
+            ? scrollBySurface.current.get(surface)
+            : undefined
+        if (restored !== undefined) {
+          scrollById.current.set(currentEntry.id, restored)
+        } else {
+          // No stack growth — but this is still an explicit arrival: forget the
+          // entry's saved offset so the view re-anchors to its target instead of
+          // restoring the old scroll position.
+          scrollById.current.delete(currentEntry.id)
+        }
         return current
       }
       const dropped = current.stack.slice(current.index + 1)
       for (const entry of dropped) {
         scrollById.current.delete(entry.id) // truncated branch — free its offsets
       }
+      const id = nextId.current++
+      const surface = scrollSurfaceForRoute(target)
+      const restored =
+        options?.restoreSurfaceScroll === true && surface !== null
+          ? scrollBySurface.current.get(surface)
+          : undefined
+      if (restored !== undefined) {
+        scrollById.current.set(id, restored)
+      }
       const stack = [
         ...current.stack.slice(0, current.index + 1),
-        { id: nextId.current++, route: target },
+        { id, route: target },
       ]
       return { stack, index: stack.length - 1 }
     })
@@ -144,6 +188,10 @@ export function RouterProvider({
 
   const saveScrollState = useCallback((offset: number) => {
     scrollById.current.set(currentId.current, offset)
+    const surface = scrollSurfaceForRoute(currentRoute.current)
+    if (surface !== null) {
+      scrollBySurface.current.set(surface, offset)
+    }
   }, [])
 
   const savedScroll = useCallback(

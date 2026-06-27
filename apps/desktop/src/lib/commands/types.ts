@@ -1,4 +1,5 @@
 import type { Route } from '@/routing/route'
+import type { NavigateOptions } from '@/routing/router'
 
 /**
  * The typed command contract (Plan 08): one registry powers the ⌘K palette,
@@ -8,7 +9,7 @@ import type { Route } from '@/routing/route'
  */
 
 export interface CommandContext {
-  navigate: (route: Route) => void
+  navigate: (route: Route, options?: NavigateOptions) => void
   /** The current route, read at run time. */
   route: () => Route
   /**
