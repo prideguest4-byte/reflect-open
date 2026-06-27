@@ -14,3 +14,7 @@ ignoreWorkspaceRootCheck: true
 
 minimumReleaseAgeExclude:
   - '@meowdown/*'
+  - '@prosekit/*'
+
+overrides:
+  '@types/node': "24.13.2"
