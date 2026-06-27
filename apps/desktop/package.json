@@ -28,7 +28,7 @@
     "@reflect/db": "workspace:*",
     "@reflect/design-system": "workspace:*",
     "@reflect/utils": "workspace:*",
-    "@tanstack/react-query": "^5.101.0",
+    "@tanstack/react-query": "^5.101.1",
     "@tanstack/react-virtual": "^3.14.3",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
@@ -61,7 +61,7 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.2",
+    "@vitejs/plugin-react": "^6.0.3",
     "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^10.5.0",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -69,8 +69,8 @@
     "shadcn": "^4.11.0",
     "tailwindcss": "^4.3.1",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.61.1",
-    "vite": "^8.0.16",
+    "typescript-eslint": "^8.62.0",
+    "vite": "^8.1.0",
     "vitest": "^4.1.9"
   }
 }
