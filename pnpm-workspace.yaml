@@ -15,6 +15,4 @@ ignoreWorkspaceRootCheck: true
 minimumReleaseAgeExclude:
   - '@meowdown/*'
   - '@prosekit/*'
-
-patchedDependencies:
-  virtua: patches/virtua.patch
+  - virtua@0.49.2
