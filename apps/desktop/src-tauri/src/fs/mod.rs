@@ -52,10 +52,6 @@ pub struct GraphInfo {
     pub root: String,
     /// Display name (the root folder name).
     pub name: String,
-    /// File-sync provider this graph appears to live inside (e.g. `"icloud"`),
-    /// or `None`. A `Some(_)` means the UI should warn — Reflect syncs via
-    /// GitHub only and a cloud-synced graph risks index corruption (Plan 12/04).
-    pub cloud_sync: Option<String>,
     /// Open-session generation; mutating file commands must echo it back.
     pub generation: u64,
 }
@@ -81,7 +77,6 @@ fn graph_info(root: &Path, generation: u64) -> GraphInfo {
     GraphInfo {
         root: root.to_string_lossy().into_owned(),
         name,
-        cloud_sync: crate::recents::detect_cloud_sync(root).map(str::to_string),
         generation,
     }
 }
