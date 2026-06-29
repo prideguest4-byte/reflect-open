@@ -55,14 +55,14 @@ fn mark_reflect_dir_local_only(_reflect_dir: &Path) {}
 
 #[cfg(target_os = "macos")]
 fn mark_reflect_dir_local_only(reflect_dir: &Path) {
-    if let Err(err) = set_apple_sync_exclusion(reflect_dir) {
+    for err in set_apple_sync_exclusions(reflect_dir) {
         tracing::warn!(
             path = %reflect_dir.display(),
             %err,
             "failed to mark .reflect as excluded from Apple sync"
         );
     }
-    if let Err(err) = set_local_only_xattrs(reflect_dir) {
+    for err in set_local_only_xattrs(reflect_dir) {
         tracing::warn!(
             path = %reflect_dir.display(),
             %err,
@@ -72,18 +72,21 @@ fn mark_reflect_dir_local_only(reflect_dir: &Path) {
 }
 
 #[cfg(target_os = "macos")]
-fn set_apple_sync_exclusion(reflect_dir: &Path) -> Result<(), String> {
+fn set_apple_sync_exclusions(reflect_dir: &Path) -> Vec<String> {
     use core_foundation::base::TCFType;
     use core_foundation::{number, string, url};
     use std::ptr;
 
-    let reflect_url = url::CFURL::from_path(reflect_dir, true)
-        .ok_or_else(|| format!("invalid path: {}", reflect_dir.display()))?;
+    let Some(reflect_url) = url::CFURL::from_path(reflect_dir, true) else {
+        return vec![format!("invalid path: {}", reflect_dir.display())];
+    };
+    let mut errors = Vec::new();
 
     for key_name in APPLE_EXCLUSION_KEYS {
-        let key = key_name
-            .parse::<string::CFString>()
-            .map_err(|_| format!("invalid resource key: {key_name}"))?;
+        let Ok(key) = key_name.parse::<string::CFString>() else {
+            errors.push(format!("invalid resource key: {key_name}"));
+            continue;
+        };
         let ok = unsafe {
             url::CFURLSetResourcePropertyForKey(
                 reflect_url.as_concrete_TypeRef(),
@@ -93,20 +96,24 @@ fn set_apple_sync_exclusion(reflect_dir: &Path) -> Result<(), String> {
             )
         };
         if ok == 0 {
-            return Err(format!("failed to set {key_name}"));
+            errors.push(format!("failed to set {key_name}"));
         }
     }
 
-    Ok(())
+    errors
 }
 
 #[cfg(target_os = "macos")]
-fn set_local_only_xattrs(reflect_dir: &Path) -> Result<(), String> {
+fn set_local_only_xattrs(reflect_dir: &Path) -> Vec<String> {
+    let mut errors = Vec::new();
+
     for (name, value) in LOCAL_ONLY_XATTRS {
-        xattr::set(reflect_dir, name, value)
-            .map_err(|err| format!("failed to set {name}: {err}"))?;
+        if let Err(err) = xattr::set(reflect_dir, name, value) {
+            errors.push(format!("failed to set {name}: {err}"));
+        }
     }
-    Ok(())
+
+    errors
 }
 
 /// Atomically write `contents` to `target` (temp file in the same dir + rename).
@@ -227,7 +234,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let reflect_dir = dir.path().join(REFLECT_DIR);
         fs::create_dir_all(&reflect_dir).unwrap();
-        set_apple_sync_exclusion(&reflect_dir).unwrap();
+        assert!(set_apple_sync_exclusions(&reflect_dir).is_empty());
     }
 
     #[test]
