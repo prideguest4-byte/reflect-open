@@ -20,5 +20,5 @@ minimumReleaseAgeExclude:
 # Enable "blockExoticSubdeps" and "overrides" to install packages from pkg.pr.new
 blockExoticSubdeps: false
 overrides:
-  '@meowdown/core': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/core@179'
-  '@meowdown/react': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/react@179'
+  '@meowdown/core': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/core@8d52df6'
+  '@meowdown/react': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/react@8d52df6'
