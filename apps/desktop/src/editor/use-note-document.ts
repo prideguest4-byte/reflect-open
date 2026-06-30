@@ -3,6 +3,7 @@ import { readNote, writeNote, type FileChange } from '@reflect/core'
 import { useFileChanges } from '@/lib/use-file-changes'
 import { createDocumentBinding, type DocumentBinding } from './document-binding'
 import type { NoteEditorHandle } from './note-editor'
+import { notifyOpenDocumentChanged } from './open-documents'
 import { createRenameCoordinator } from './rename-coordinator'
 import {
   createNoteSession,
@@ -132,6 +133,7 @@ export function useNoteDocument(
           onSnapshot: (next) => {
             conflictRef.current = next.conflict
             setSnapshot(next)
+            notifyOpenDocumentChanged(path)
           },
           applyContent: (markdown) => editorRef.current?.setMarkdown(markdown),
           onContent: coordinator ? coordinator.content : undefined,
@@ -192,7 +194,11 @@ export function useNoteDocument(
 
   const onEditorChange = useCallback(
     (markdown: string) => {
-      binding.session()?.editorChanged(markdown)
+      const session = binding.session()
+      session?.editorChanged(markdown)
+      if (session !== null) {
+        notifyOpenDocumentChanged(session.path)
+      }
     },
     [binding],
   )
