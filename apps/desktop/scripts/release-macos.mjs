@@ -588,6 +588,7 @@ function printArtifacts(flavor, target) {
   console.log(`  ${dmg} (${dmgSizeMb} MB)`)
 }
 
+/** Build the uploaded file name for a target-specific release artifact. */
 function releaseAssetName({ productName, version, target, type }) {
   const { arch } = releaseTargetConfig(target)
   const prefix = `${productName}_${version}_${arch}`
@@ -1013,6 +1014,7 @@ function preflight({ flavorFlag }) {
   log(`${tag} is publishable from ${commit.slice(0, 7)}`)
 }
 
+/** Create the GitHub release from freshly built or pre-staged macOS artifacts. */
 function publish({ draft, flavorFlag, fromArtifacts }) {
   const { commit, flavor, productName, tag, version } = ensurePublishableRelease({ flavorFlag })
   const artifactDir = fromArtifacts ?? mkdtempSync(join(tmpdir(), 'reflect-release-assets-'))
