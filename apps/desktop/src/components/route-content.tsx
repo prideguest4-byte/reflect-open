@@ -39,7 +39,7 @@ export function RouteContent(): ReactElement {
       // (even the blank side margins) focuses the editor.
       return (
         <ScrollRestored className="h-full overflow-auto px-0">
-          <div className={cn("mx-auto flex min-h-full w-full max-w-full flex-col py-8", )}>
+          <div className="mx-auto flex min-h-full w-full max-w-full flex-col py-8">
             <NotePane
               path={route.path}
               lazy
