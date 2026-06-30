@@ -16,3 +16,9 @@ minimumReleaseAgeExclude:
   - '@meowdown/*'
   - '@prosekit/*'
   - virtua@0.49.2
+
+# Enable "blockExoticSubdeps" and "overrides" to install packages from pkg.pr.new
+blockExoticSubdeps: false
+overrides:
+  '@meowdown/core': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/core@179'
+  '@meowdown/react': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/react@179'
