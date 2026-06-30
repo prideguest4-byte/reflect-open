@@ -9,7 +9,6 @@ import { SettingsScreen } from '@/components/settings-screen'
 import { TasksScreen } from '@/components/tasks/tasks-screen'
 import { useRouter } from '@/routing/router'
 import { ScrollRestored } from '@/routing/scroll-restore'
-import { cn } from '@/lib/utils'
 
 /**
  * The route → view mapping (Plan 06): the single place a {@link Route} kind
