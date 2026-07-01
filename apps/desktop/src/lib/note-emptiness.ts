@@ -1,11 +1,5 @@
 import { splitFrontmatter } from '@reflect/core'
 
-const EMPTY_PLAIN_BULLET_LINE = /^[ \t]*[-+*][ \t]*$/
-
-function isOstensiblyEmptyLine(line: string): boolean {
-  return line.trim() === '' || EMPTY_PLAIN_BULLET_LINE.test(line)
-}
-
 /**
  * Whether a note's visible markdown body has no authored content. Frontmatter
  * is metadata and does not count; a bare unordered-list marker is also empty
@@ -13,5 +7,5 @@ function isOstensiblyEmptyLine(line: string): boolean {
  */
 export function isOstensiblyEmptyNoteSource(source: string): boolean {
   const { body } = splitFrontmatter(source)
-  return body.split(/\r?\n/).every(isOstensiblyEmptyLine)
+  return body.replaceAll(/[-+*#>[\]\r\n\s]/g, '') === ''
 }
