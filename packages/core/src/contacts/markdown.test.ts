@@ -39,6 +39,14 @@ describe('contactDetailsMarkdown', () => {
     expect(details).toBe('- Type: #person\n- Email: Ada@Example.com\n- Email: ada@work.com')
   })
 
+  it('omits the typing line when the target body already carries a Type bullet', () => {
+    const details = contactDetailsMarkdown(
+      contact({ emails: ['ada@example.com'] }),
+      '- Type: #person\n',
+    )
+    expect(details).toBe('- Email: ada@example.com')
+  })
+
   it('yields nothing for a contact with no email and no phone (no card to offer)', () => {
     expect(contactDetailsMarkdown(contact({}))).toBe('')
     expect(contactDetailsMarkdown(contact({ emails: ['  '] }))).toBe('')
@@ -69,6 +77,15 @@ describe('appendContactDetails', () => {
   it('is a no-op for a contact with no details', () => {
     const source = '# Ada Lovelace\n'
     expect(appendContactDetails(source, contact({}))).toBe(source)
+  })
+
+  it('does not stack a second typing line on an already-typed person note', () => {
+    // The meeting flow and the link menu create person notes with a
+    // `- Type: #person` body; Add must append only the details.
+    const source = '# Ada Lovelace\n\n- Type: #person\n'
+    expect(appendContactDetails(source, ada)).toBe(
+      '# Ada Lovelace\n\n- Type: #person\n\n- Email: ada@example.com\n- Phone: +1 555 0100\n',
+    )
   })
 })
 

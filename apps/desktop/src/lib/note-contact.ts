@@ -61,11 +61,14 @@ export async function addContactToNote(
   if (source === null) {
     throw new Error('The note title no longer matches this contact.')
   }
-  const details = contactDetailsMarkdown(contact)
+  const body = splitFrontmatter(source).body
   // The same content gate the card renders through: a body that already
   // carries contact details — a previous Add's block, or an email the user
-  // typed under a still-cached card — must not get a (second) block.
-  if (details === '' || noteHasContactDetails(splitFrontmatter(source).body)) {
+  // typed under a still-cached card — must not get a (second) block. The
+  // body-aware block also drops the `- Type: #person` line when the note was
+  // already typed at creation (meeting flow, link menu).
+  const details = contactDetailsMarkdown(contact, body)
+  if (details === '' || noteHasContactDetails(body)) {
     return
   }
   const owner = openSession(path)

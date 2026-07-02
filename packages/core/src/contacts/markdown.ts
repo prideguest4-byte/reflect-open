@@ -1,4 +1,5 @@
 import { appendBlock } from '../markdown/edit'
+import { splitFrontmatter } from '../markdown/frontmatter'
 import type { ContactMatch } from './commands'
 
 /**
@@ -30,20 +31,29 @@ function uniqueValues(values: readonly string[]): string[] {
   return unique
 }
 
+/** A `- Type:` typing bullet (any list marker, any case). */
+const TYPE_LINE_PATTERN = /^[ \t]*[-+*][ \t]+type:/im
+
 /**
  * The details block for `contact`: the `- Type: #person` typing line, then
  * every email and phone as bullets (deduped, address-book order — primary
  * values come first). A contact with no email and no phone yields the empty
  * string: there is nothing to add, so the card should not offer Add.
+ *
+ * Pass the target note's `existingBody` to omit the typing line when the
+ * note already carries a `Type:` bullet — a person note born from the
+ * meeting flow or the link menu is typed at creation, and Add must not
+ * stack a second line.
  */
-export function contactDetailsMarkdown(contact: ContactMatch): string {
+export function contactDetailsMarkdown(contact: ContactMatch, existingBody = ''): string {
   const emails = uniqueValues(contact.emails)
   const phones = uniqueValues(contact.phones)
   if (emails.length === 0 && phones.length === 0) {
     return ''
   }
+  const alreadyTyped = TYPE_LINE_PATTERN.test(existingBody)
   return [
-    '- Type: #person',
+    ...(alreadyTyped ? [] : ['- Type: #person']),
     ...emails.map((email) => `- Email: ${email}`),
     ...phones.map((phone) => `- Phone: ${phone}`),
   ].join('\n')
@@ -52,11 +62,11 @@ export function contactDetailsMarkdown(contact: ContactMatch): string {
 /**
  * Append `contact`'s details block to a note's source via {@link appendBlock}
  * (own paragraph, blank-line separated — the block form the meowdown
- * serializer normalizes to). A contact with no details returns the source
- * unchanged.
+ * serializer normalizes to), omitting the typing line when the body already
+ * carries one. A contact with no details returns the source unchanged.
  */
 export function appendContactDetails(source: string, contact: ContactMatch): string {
-  const details = contactDetailsMarkdown(contact)
+  const details = contactDetailsMarkdown(contact, splitFrontmatter(source).body)
   if (details === '') {
     return source
   }

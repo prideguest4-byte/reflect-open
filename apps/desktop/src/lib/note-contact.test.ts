@@ -100,6 +100,17 @@ describe('addContactToNote', () => {
     expect(writeNote).not.toHaveBeenCalled()
   })
 
+  it('appends only the details to an already-typed person note (meeting flow, link menu)', async () => {
+    const { session, commitBodyAppend } = fakeSession('# Ada Lovelace\n\n- Type: #person\n')
+    openSession.mockReturnValue(session)
+
+    await addContactToNote('notes/Ada Lovelace.md', ADA, 3)
+
+    expect(commitBodyAppend).toHaveBeenCalledWith(
+      '- Email: ada@example.com\n- Phone: +1 555 0100',
+    )
+  })
+
   it('is retry-idempotent: a body already carrying the block writes nothing', async () => {
     readNote.mockResolvedValue(`# Ada Lovelace\n\n${ADA_BLOCK}\n`)
 
