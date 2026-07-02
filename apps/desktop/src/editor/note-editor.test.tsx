@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { NoteEditor } from './note-editor'
 
 /** Props the mocked `<MeowdownEditor>` captures so the test can drive its callbacks. */
@@ -22,6 +23,10 @@ const captured = vi.hoisted(() => ({ props: null as CapturedEditorProps | null }
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
   openUrl: vi.fn(async () => {}),
+}))
+
+vi.mock('@/lib/deep-links/intake', () => ({
+  dispatchDeepLink: vi.fn(),
 }))
 
 // Stub the editor: capture its props and render the image-preview DOM shape
@@ -240,6 +245,16 @@ describe('NoteEditor link opening', () => {
     act(() => captured.props?.onLinkClick?.({ href: 'assets/cat.png', event }))
 
     expect(openImage).toHaveBeenCalledWith('assets/cat.png')
+    expect(openUrl).not.toHaveBeenCalled()
+  })
+
+  it('routes a reflect:// link through the in-app deep-link intake, not the URL opener', () => {
+    renderEditor()
+
+    const event = new MouseEvent('click')
+    act(() => captured.props?.onLinkClick?.({ href: 'reflect://note/abc123', event }))
+
+    expect(dispatchDeepLink).toHaveBeenCalledWith('reflect://note/abc123')
     expect(openUrl).not.toHaveBeenCalled()
   })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEEP_LINK_TEXT_MAX_LENGTH } from '@/lib/deep-links/deep-link'
-import { parseDeepLink } from '@/lib/deep-links/parse'
+import { isDeepLinkUrl, parseDeepLink } from '@/lib/deep-links/parse'
 
 describe('parseDeepLink', () => {
   it('parses the bare navigation verbs', () => {
@@ -116,5 +116,25 @@ describe('parseDeepLink', () => {
     expect(parseDeepLink('reflect://edit-notes?content=evil')).toBeNull()
     expect(parseDeepLink('not a url')).toBeNull()
     expect(parseDeepLink('')).toBeNull()
+  })
+})
+
+describe('isDeepLinkUrl', () => {
+  it('matches the reflect scheme regardless of case', () => {
+    expect(isDeepLinkUrl('reflect://today')).toBe(true)
+    expect(isDeepLinkUrl('REFLECT://note/abc')).toBe(true)
+  })
+
+  it('matches scheme-only, even links the parser would reject', () => {
+    expect(isDeepLinkUrl('reflect://settings')).toBe(true)
+    expect(isDeepLinkUrl('reflect:today')).toBe(true)
+  })
+
+  it('rejects other schemes and non-URLs', () => {
+    expect(isDeepLinkUrl('https://example.com')).toBe(false)
+    expect(isDeepLinkUrl('mailto:someone@example.com')).toBe(false)
+    expect(isDeepLinkUrl('assets/cat.png')).toBe(false)
+    expect(isDeepLinkUrl('not a url')).toBe(false)
+    expect(isDeepLinkUrl('')).toBe(false)
   })
 })

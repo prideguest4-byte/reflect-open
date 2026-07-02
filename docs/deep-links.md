@@ -65,6 +65,10 @@ drain re-runs cleanly.
   to the running instance and focuses it; macOS does this natively.
 - A link that arrives while no graph is open (cold launch, graph chooser)
   buffers and fires once the graph opens.
+- A `reflect://` link clicked *inside* the app (a note body, chat, a backlink
+  snippet) dispatches straight into the same in-app handler — no OS
+  round-trip, so it works in dev builds and can never land on a different
+  installed flavor.
 
 ## Relationship to the CLI
 

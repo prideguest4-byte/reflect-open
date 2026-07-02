@@ -14,7 +14,15 @@ let pendingUrls: string[] = []
 let activeHandler: ((url: string) => void) | null = null
 let started = false
 
-function deliverDeepLink(url: string): void {
+/**
+ * Feed one `reflect://` URL into the intake as if the OS had delivered it —
+ * the entry point for deep links clicked *inside* the app (a link in a note
+ * body must not round-trip through the OS opener: the opener capability
+ * denies the scheme, dev builds don't register it, and macOS could hand the
+ * URL to a different installed flavor). Buffers like any OS delivery when no
+ * graph is open.
+ */
+export function dispatchDeepLink(url: string): void {
   if (activeHandler !== null) {
     activeHandler(url)
   } else {
@@ -57,11 +65,11 @@ export async function startDeepLinkListener(): Promise<void> {
   try {
     unlisten = await onOpenUrl((urls) => {
       for (const url of urls) {
-        deliverDeepLink(url)
+        dispatchDeepLink(url)
       }
     })
     for (const url of (await getCurrent()) ?? []) {
-      deliverDeepLink(url)
+      dispatchDeepLink(url)
     }
   } catch (cause) {
     // Unlatch FIRST so a later call can retry — a failed start must not
