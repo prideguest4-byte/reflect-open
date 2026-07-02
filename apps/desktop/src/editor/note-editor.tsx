@@ -13,6 +13,7 @@ import { type ExitBoundaryHandler, type MarkMode } from '@meowdown/core'
 import {
   MeowdownEditor,
   type EditorHandle,
+  type SlashMenuSearchHandler,
   type TagSearchHandler,
   type WikilinkSearchHandler,
 } from '@meowdown/react'
@@ -45,10 +46,12 @@ export interface NoteEditorHandle {
   /** Replace the document (note switch / external reload). */
   setMarkdown(markdown: string): void
   /**
-   * Insert markdown text at the caret (replacing any selection) as a normal
-   * undoable edit — unlike {@link setMarkdown}, this fires `onDocChange`, so
-   * the insertion flows into the save pipeline like typing. Used by commands
-   * that add content to the focused note (Attach file…).
+   * Insert a parsed markdown fragment at the cursor as one undoable edit —
+   * how commands add content to the focused note (Insert template…,
+   * Attach file…). An active selection collapses first and is never deleted:
+   * these are host-initiated inserts, not pastes. Unlike {@link setMarkdown},
+   * this fires `onChange`, so the insertion flows into the save pipeline like
+   * typing. Empty/whitespace-only markdown is a no-op.
    */
   insertMarkdown(markdown: string): void
   focus(): void
@@ -104,6 +107,8 @@ interface NoteEditorProps {
   onWikilinkSearch?: WikilinkSearchHandler
   /** Search tags for the `#` autocomplete menu. */
   onTagSearch?: TagSearchHandler
+  /** Host rows for the `/` insert menu (note templates). */
+  onSlashMenuSearch?: SlashMenuSearchHandler
   /** Handler when pressing ArrowUp/ArrowDown at the document edge. */
   onExitBoundary?: ExitBoundaryHandler | undefined
   /**
@@ -142,6 +147,7 @@ export function NoteEditor({
   onTagClick,
   onWikilinkSearch,
   onTagSearch,
+  onSlashMenuSearch,
   onExitBoundary,
   children,
   titlePlaceholder,
@@ -183,6 +189,8 @@ export function NoteEditor({
     (): NoteEditorHandle => ({
       getMarkdown: () => innerRef.current?.getMarkdown() ?? '',
       setMarkdown: (markdown) => innerRef.current?.setMarkdown(markdown),
+      // meowdown ≥0.33 collapses an active selection itself, so an insert
+      // can never delete selected text — plain delegation is the whole story.
       insertMarkdown: (markdown) => innerRef.current?.insertMarkdown(markdown),
       focus: () => innerRef.current?.focus(),
       setSelection: (position) => innerRef.current?.setSelection(position),
@@ -216,7 +224,9 @@ export function NoteEditor({
     [],
   )
   const handleLinkClick = useCallback(
-    ({ href }: { href: string; event: MouseEvent }) => {
+    // The event may also be the Mod-Enter key press that followed the link
+    // (meowdown ≥0.33); only the href matters here.
+    ({ href }: { href: string; event: MouseEvent | KeyboardEvent }) => {
       // A graph-relative `assets/…` href (an attachment link) opens through
       // the generation-pinned asset command, never the URL opener — which
       // would receive a meaningless relative string.
@@ -281,6 +291,7 @@ export function NoteEditor({
         onImageClick={handleImageClick}
         {...(onWikilinkSearch !== undefined ? { onWikilinkSearch } : {})}
         {...(onTagSearch !== undefined ? { onTagSearch } : {})}
+        {...(onSlashMenuSearch !== undefined ? { onSlashMenuSearch } : {})}
         resolveImageUrl={handleResolveImageUrl}
         onFilePaste={handleFilePaste}
         onExitBoundary={handleExitBoundary}

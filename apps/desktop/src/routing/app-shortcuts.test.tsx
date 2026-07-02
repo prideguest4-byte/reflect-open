@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { PaletteProvider, usePalette } from '@/components/command-palette/palette-provider'
 import { listRegisteredBindings } from '@/editor/keymap'
 import { registerAppCommands } from '@/lib/commands/app-commands'
+import { NoteTemplatesProvider } from '@/providers/note-templates-provider'
 import { ShortcutsProvider, useShortcuts } from '@/providers/shortcuts-provider'
 import { SidebarProvider } from '@/providers/sidebar-provider'
 import { useAppShortcuts } from './app-shortcuts'
@@ -45,7 +46,9 @@ function shortcutsHook() {
         <RouterProvider>
           <PaletteProvider>
             <ShortcutsProvider>
-              <SidebarProvider>{children}</SidebarProvider>
+              <NoteTemplatesProvider>
+                <SidebarProvider>{children}</SidebarProvider>
+              </NoteTemplatesProvider>
             </ShortcutsProvider>
           </PaletteProvider>
         </RouterProvider>

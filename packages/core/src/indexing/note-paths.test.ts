@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { availableNotePath, slugPathForTitle } from './note-paths'
+import {
+  availableNotePath,
+  availableTemplatePath,
+  slugPathForTitle,
+  templateSlugPathForTitle,
+} from './note-paths'
 
 describe('availableNotePath', () => {
   it('returns the bare slug path when free', async () => {
@@ -31,6 +36,35 @@ describe('availableNotePath', () => {
     await expect(availableNotePath('meeting', async () => true)).rejects.toThrow(
       /no available note path/,
     )
+  })
+})
+
+describe('availableTemplatePath', () => {
+  it('probes under templates/ with the same collision suffix', async () => {
+    const occupied = new Set(['templates/journal.md'])
+    await expect(
+      availableTemplatePath('journal', async (path) => occupied.has(path)),
+    ).resolves.toBe('templates/journal-2.md')
+  })
+})
+
+describe('templateSlugPathForTitle', () => {
+  it('returns the template’s own path unchanged when the name already matches', async () => {
+    const probe = vi.fn(async () => true)
+    await expect(
+      templateSlugPathForTitle('templates/journal.md', 'Journal', probe),
+    ).resolves.toBe('templates/journal.md')
+    // Its own path is never probed — a no-op rename must not move onto `-2`.
+    expect(probe).not.toHaveBeenCalled()
+  })
+
+  it('suffixes around occupied candidates', async () => {
+    const occupied = new Set(['templates/log.md'])
+    await expect(
+      templateSlugPathForTitle('templates/journal.md', 'Log', async (path) =>
+        occupied.has(path),
+      ),
+    ).resolves.toBe('templates/log-2.md')
   })
 })
 

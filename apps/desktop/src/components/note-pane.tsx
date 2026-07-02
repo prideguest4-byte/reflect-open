@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { ExitBoundaryHandler } from '@meowdown/core'
-import { isDaily, untitledNoteSeed } from '@reflect/core'
+import { isDaily, isTemplatePath, untitledNoteSeed } from '@reflect/core'
 import { BacklinksPanel } from '@/components/backlinks-panel'
 import { InlineAlert } from '@/components/inline-alert'
 import { NoteConflictBanner } from '@/components/note-conflict-banner'
@@ -18,6 +18,7 @@ import { useAssetPersistence } from '@/editor/use-asset-persistence'
 import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
 import { useNoteDocument } from '@/editor/use-note-document'
 import { useTagNavigation } from '@/editor/use-tag-navigation'
+import { useTemplateSlashItems } from '@/editor/use-template-slash-items'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
@@ -103,12 +104,17 @@ export function NotePaneComponent({
   const graphRoot = graph?.root ?? null
   const generation = graph?.generation ?? null
   const dailyNote = isDaily(path)
+  // Templates rename via file operations only (settings, or outside the app):
+  // the rename pipeline's slug targets live under `notes/`, so tracking a
+  // template's title would move it out of `templates/`. The untitled `id:`
+  // seed is skipped for the same reason — it exists to feed that pipeline.
+  const template = isTemplatePath(path)
   // One seed per (pane, path): a fresh seed carries a fresh `id:`, and a mere
   // re-render must not mint a new identity (the session is keyed on the seed).
   // Re-mint during render when the path changes — only the committed render's
   // seed reaches the session, so the transient stale render is harmless, and
   // this avoids writing a ref during render.
-  const needsSeed = lazy && !dailyNote
+  const needsSeed = lazy && !dailyNote && !template
   const [seed, setSeed] = useState(() => ({ path, seed: untitledNoteSeed() }))
   if (needsSeed && seed.path !== path) {
     setSeed({ path, seed: untitledNoteSeed() })
@@ -116,8 +122,9 @@ export function NotePaneComponent({
   const document = useNoteDocument(path, generation, {
     createIfMissing: lazy,
     // Daily notes are excluded from rename tracking: their date labels are
-    // stream chrome, not content (decided 2026-06-09).
-    trackRenames: !dailyNote,
+    // stream chrome, not content (decided 2026-06-09). Templates too — see
+    // the `template` note above.
+    trackRenames: !dailyNote && !template,
     // A missing ordinary note opens as a name-me template (old Reflect's
     // new-note flow): the seed — `id:` frontmatter plus an empty H1 the
     // caret lands in, ghosted "Untitled" by the title placeholder — only
@@ -140,6 +147,12 @@ export function NotePaneComponent({
   // The registry entry this pane made, so unmount removes exactly it (a
   // remount of the same path may already have re-registered).
   const registeredHandle = useRef<{ path: string; handle: NoteEditorHandle } | null>(null)
+  // The `/` menu's template rows insert into this pane's own editor, read
+  // through the registry ref at select time (a late resolve after the pane
+  // unmounted must insert nowhere rather than somewhere stale).
+  const onSlashMenuSearch = useTemplateSlashItems(
+    useCallback(() => registeredHandle.current?.handle ?? null, []),
+  )
   const handleRef = useCallback(
     (handle: NoteEditorHandle | null) => {
       bindEditor(handle)
@@ -286,6 +299,7 @@ export function NotePaneComponent({
         onTagClick={onTagClick}
         onWikilinkSearch={onWikilinkSearch}
         onTagSearch={onTagSearch}
+        onSlashMenuSearch={onSlashMenuSearch}
         // Daily notes carry no title semantics (the date is their subject),
         // so an empty leading H1 there is just an empty heading.
         {...(dailyNote ? {} : { titlePlaceholder: 'Untitled' })}

@@ -134,6 +134,8 @@ function renderSidebar(overrides?: Partial<CommandContext>, initialRoute?: Route
     generation: () => 1,
     openPalette,
     openShortcuts: vi.fn(),
+    openTemplatePicker: vi.fn(),
+    openTemplateCreate: vi.fn(),
     enableSemanticSearch: vi.fn(),
     ...overrides,
   }
