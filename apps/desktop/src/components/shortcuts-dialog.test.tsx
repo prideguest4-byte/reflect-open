@@ -51,6 +51,17 @@ describe('ShortcutsDialog', () => {
     expect(dialog.querySelector('.overflow-y-auto')).toBeTruthy()
   })
 
+  it('uses extra desktop width for additional shortcut columns', async () => {
+    renderDialog()
+    await userEvent.click(screen.getByRole('button', { name: 'open' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
+    expect(dialog.className).toContain('lg:max-w-5xl')
+    expect(dialog.className).toContain('xl:max-w-6xl')
+    const editorList = screen.getByRole('heading', { name: 'Editor' }).parentElement?.querySelector('ul')
+    expect(editorList?.className).toContain('lg:columns-2')
+    expect(editorList?.className).toContain('xl:columns-3')
+  })
+
   it('closes on Escape', async () => {
     renderDialog()
     await userEvent.click(screen.getByRole('button', { name: 'open' }))
