@@ -313,8 +313,6 @@ export function NoteEditor({
         {...(pendingReplacementActions !== undefined ? { pendingReplacementActions } : {})}
         {...(onPendingReplacementResolve !== undefined ? { onPendingReplacementResolve } : {})}
         resolveImageUrl={handleResolveImageUrl}
-        // meowdown's paste seam now covers any file; `saveImage` declines
-        // non-images by returning null, so only images are persisted here.
         onFilePaste={handleImagePaste}
         onFileSaveError={handleImageSaveError}
         onExitBoundary={handleExitBoundary}
