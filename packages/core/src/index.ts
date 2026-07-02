@@ -100,8 +100,9 @@ export {
   captureMetaFetch,
   promoteCaptureScreenshot,
 } from './graph/commands'
-export { createAsset, importAsset } from './graph/assets'
+export { createAsset, deleteAsset, importAsset } from './graph/assets'
 export { assetFileName } from './graph/asset-names'
+export { unusedAssets } from './graph/unused-assets'
 
 // User settings (config-dir JSON document; Rust persists, this layer validates)
 export {

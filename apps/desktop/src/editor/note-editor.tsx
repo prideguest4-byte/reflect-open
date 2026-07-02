@@ -84,24 +84,20 @@ interface NoteEditorProps {
   /** Resolve an image `![…](…)` source to a displayable URL; unresolved images are skipped. */
   resolveImageUrl?: (src: string) => string | null
   /**
-   * Resolve an image `![…](…)` source to the path passed to {@link openImage},
-   * so the lightbox can offer to open it in the OS image viewer. Returns null
-   * for remote images.
+   * Vet a source (an image `src` or a link `href`) as a graph-relative asset
+   * path for {@link openAsset}. Returns null for remote or unsafe sources.
    */
-  resolveImageOpenPath?: (src: string) => string | null
-  /** Open a resolved image path in the OS default viewer. */
-  openImage?: (path: string) => Promise<void> | void
-  /** Persist a pasted/dropped image file and return its markdown `src`. */
-  saveImage?: (file: File) => Promise<string | null>
-  /** Called when persisting a pasted/dropped image throws. */
-  onImageSaveError?: (error: unknown, file: File) => void
+  resolveAssetOpenPath?: (src: string) => string | null
+  /** Open a vetted graph-relative asset path in the OS default application. */
+  openAsset?: (path: string) => Promise<void> | void
   /**
-   * Persist a pasted/dropped non-image file and return its markdown link
-   * destination (or null to decline). Inserted as `[name](destination)`.
+   * Persist a pasted/dropped file (any kind) and return its markdown
+   * destination, or null to decline. meowdown inserts `![](dest)` for images
+   * and `[name](dest)` for everything else.
    */
-  saveAttachment?: (file: File) => Promise<string | null>
-  /** Called when persisting a pasted/dropped non-image file throws. */
-  onAttachmentSaveError?: (error: unknown, file: File) => void
+  saveFile?: (file: File) => Promise<string | null>
+  /** Called when persisting a pasted/dropped file throws. */
+  onFileSaveError?: (error: unknown, file: File) => void
   /** Click on a `[[wiki link]]`. */
   onWikiLinkClick?: (target: string) => void
   /** Click on an inline `#tag`. The tag name arrives without the leading `#`. */
@@ -141,12 +137,10 @@ export function NoteEditor({
   bulletAfterHeading = false,
   blockHandle = false,
   resolveImageUrl,
-  resolveImageOpenPath,
-  openImage,
-  saveImage,
-  onImageSaveError,
-  saveAttachment,
-  onAttachmentSaveError,
+  resolveAssetOpenPath,
+  openAsset,
+  saveFile,
+  onFileSaveError,
   onWikiLinkClick,
   onTagClick,
   onWikilinkSearch,
@@ -166,24 +160,20 @@ export function NoteEditor({
   const onWikiLinkClickRef = useRef(onWikiLinkClick)
   const onTagClickRef = useRef(onTagClick)
   const resolveImageUrlRef = useRef(resolveImageUrl)
-  const resolveImageOpenPathRef = useRef(resolveImageOpenPath)
-  const openImageRef = useRef(openImage)
-  const saveImageRef = useRef(saveImage)
-  const onImageSaveErrorRef = useRef(onImageSaveError)
-  const saveAttachmentRef = useRef(saveAttachment)
-  const onAttachmentSaveErrorRef = useRef(onAttachmentSaveError)
+  const resolveAssetOpenPathRef = useRef(resolveAssetOpenPath)
+  const openAssetRef = useRef(openAsset)
+  const saveFileRef = useRef(saveFile)
+  const onFileSaveErrorRef = useRef(onFileSaveError)
   const onExitBoundaryRef = useRef(onExitBoundary)
   useLayoutEffect(() => {
     onChangeRef.current = onChange
     onWikiLinkClickRef.current = onWikiLinkClick
     onTagClickRef.current = onTagClick
     resolveImageUrlRef.current = resolveImageUrl
-    resolveImageOpenPathRef.current = resolveImageOpenPath
-    openImageRef.current = openImage
-    saveImageRef.current = saveImage
-    onImageSaveErrorRef.current = onImageSaveError
-    saveAttachmentRef.current = saveAttachment
-    onAttachmentSaveErrorRef.current = onAttachmentSaveError
+    resolveAssetOpenPathRef.current = resolveAssetOpenPath
+    openAssetRef.current = openAsset
+    saveFileRef.current = saveFile
+    onFileSaveErrorRef.current = onFileSaveError
     onExitBoundaryRef.current = onExitBoundary
   })
 
@@ -226,34 +216,22 @@ export function NoteEditor({
     (src: string) => resolveImageUrlRef.current?.(src) ?? undefined,
     [],
   )
-  // meowdown 0.31's single paste callback covers every file kind (it picks
-  // `![](src)` vs `[name](src)` itself); the host routes by MIME so images
-  // and attachments keep their separate persistence and naming.
-  const handleFilePaste = useCallback(async (file: File) => {
-    const save = file.type.startsWith('image/')
-      ? saveImageRef.current
-      : saveAttachmentRef.current
-    return (await save?.(file)) ?? undefined
-  }, [])
-  // meowdown funnels save errors for images and attachments through one
-  // callback; split them back apart by kind so each surface keeps its own
-  // error message.
-  const handleFileSaveError = useCallback((error: unknown, file: File) => {
-    if (file.type.startsWith('image/')) {
-      onImageSaveErrorRef.current?.(error, file)
-    } else {
-      onAttachmentSaveErrorRef.current?.(error, file)
-    }
-  }, [])
+  const handleFilePaste = useCallback(
+    async (file: File) => (await saveFileRef.current?.(file)) ?? undefined,
+    [],
+  )
+  const handleFileSaveError = useCallback(
+    (error: unknown, file: File) => onFileSaveErrorRef.current?.(error, file),
+    [],
+  )
   const handleLinkClick = useCallback(
     ({ href }: { href: string; event: MouseEvent }) => {
       // A graph-relative `assets/…` href (an attachment link) opens through
       // the generation-pinned asset command, never the URL opener — which
-      // would receive a meaningless relative string. `resolveImageOpenPath`
-      // vets the path exactly as it does for image sources.
-      const assetPath = resolveImageOpenPathRef.current?.(href) ?? null
+      // would receive a meaningless relative string.
+      const assetPath = resolveAssetOpenPathRef.current?.(href) ?? null
       if (assetPath !== null) {
-        void Promise.resolve(openImageRef.current?.(assetPath)).catch((cause) => {
+        void Promise.resolve(openAssetRef.current?.(assetPath)).catch((cause) => {
           console.error('open asset failed:', errorMessage(cause))
         })
         return
@@ -279,8 +257,8 @@ export function NoteEditor({
       openLightbox(sourceImage, {
         src: displayUrl,
         alt,
-        openPath: resolveImageOpenPathRef.current?.(src) ?? null,
-        openImage: openImageRef.current ?? null,
+        openPath: resolveAssetOpenPathRef.current?.(src) ?? null,
+        openImage: openAssetRef.current ?? null,
         transitionName: IMAGE_LIGHTBOX_TRANSITION_NAME,
       })
     },

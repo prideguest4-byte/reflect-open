@@ -124,9 +124,10 @@ else as `[…](…)`, in one drop). Rendering needs nothing new: it's a link;
 ## Open questions
 
 - **Orphan report.** Deleting a link leaves the file (v1 behaved the same,
-  invisibly). A palette command listing unreferenced `assets/` files —
-  with delete as an explicit choice — fits the files-first ethos.
-  *Decided: follow-up, not part of this work.*
+  invisibly). *Shipped as the "Find unused assets" palette command*: the
+  files under `assets/` no note links to (from the index `assets`
+  projection), largest first, with open and delete-to-Trash as explicit
+  per-file choices — never automatic GC.
 - **Paste-of-copied-file** from Finder (clipboard carries a file
   reference, not bytes) — worth verifying what the Tauri webview exposes
   on macOS; if it surfaces as a `File` with bytes it already works via

@@ -1,25 +1,31 @@
-import { render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { confirmLargeFile, resetLargeFileConfirms } from '@/lib/large-file-confirm'
 import { LargeAttachmentDialog } from './large-attachment-dialog'
 
-function pendingFor(name: string, respond = vi.fn()) {
-  return { file: new File([new Uint8Array(0)], name), respond }
+function largeFile(name: string, bytes: number): File {
+  const file = new File([new Uint8Array(0)], name)
+  Object.defineProperty(file, 'size', { value: bytes })
+  return file
 }
 
+afterEach(() => {
+  act(() => resetLargeFileConfirms())
+  cleanup()
+})
+
 describe('LargeAttachmentDialog', () => {
-  it('renders nothing without a pending file', () => {
-    render(<LargeAttachmentDialog pending={null} />)
+  it('renders nothing without a pending confirm', () => {
+    render(<LargeAttachmentDialog />)
     expect(screen.queryByText('Add large file?')).toBeNull()
   })
 
   it('names the file, its size, and the git constraint', () => {
-    const pending = {
-      file: new File([new Uint8Array(0)], 'demo.mov'),
-      respond: vi.fn(),
-    }
-    Object.defineProperty(pending.file, 'size', { value: 132 * 1024 * 1024 })
-    render(<LargeAttachmentDialog pending={pending} />)
+    render(<LargeAttachmentDialog />)
+    act(() => {
+      void confirmLargeFile(largeFile('demo.mov', 132 * 1024 * 1024))
+    })
     expect(screen.queryByText('Add large file?')).not.toBeNull()
     expect(screen.queryByText(/“demo\.mov” is 132 MB/)).not.toBeNull()
     expect(screen.queryByText(/100 MB/)).not.toBeNull()
@@ -27,17 +33,20 @@ describe('LargeAttachmentDialog', () => {
 
   it('approves on Add file and declines on Cancel', async () => {
     const user = userEvent.setup()
-    const respond = vi.fn()
-    const { unmount } = render(
-      <LargeAttachmentDialog pending={pendingFor('a.zip', respond)} />,
-    )
-    await user.click(screen.getByRole('button', { name: 'Add file' }))
-    expect(respond).toHaveBeenCalledWith(true)
-    unmount()
+    render(<LargeAttachmentDialog />)
 
-    const declined = vi.fn()
-    render(<LargeAttachmentDialog pending={pendingFor('a.zip', declined)} />)
+    let approved: Promise<boolean> | null = null
+    act(() => {
+      approved = confirmLargeFile(largeFile('a.zip', 0))
+    })
+    await user.click(screen.getByRole('button', { name: 'Add file' }))
+    await expect(approved).resolves.toBe(true)
+
+    let declined: Promise<boolean> | null = null
+    act(() => {
+      declined = confirmLargeFile(largeFile('b.zip', 0))
+    })
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(declined).toHaveBeenCalledWith(false)
+    await expect(declined).resolves.toBe(false)
   })
 })

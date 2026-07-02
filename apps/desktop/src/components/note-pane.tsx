@@ -3,7 +3,6 @@ import type { ExitBoundaryHandler } from '@meowdown/core'
 import { isDaily } from '@reflect/core'
 import { BacklinksPanel } from '@/components/backlinks-panel'
 import { InlineAlert } from '@/components/inline-alert'
-import { LargeAttachmentDialog } from '@/components/large-attachment-dialog'
 import { NoteConflictBanner } from '@/components/note-conflict-banner'
 import { ProtectedNoteView } from '@/components/protected-note-view'
 import { SyncConflictNotice } from '@/components/sync-conflict-notice'
@@ -14,9 +13,8 @@ import {
 } from '@/editor/editor-handle-registry'
 import { markModeFromSyntax } from '@/editor/mark-mode'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
-import { useAttachmentPersistence } from '@/editor/use-attachment-persistence'
+import { useAssetPersistence } from '@/editor/use-asset-persistence'
 import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
-import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
 import { useTagNavigation } from '@/editor/use-tag-navigation'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
@@ -129,18 +127,12 @@ export function NotePaneComponent({
   })
   const {
     resolveImageUrl,
-    resolveImageOpenPath,
-    openImage,
-    saveImage,
-    onImageSaveError,
-    saveError: imageSaveError,
-  } = useImagePersistence(graphRoot, generation)
-  const {
-    saveAttachment,
-    onAttachmentSaveError,
-    saveError: attachmentSaveError,
-    pendingLargeAttachment,
-  } = useAttachmentPersistence(path, generation)
+    resolveAssetOpenPath,
+    openAsset,
+    saveFile,
+    onFileSaveError,
+    saveError,
+  } = useAssetPersistence(graphRoot, generation, path)
   const onWikiLinkClick = useWikiLinkNavigation(generation)
   const onTagClick = useTagNavigation()
   const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
@@ -252,15 +244,10 @@ export function NotePaneComponent({
           </InlineAlert>
         ) : null}
 
-        {imageSaveError !== null ? (
+        {saveError !== null ? (
           <InlineAlert tone="error" className="mb-4">
-            Couldn’t save the pasted image: {imageSaveError}. It was not added to the note.
-          </InlineAlert>
-        ) : null}
-
-        {attachmentSaveError !== null ? (
-          <InlineAlert tone="error" className="mb-4">
-            Couldn’t save the file: {attachmentSaveError}. It was not added to the note.
+            Couldn’t save the {saveError.kind === 'image' ? 'pasted image' : 'file'}:{' '}
+            {saveError.message}. It was not added to the note.
           </InlineAlert>
         ) : null}
 
@@ -287,12 +274,10 @@ export function NotePaneComponent({
         // The grip drag-reorders blocks and the "+" inserts a paragraph below.
         blockHandle={true}
         resolveImageUrl={resolveImageUrl}
-        resolveImageOpenPath={resolveImageOpenPath}
-        openImage={openImage}
-        saveImage={saveImage}
-        onImageSaveError={onImageSaveError}
-        saveAttachment={saveAttachment}
-        onAttachmentSaveError={onAttachmentSaveError}
+        resolveAssetOpenPath={resolveAssetOpenPath}
+        openAsset={openAsset}
+        saveFile={saveFile}
+        onFileSaveError={onFileSaveError}
         onWikiLinkClick={onWikiLinkClick}
         onTagClick={onTagClick}
         onWikilinkSearch={onWikilinkSearch}
@@ -311,8 +296,6 @@ export function NotePaneComponent({
       <div className={gutterClassName}>
         <BacklinksPanel path={path} />
       </div>
-
-      <LargeAttachmentDialog pending={pendingLargeAttachment} />
     </div>
   )
 }

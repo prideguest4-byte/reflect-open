@@ -52,10 +52,10 @@ function renderEditor(
     <NoteEditor
       initialContent={'A photo\n\n![Cat](assets/cat.png)'}
       resolveImageUrl={(src) => (src === 'assets/cat.png' ? 'asset://cat.png' : null)}
-      resolveImageOpenPath={(src) =>
+      resolveAssetOpenPath={(src) =>
         src === 'assets/cat.png' ? 'assets/cat.png' : null
       }
-      openImage={openImage}
+      openAsset={openImage}
     />,
   )
 }
@@ -188,8 +188,8 @@ describe('NoteEditor image lightbox', () => {
       <NoteEditor
         initialContent={'A photo\n\n![Cat](assets/cat.png)'}
         resolveImageUrl={(src) => (src === 'assets/cat.png' ? 'asset://cat.png' : null)}
-        resolveImageOpenPath={(src) => (src === 'assets/cat.png' ? 'assets/cat.png' : null)}
-        openImage={secondOpenImage}
+        resolveAssetOpenPath={(src) => (src === 'assets/cat.png' ? 'assets/cat.png' : null)}
+        openAsset={secondOpenImage}
       />,
     )
 
@@ -203,7 +203,7 @@ describe('NoteEditor image lightbox', () => {
       <NoteEditor
         initialContent={'A photo\n\n![Cat](assets/cat.png)'}
         resolveImageUrl={(src) => (src === 'assets/cat.png' ? 'asset://cat.png' : null)}
-        resolveImageOpenPath={(src) => (src === 'assets/cat.png' ? 'assets/cat.png' : null)}
+        resolveAssetOpenPath={(src) => (src === 'assets/cat.png' ? 'assets/cat.png' : null)}
       />,
     )
 
@@ -245,45 +245,23 @@ describe('NoteEditor link opening', () => {
   })
 })
 
-describe('NoteEditor file paste routing', () => {
-  function renderWithPersistence() {
-    const saveImage = vi.fn(async () => 'assets/pasted-1.png')
-    const saveAttachment = vi.fn(async () => 'assets/report.pdf')
-    const onImageSaveError = vi.fn()
-    const onAttachmentSaveError = vi.fn()
-    render(
-      <NoteEditor
-        initialContent=""
-        saveImage={saveImage}
-        saveAttachment={saveAttachment}
-        onImageSaveError={onImageSaveError}
-        onAttachmentSaveError={onAttachmentSaveError}
-      />,
-    )
-    return { saveImage, saveAttachment, onImageSaveError, onAttachmentSaveError }
-  }
+describe('NoteEditor file paste', () => {
+  it('forwards meowdown paste and save errors to the persistence callbacks', async () => {
+    const saveFile = vi.fn(async () => 'assets/report.pdf')
+    const onFileSaveError = vi.fn()
+    render(<NoteEditor initialContent="" saveFile={saveFile} onFileSaveError={onFileSaveError} />)
 
-  it('routes meowdown paste by MIME: images to saveImage, the rest to saveAttachment', async () => {
-    const { saveImage, saveAttachment } = renderWithPersistence()
+    const pasted = new File([new Uint8Array(4)], 'q3.pdf', { type: 'application/pdf' })
+    await expect(captured.props?.onFilePaste?.(pasted)).resolves.toBe('assets/report.pdf')
+    expect(saveFile).toHaveBeenCalledExactlyOnceWith(pasted)
 
-    const image = new File([new Uint8Array(4)], 'shot.png', { type: 'image/png' })
-    const document = new File([new Uint8Array(4)], 'q3.pdf', { type: 'application/pdf' })
-    await expect(captured.props?.onFilePaste?.(image)).resolves.toBe('assets/pasted-1.png')
-    await expect(captured.props?.onFilePaste?.(document)).resolves.toBe('assets/report.pdf')
-
-    expect(saveImage).toHaveBeenCalledExactlyOnceWith(image)
-    expect(saveAttachment).toHaveBeenCalledExactlyOnceWith(document)
+    act(() => captured.props?.onFileSaveError?.('boom', pasted))
+    expect(onFileSaveError).toHaveBeenCalledExactlyOnceWith('boom', pasted)
   })
 
-  it('splits meowdown save errors back apart by file kind', () => {
-    const { onImageSaveError, onAttachmentSaveError } = renderWithPersistence()
-
-    const image = new File([], 'shot.png', { type: 'image/png' })
-    const document = new File([], 'q3.pdf', { type: 'application/pdf' })
-    act(() => captured.props?.onFileSaveError?.('image boom', image))
-    act(() => captured.props?.onFileSaveError?.('file boom', document))
-
-    expect(onImageSaveError).toHaveBeenCalledExactlyOnceWith('image boom', image)
-    expect(onAttachmentSaveError).toHaveBeenCalledExactlyOnceWith('file boom', document)
+  it('declines the paste (undefined) when saveFile returns null', async () => {
+    render(<NoteEditor initialContent="" saveFile={async () => null} />)
+    const pasted = new File([], 'q3.pdf', { type: 'application/pdf' })
+    await expect(captured.props?.onFilePaste?.(pasted)).resolves.toBeUndefined()
   })
 })
