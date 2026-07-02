@@ -18,11 +18,8 @@ minimumReleaseAgeExclude:
   - '@aria-ui/*'
   - virtua@0.49.2
 
-# pkg.pr.new overrides — ACTIVE while a meowdown PR is pending upstream.
-# TODO(ai-menu): temporary snapshot of prosekit/meowdown#191 (selection menu +
-# pending replacement); once it ships in a meowdown release, bump the
-# apps/desktop dependency instead and re-comment this block.
-blockExoticSubdeps: false
-overrides:
-  '@meowdown/core': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/core@ca6a7d4'
-  '@meowdown/react': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/react@ca6a7d4'
+# Uncomment the "blockExoticSubdeps" and "overrides" sections below to install packages from pkg.pr.new
+# blockExoticSubdeps: false
+# overrides:
+#   '@meowdown/core': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/core@5a4a25a'
+#   '@meowdown/react': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/react@5a4a25a'

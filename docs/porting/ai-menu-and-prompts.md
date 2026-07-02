@@ -1,10 +1,9 @@
 # Porting the AI menu and prompts
 
 **Status: implemented.** The meowdown primitives (selection command menu +
-pending-replacement preview) landed via
-[prosekit/meowdown#191](https://github.com/prosekit/meowdown/pull/191); until
-a meowdown release ships, the app pins pkg.pr.new snapshot builds via the
-`pnpm-workspace.yaml` overrides. Select text and press ⌘⇧J (or the sparkle
+pending-replacement preview) shipped upstream via
+[prosekit/meowdown#191](https://github.com/prosekit/meowdown/pull/191),
+released in meowdown 0.33.0. Select text and press ⌘⇧J (or the sparkle
 affordance on the selection), pick a prompt ("Fix spelling and grammar",
 "Write a short summary", or one saved in Settings → AI prompts), and the
 transformation streams into a preview with Accept / Discard / Retry (with a
@@ -97,6 +96,6 @@ The work splits cleanly along the existing seams:
 - "Retry" does offer a one-shot model switch (`AiPreviewActions` renders a
   model dropdown next to Retry, listing the configured providers' catalogs;
   the pick applies to that retry only).
-- The meowdown primitives landed first ([prosekit/meowdown#191](https://github.com/prosekit/meowdown/pull/191));
-  the app pins pkg.pr.new snapshots of that PR until it ships in a meowdown
-  release, then a plain dependency bump replaces the override.
+- The meowdown primitives landed first ([prosekit/meowdown#191](https://github.com/prosekit/meowdown/pull/191),
+  released in 0.33.0); the app depended on pkg.pr.new snapshots of the PR
+  during development and now uses the plain npm release.
