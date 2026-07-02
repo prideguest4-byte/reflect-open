@@ -14,6 +14,7 @@ import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
 import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
 import { useTagNavigation } from '@/editor/use-tag-navigation'
+import { useTemplateSlashItems } from '@/editor/use-template-slash-items'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
 import { untitledNoteSeed } from '@/lib/create-note'
 import { cn } from '@/lib/utils'
@@ -140,12 +141,16 @@ export function NotePaneComponent({
   const onTagClick = useTagNavigation()
   const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
 
-  const bindEditor = document.bindEditor
   // The registry entry this pane currently owns. Kept in a ref (not derived
   // from the call's arguments) because on a path change React detaches the old
   // callback with `null` before attaching the new one — the detach must
   // unregister the *previous* registration, whichever path it was under.
   const registeredEditor = useRef<{ path: string; handle: NoteEditorHandle } | null>(null)
+  const onSlashMenuSearch = useTemplateSlashItems(
+    useCallback(() => registeredEditor.current?.handle ?? null, []),
+  )
+
+  const bindEditor = document.bindEditor
   const handleRef = useCallback(
     (handle: NoteEditorHandle | null) => {
       bindEditor(handle)
@@ -284,6 +289,7 @@ export function NotePaneComponent({
         onTagClick={onTagClick}
         onWikilinkSearch={onWikilinkSearch}
         onTagSearch={onTagSearch}
+        onSlashMenuSearch={onSlashMenuSearch}
         // Daily notes carry no title semantics (the date is their subject),
         // so an empty leading H1 there is just an empty heading.
         {...(dailyNote ? {} : { titlePlaceholder: 'Untitled' })}

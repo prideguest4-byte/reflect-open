@@ -9,10 +9,11 @@ import {
 } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { errorMessage } from '@reflect/core'
-import { markdownToDoc, type ExitBoundaryHandler, type MarkMode } from '@meowdown/core'
+import { type ExitBoundaryHandler, type MarkMode } from '@meowdown/core'
 import {
   MeowdownEditor,
   type EditorHandle,
+  type SlashMenuSearchHandler,
   type TagSearchHandler,
   type WikilinkSearchHandler,
 } from '@meowdown/react'
@@ -103,6 +104,8 @@ interface NoteEditorProps {
   onWikilinkSearch?: WikilinkSearchHandler
   /** Search tags for the `#` autocomplete menu. */
   onTagSearch?: TagSearchHandler
+  /** Host rows for the `/` insert menu (note templates). */
+  onSlashMenuSearch?: SlashMenuSearchHandler
   /** Handler when pressing ArrowUp/ArrowDown at the document edge. */
   onExitBoundary?: ExitBoundaryHandler | undefined
   /**
@@ -142,6 +145,7 @@ export function NoteEditor({
   onTagClick,
   onWikilinkSearch,
   onTagSearch,
+  onSlashMenuSearch,
   onExitBoundary,
   children,
   titlePlaceholder,
@@ -185,20 +189,7 @@ export function NoteEditor({
     (): NoteEditorHandle => ({
       getMarkdown: () => innerRef.current?.getMarkdown() ?? '',
       setMarkdown: (markdown) => innerRef.current?.setMarkdown(markdown),
-      // Bridged through meowdown's `editor` escape hatch until its handle
-      // grows a first-class insertMarkdown — parse with the editor's own node
-      // builders, then replace the selection with an edge-open slice (depth 1
-      // both ends) so a one-paragraph fragment splices inline and a
-      // multi-block one splits the current block: paste semantics.
-      insertMarkdown: (markdown) => {
-        const editor = innerRef.current?.editor
-        if (editor === undefined || markdown.trim() === '') {
-          return
-        }
-        const doc = markdownToDoc(markdown, { nodes: editor.nodes })
-        const slice = doc.slice(1, doc.content.size - 1)
-        editor.view.dispatch(editor.state.tr.replaceSelection(slice).scrollIntoView())
-      },
+      insertMarkdown: (markdown) => innerRef.current?.insertMarkdown(markdown),
       focus: () => innerRef.current?.focus(),
       setSelection: (position) => innerRef.current?.setSelection(position),
     }),
@@ -290,6 +281,7 @@ export function NoteEditor({
         onImageClick={handleImageClick}
         {...(onWikilinkSearch !== undefined ? { onWikilinkSearch } : {})}
         {...(onTagSearch !== undefined ? { onTagSearch } : {})}
+        {...(onSlashMenuSearch !== undefined ? { onSlashMenuSearch } : {})}
         resolveImageUrl={handleResolveImageUrl}
         onImagePaste={handleImagePaste}
         onImageSaveError={handleImageSaveError}

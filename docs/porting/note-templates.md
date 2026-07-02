@@ -1,9 +1,9 @@
 # Porting note templates
 
-**Status: shipped**, except the editor slash-menu entry point — that rides
-meowdown's new host-items API
-([prosekit/meowdown#192](https://github.com/prosekit/meowdown/pull/192))
-and lands with the next meowdown release.
+**Status: shipped.** The editor slash-menu entry point rides meowdown's new
+host-items API ([prosekit/meowdown#192](https://github.com/prosekit/meowdown/pull/192)),
+currently consumed via a pkg.pr.new pin in `pnpm-workspace.yaml` — swap it
+for the real `@meowdown/*` bump when the release lands.
 The [product vision](../reflect-v2-product-vision.md) deferred templates
 with "markdown snippets may be enough" — and that is exactly the design:
 templates are markdown files in the graph.
