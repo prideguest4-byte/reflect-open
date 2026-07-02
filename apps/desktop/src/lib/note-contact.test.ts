@@ -13,9 +13,9 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   readNote,
   writeNote,
   noteExists,
+  createNoteWithTitle,
 }))
 vi.mock('@/editor/open-documents', () => ({ openSession }))
-vi.mock('@/lib/create-note', () => ({ createNoteWithTitle }))
 
 const { addContactToNote, createPersonNoteFromContact, ignoreContactSuggestion } = await import(
   './note-contact'

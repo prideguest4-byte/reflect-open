@@ -2,6 +2,7 @@ import {
   appendContactDetails,
   contactDetailsMarkdown,
   contactNamesEqual,
+  createNoteWithTitle,
   matchContactForTitle,
   noteExists,
   noteHasContactDetails,
@@ -12,7 +13,6 @@ import {
   writeNote,
   type ContactMatch,
 } from '@reflect/core'
-import { createNoteWithTitle } from '@/lib/create-note'
 import { openSession } from '@/editor/open-documents'
 import { commitNoteFrontmatter, readNoteSource } from '@/lib/note-frontmatter'
 

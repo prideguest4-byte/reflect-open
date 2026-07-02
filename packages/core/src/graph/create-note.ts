@@ -1,11 +1,9 @@
 import { ulid } from 'ulidx'
-import {
-  availableNotePath,
-  notePath,
-  slugForTitle,
-  upsertFrontmatter,
-  writeNote,
-} from '@reflect/core'
+import { availableNotePath } from '../indexing/note-paths'
+import { upsertFrontmatter } from '../markdown/frontmatter'
+import { slugForTitle } from '../markdown/slug'
+import { writeNote } from './commands'
+import { notePath } from './paths'
 
 /**
  * Note identity at creation (`docs/readable-filenames.md`): regular notes get
@@ -22,13 +20,11 @@ export function newNoteId(): string {
 
 /**
  * The on-disk source for a brand-new note: `id:` frontmatter + H1 title,
- * plus an optional body block under the H1 (a person note's contact details,
- * a `- Type: #person` typing line).
+ * plus an optional body block under the title (e.g. the add-meeting action's
+ * `- Type: #person` line).
  */
 export function newNoteSource(title: string, body?: string): string {
-  const trimmedBody = body?.trim() ?? ''
-  const content =
-    trimmedBody === '' ? `# ${title.trim()}\n` : `# ${title.trim()}\n\n${trimmedBody}\n`
+  const content = body ? `# ${title.trim()}\n\n${body.trim()}\n` : `# ${title.trim()}\n`
   return upsertFrontmatter(content, { id: newNoteId() })
 }
 
@@ -68,10 +64,10 @@ export function isUntitledNotePath(path: string): boolean {
 
 /**
  * Create a new note titled `title` (Plan 07's create-from-unresolved) at a
- * collision-free slug path, optionally seeded with a `body` block under the
- * H1. Returns the new graph-relative path. The write carries `generation`,
- * so a create racing a graph switch is rejected loudly instead of landing in
- * the wrong graph.
+ * collision-free slug path, optionally with a body block under the H1.
+ * Returns the new graph-relative path. The write carries `generation`, so a
+ * create racing a graph switch is rejected loudly instead of landing in the
+ * wrong graph.
  */
 export async function createNoteWithTitle(
   title: string,

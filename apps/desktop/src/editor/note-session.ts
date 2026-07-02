@@ -149,6 +149,13 @@ export interface NoteSessionOptions {
  * session-channel writer.
  */
 export interface FrontmatterPatch {
+  /**
+   * The durable note identity (Plan 17's ULID). Only ever *minted* — written
+   * once for a note that predates ids or was created outside Reflect (the
+   * deep-link copy path) — never changed or removed: links and the index key
+   * on it.
+   */
+  id?: string
   /** Alternative wiki-link titles for this note (the Plan 07b auto-alias). */
   aliases?: string[]
   /**
@@ -185,6 +192,9 @@ export interface FrontmatterPatch {
  */
 export function frontmatterPatchToYaml(patch: FrontmatterPatch): Record<string, unknown> {
   const yaml: Record<string, unknown> = {}
+  if (patch.id !== undefined) {
+    yaml['id'] = patch.id
+  }
   if (patch.aliases !== undefined) {
     yaml['aliases'] = patch.aliases
   }

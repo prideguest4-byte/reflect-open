@@ -7,6 +7,7 @@ import {
 } from '@meowdown/react'
 import {
   contactLinkSuggestions,
+  createNoteWithTitle,
   hasBridge,
   isContactsReadable,
   suggestTags,
@@ -14,7 +15,6 @@ import {
 } from '@reflect/core'
 import { buildAutocompleteEntries } from '@/editor/wiki-autocomplete-entries'
 import { useContactsAuthorization } from '@/hooks/use-contacts-authorization'
-import { createNoteWithTitle } from '@/lib/create-note'
 import { formatDayLabel, todayIso } from '@/lib/dates'
 import { createPersonNoteFromContact } from '@/lib/note-contact'
 import { useGraph } from '@/providers/graph-provider'
