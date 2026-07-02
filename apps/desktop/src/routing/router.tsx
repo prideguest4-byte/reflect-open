@@ -53,6 +53,12 @@ interface RouterValue {
   forward: () => void
   canBack: boolean
   canForward: boolean
+  /**
+   * The route `back()` would land on — the entry just below the current one —
+   * or `null` at the bottom of the stack. The mobile stack renders it beneath
+   * a pushed note so the back-swipe gesture reveals a live screen.
+   */
+  backRoute: Route | null
   /** Record the active view's scroll offset on the current history entry. */
   saveScrollState: (offset: number) => void
   /**
@@ -261,6 +267,7 @@ export function RouterProvider({
       forward,
       canBack: history.index > 0,
       canForward: history.index < history.stack.length - 1,
+      backRoute: history.index > 0 ? history.stack[history.index - 1]!.route : null,
       saveScrollState,
       clearScrollState,
       savedScroll,
@@ -287,4 +294,33 @@ export function useRouter(): RouterValue {
     throw new Error('useRouter must be used within a RouterProvider')
   }
   return context
+}
+
+interface RouterFreezeProps {
+  /** While true, the subtree keeps the last router value it saw unfrozen. */
+  frozen: boolean
+  children: ReactNode
+}
+
+/**
+ * Pin the router value a subtree sees while it is in the background. The
+ * mobile stack keeps the screen `back()` would reveal mounted (hidden and
+ * inert) beneath a note — without this, that screen would still observe
+ * every navigation: a note push bumps `arrivalSeq`, which the daily surface
+ * reads as a re-arrival and re-anchors its scroll while nobody is looking.
+ * Frozen subtrees resume the live value the moment they surface again; the
+ * navigation callbacks in the frozen snapshot stay valid because they are
+ * stable for the provider's lifetime.
+ */
+export function RouterFreeze({ frozen, children }: RouterFreezeProps): ReactElement {
+  const live = useRouter()
+  // The capture tracks the live value only while unfrozen — state adjusted
+  // during render, so freezing pins exactly what the last unfrozen commit saw.
+  const [captured, setCaptured] = useState(live)
+  if (!frozen && captured !== live) {
+    setCaptured(live)
+  }
+  return (
+    <RouterContext.Provider value={frozen ? captured : live}>{children}</RouterContext.Provider>
+  )
 }
