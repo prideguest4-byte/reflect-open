@@ -15,6 +15,8 @@ interface CapturedEditorProps {
   onImageClick?: (payload: { src: string; alt: string; event: MouseEvent }) => void
   onLinkClick?: (payload: { href: string; event: MouseEvent }) => void
   onTagClick?: (payload: { tag: string; event: MouseEvent }) => void
+  onFilePaste?: (file: File) => Promise<string | undefined>
+  onFileSaveError?: (error: unknown, file: File) => void
 }
 
 const captured = vi.hoisted(() => ({ props: null as CapturedEditorProps | null }))
@@ -229,5 +231,59 @@ describe('NoteEditor link opening', () => {
     act(() => captured.props?.onLinkClick?.({ href: 'https://example.com', event }))
 
     expect(openUrl).toHaveBeenCalledWith('https://example.com')
+  })
+
+  it('opens an assets/ link through the graph asset opener, not the URL opener', () => {
+    const openImage = vi.fn(async () => {})
+    renderEditor(openImage)
+
+    const event = new MouseEvent('click')
+    act(() => captured.props?.onLinkClick?.({ href: 'assets/cat.png', event }))
+
+    expect(openImage).toHaveBeenCalledWith('assets/cat.png')
+    expect(openUrl).not.toHaveBeenCalled()
+  })
+})
+
+describe('NoteEditor file paste routing', () => {
+  function renderWithPersistence() {
+    const saveImage = vi.fn(async () => 'assets/pasted-1.png')
+    const saveAttachment = vi.fn(async () => 'assets/report.pdf')
+    const onImageSaveError = vi.fn()
+    const onAttachmentSaveError = vi.fn()
+    render(
+      <NoteEditor
+        initialContent=""
+        saveImage={saveImage}
+        saveAttachment={saveAttachment}
+        onImageSaveError={onImageSaveError}
+        onAttachmentSaveError={onAttachmentSaveError}
+      />,
+    )
+    return { saveImage, saveAttachment, onImageSaveError, onAttachmentSaveError }
+  }
+
+  it('routes meowdown paste by MIME: images to saveImage, the rest to saveAttachment', async () => {
+    const { saveImage, saveAttachment } = renderWithPersistence()
+
+    const image = new File([new Uint8Array(4)], 'shot.png', { type: 'image/png' })
+    const document = new File([new Uint8Array(4)], 'q3.pdf', { type: 'application/pdf' })
+    await expect(captured.props?.onFilePaste?.(image)).resolves.toBe('assets/pasted-1.png')
+    await expect(captured.props?.onFilePaste?.(document)).resolves.toBe('assets/report.pdf')
+
+    expect(saveImage).toHaveBeenCalledExactlyOnceWith(image)
+    expect(saveAttachment).toHaveBeenCalledExactlyOnceWith(document)
+  })
+
+  it('splits meowdown save errors back apart by file kind', () => {
+    const { onImageSaveError, onAttachmentSaveError } = renderWithPersistence()
+
+    const image = new File([], 'shot.png', { type: 'image/png' })
+    const document = new File([], 'q3.pdf', { type: 'application/pdf' })
+    act(() => captured.props?.onFileSaveError?.('image boom', image))
+    act(() => captured.props?.onFileSaveError?.('file boom', document))
+
+    expect(onImageSaveError).toHaveBeenCalledExactlyOnceWith('image boom', image)
+    expect(onAttachmentSaveError).toHaveBeenCalledExactlyOnceWith('file boom', document)
   })
 })
