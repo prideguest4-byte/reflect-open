@@ -1,5 +1,5 @@
 import { noteExists } from '../graph/commands'
-import { notePath } from '../graph/paths'
+import { notePath, templatePath } from '../graph/paths'
 import { slugForTitle } from '../markdown/slug'
 import { db } from './db'
 
@@ -47,9 +47,10 @@ async function probeNotePath(
   slug: string,
   taken: (candidate: string) => Promise<boolean>,
   currentPath: string | null,
+  buildPath: (slug: string) => string = notePath,
 ): Promise<string> {
   for (let ordinal = 1; ordinal <= MAX_COLLISION_PROBES; ordinal += 1) {
-    const candidate = notePath(ordinal === 1 ? slug : `${slug}-${ordinal}`)
+    const candidate = buildPath(ordinal === 1 ? slug : `${slug}-${ordinal}`)
     if (candidate === currentPath) {
       return currentPath
     }
@@ -69,6 +70,32 @@ export async function availableNotePath(
   taken: (path: string) => Promise<boolean> = pathTaken,
 ): Promise<string> {
   return probeNotePath(slug, taken, null)
+}
+
+/**
+ * The first available `templates/…` path for `slug` (template creation) —
+ * the same probe and collision suffix as {@link availableNotePath}, in the
+ * templates directory.
+ */
+export async function availableTemplatePath(
+  slug: string,
+  taken: (path: string) => Promise<boolean> = pathTaken,
+): Promise<string> {
+  return probeNotePath(slug, taken, null, templatePath)
+}
+
+/**
+ * Where `path`'s template file should live for `title` (the settings rename's
+ * target) — {@link slugPathForTitle}'s semantics in the templates directory:
+ * the template's own path always counts as free, so a no-op rename never
+ * "moves" a file onto a `-2` suffix.
+ */
+export async function templateSlugPathForTitle(
+  path: string,
+  title: string,
+  taken: (candidate: string) => Promise<boolean> = pathTaken,
+): Promise<string> {
+  return probeNotePath(slugForTitle(title), taken, path, templatePath)
 }
 
 /**

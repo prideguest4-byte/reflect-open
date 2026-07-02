@@ -12,6 +12,7 @@ import { EditorSection } from './settings/editor-section'
 import { IntegrationsSection } from './settings/integrations-section'
 import { KeyboardSection } from './settings/keyboard-section'
 import { SearchSection } from './settings/search-section'
+import { TemplatesSection } from './settings/templates-section'
 
 /**
  * The settings screen (a routed view, like notes — reached via ⌘, or the
@@ -26,6 +27,7 @@ export function SettingsScreen(): ReactElement {
         <AppearanceSection />
         <DateTimeSection />
         <EditorSection />
+        <TemplatesSection />
         <AllNotesSection />
         <SearchSection />
         <CalendarSection />
