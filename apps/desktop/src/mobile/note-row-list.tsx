@@ -47,7 +47,12 @@ export function NoteRowList({ rows, onOpen }: NoteRowListProps): ReactElement {
             style={{ height: NOTE_ROW_HEIGHT }}
           >
             <span className="flex w-full items-baseline gap-2">
-              {row.isPinned && <Pin className="size-3 shrink-0 self-center text-text-muted" />}
+              {row.isPinned && (
+                <>
+                  <Pin aria-hidden className="size-3 shrink-0 self-center text-text-muted" />
+                  <span className="sr-only">Pinned</span>
+                </>
+              )}
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{row.title}</span>
               <span className="shrink-0 text-xs text-text-muted">
                 {formatRecencyLabel(row.mtime, settings)}

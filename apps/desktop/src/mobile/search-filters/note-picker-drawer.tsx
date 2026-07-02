@@ -1,5 +1,5 @@
 import { useDeferredValue, useState, type ReactElement } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { hasBridge, parseSearchQuery, searchWithFilters } from '@reflect/core'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
@@ -40,6 +40,9 @@ export function NotePickerDrawer({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-note-picker', deferredQuery],
     queryFn: () => searchWithFilters(parseSearchQuery(deferredQuery), { limit: PICKER_LIMIT }),
     enabled: open && hasBridge() && graph !== null,
+    // Typing re-keys the query as the deferred value settles; holding the
+    // previous rows avoids a "No matches" flash between keystrokes.
+    placeholderData: keepPreviousData,
   })
 
   // Closing always drops the picker's search text — a dismissed search must

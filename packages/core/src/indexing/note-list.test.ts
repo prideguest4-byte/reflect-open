@@ -71,9 +71,10 @@ describe('listNotes', () => {
     expect(sql).not.toContain('note_text')
     // `kind = 'note'` excludes dailies (the stream is their home) and templates.
     expect(sql).toContain('"notes"."kind" = ?')
-    // Pinned notes lead (explicit order first), then recency — V1's list order.
+    // Pinned notes lead (explicit order first), then recency — V1's list
+    // order, via the recallOrder helper shared with filtered-search.
     const pinnedAt = sql.indexOf('"notes"."is_pinned" desc')
-    const orderAt = sql.indexOf('pinned_order IS NULL')
+    const orderAt = sql.indexOf('"notes"."pinned_order" is null')
     const mtimeAt = sql.indexOf('"notes"."mtime" desc')
     expect(pinnedAt).toBeGreaterThan(-1)
     expect(orderAt).toBeGreaterThan(pinnedAt)

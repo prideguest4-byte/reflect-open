@@ -1,6 +1,7 @@
 import { sql } from 'kysely'
 import { foldTag } from '../markdown'
 import { db } from './db'
+import { recallOrder } from './filtered-search'
 
 /**
  * The All Notes list: every regular note, pinned first then newest, optionally
@@ -38,9 +39,9 @@ export interface NoteListOptions {
 export async function listNotes(options: NoteListOptions = {}): Promise<NoteListEntry[]> {
   const tag = options.tag ?? null
 
-  const rows =
+  let listQuery =
     tag === null
-      ? await db
+      ? db
           .selectFrom('notes')
           .where('notes.kind', '=', 'note')
           .select([
@@ -51,13 +52,7 @@ export async function listNotes(options: NoteListOptions = {}): Promise<NoteList
             'notes.isPinned',
             'notes.pinnedOrder',
           ])
-          .orderBy('notes.isPinned', 'desc')
-          .orderBy(sql`pinned_order IS NULL`)
-          .orderBy('notes.pinnedOrder')
-          .orderBy('notes.mtime', 'desc')
-          .orderBy('notes.path')
-          .execute()
-      : await db
+      : db
           .selectFrom('tags')
           .innerJoin('notes', 'notes.path', 'tags.notePath')
           .where('tags.tagKey', '=', foldTag(tag))
@@ -71,12 +66,10 @@ export async function listNotes(options: NoteListOptions = {}): Promise<NoteList
             'notes.pinnedOrder',
           ])
           .distinct()
-          .orderBy('notes.isPinned', 'desc')
-          .orderBy(sql`pinned_order IS NULL`)
-          .orderBy('notes.pinnedOrder')
-          .orderBy('notes.mtime', 'desc')
-          .orderBy('notes.path')
-          .execute()
+  for (const order of recallOrder(true)) {
+    listQuery = listQuery.orderBy(order)
+  }
+  const rows = await listQuery.execute()
 
   if (rows.length === 0) {
     return []

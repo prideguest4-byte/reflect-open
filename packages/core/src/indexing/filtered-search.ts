@@ -63,8 +63,14 @@ const HIT_COLUMNS = [
   'notes.isPinned',
 ] as const
 
-/** The no-text feed's order: optionally pinned-first, then recency. */
-function recallOrder(pinnedFirst: boolean): RawBuilder<unknown>[] {
+/**
+ * The recall-feed ordering, shared with `listNotes` so the two "V1 list
+ * order" implementations can't drift: optionally pinned-first (explicit pin
+ * order, then unordered pins), then recency, then path as the stable
+ * tiebreaker. Raw fragments because Kysely's typed `orderBy` can't resolve
+ * `notes.*` refs across differently-rooted queries.
+ */
+export function recallOrder(pinnedFirst: boolean): RawBuilder<unknown>[] {
   const pinned = [
     sql`"notes"."is_pinned" desc`,
     sql`"notes"."pinned_order" is null`,
