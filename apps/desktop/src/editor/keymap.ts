@@ -59,7 +59,20 @@ const EDITOR_BINDINGS = Object.fromEntries(
   Object.entries(EDITOR_KEY_BINDINGS).filter(([key]) => !SHARED_WITH_APP.has(key)),
 )
 
-export const EDITOR_BINDING_DESCRIPTIONS: Record<string, string> = registerKeymap(
-  'editor',
-  EDITOR_BINDINGS,
-)
+/** The editor-scope binding that opens the AI menu on the current selection. */
+export const AI_MENU_BINDING = 'Mod-Shift-j'
+
+/**
+ * Reflect's own editor-scope bindings (bound via `useKeymap` inside the
+ * editor, not by meowdown's engine). Declared here, next to meowdown's, so
+ * the shortcuts UI lists them — a feature registering its key elsewhere
+ * would fire without ever appearing in the cheat sheet.
+ */
+const REFLECT_EDITOR_BINDINGS: Record<string, string> = {
+  [AI_MENU_BINDING]: 'Open the AI menu on the selection',
+}
+
+export const EDITOR_BINDING_DESCRIPTIONS: Record<string, string> = registerKeymap('editor', {
+  ...EDITOR_BINDINGS,
+  ...REFLECT_EDITOR_BINDINGS,
+})

@@ -804,11 +804,13 @@ describe('SettingsScreen', () => {
 
   it('lists registered shortcuts from both keymap scopes', () => {
     renderScreen()
-    // App scope (command titles) and editor scope (binding descriptions).
+    // App scope (command titles) and editor scope (binding descriptions) —
+    // including Reflect's own editor bindings, not just meowdown's.
     expect(screen.getByText('Toggle sidebar')).toBeTruthy()
     expect(screen.getByText('Go to today')).toBeTruthy()
     expect(screen.getByText('Bold')).toBeTruthy()
     expect(screen.getByText('Heading 1')).toBeTruthy()
+    expect(screen.getByText('Open the AI menu on the selection')).toBeTruthy()
   })
 
   it('adding an AI prompt persists the full document', async () => {

@@ -1,12 +1,7 @@
 import { useMemo } from 'react'
 import { Priority } from '@meowdown/core'
 import { useKeymap } from '@meowdown/react'
-import { registerKeymap } from '@/editor/keymap'
-
-/** The editor-scope binding that opens the AI menu on the current selection. */
-export const AI_MENU_BINDING = 'Mod-Shift-j'
-
-registerKeymap('editor', { [AI_MENU_BINDING]: 'Open the AI menu on the selection' })
+import { AI_MENU_BINDING } from '@/editor/keymap'
 
 /**
  * Binds ⌘⇧J inside the editor's ProseKit context (meowdown renders children
