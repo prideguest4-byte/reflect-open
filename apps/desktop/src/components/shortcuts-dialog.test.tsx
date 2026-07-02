@@ -42,6 +42,15 @@ describe('ShortcutsDialog', () => {
     expect(screen.getByText('Keyboard shortcuts', { selector: 'li *' })).toBeTruthy()
   })
 
+  it('keeps the sheet within the viewport and scrolls the shortcut rows', async () => {
+    renderDialog()
+    await userEvent.click(screen.getByRole('button', { name: 'open' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
+    expect(dialog.className).toContain('max-h-[calc(100dvh-2rem)]')
+    expect(dialog.className).toContain('overflow-hidden')
+    expect(dialog.querySelector('.overflow-y-auto')).toBeTruthy()
+  })
+
   it('closes on Escape', async () => {
     renderDialog()
     await userEvent.click(screen.getByRole('button', { name: 'open' }))
