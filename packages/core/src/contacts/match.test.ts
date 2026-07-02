@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
 import type { ContactMatch } from './commands'
-import { contactNamesEqual, matchContactForTitle, suggestContactForTitle } from './match'
+import {
+  contactLinkSuggestions,
+  contactNamesEqual,
+  matchContactForTitle,
+  suggestContactForTitle,
+} from './match'
 
 function contact(overrides: Partial<ContactMatch>): ContactMatch {
   return {
@@ -71,6 +76,57 @@ describe('contactNamesEqual', () => {
     expect(contactNamesEqual('René Descartes', 'Rene Descartes')).toBe(true)
     expect(contactNamesEqual('Ada Lovelace', 'Grace Hopper')).toBe(false)
     expect(contactNamesEqual('', '')).toBe(false)
+  })
+})
+
+describe('contactLinkSuggestions', () => {
+  const ada = {
+    fullName: 'Ada Lovelace',
+    givenName: 'Ada',
+    familyName: 'Lovelace',
+    emails: ['ada@example.com'],
+    phones: [],
+  }
+
+  it('answers empty for short queries without touching the bridge', async () => {
+    const invoke = vi.fn()
+    setBridge({ invoke, listen: async () => () => {} })
+    await expect(contactLinkSuggestions('a')).resolves.toEqual([])
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('keeps word-prefix matches, dropping nameless and detail-less contacts', async () => {
+    const invoke = vi.fn().mockResolvedValue([
+      ada,
+      { fullName: '', givenName: '', familyName: '', emails: ['x@example.com'], phones: [] },
+      { fullName: 'Ada Byron', givenName: 'Ada', familyName: 'Byron', emails: [], phones: [] },
+    ])
+    setBridge({ invoke, listen: async () => () => {} })
+
+    await expect(contactLinkSuggestions('Ada')).resolves.toEqual([ada])
+    expect(invoke).toHaveBeenCalledWith('contacts_lookup_by_name', { name: 'Ada' })
+  })
+
+  it('dedupes same-named entries and honors the limit', async () => {
+    const named = (index: number) => ({
+      fullName: `Person ${index}`,
+      givenName: 'Person',
+      familyName: String(index),
+      emails: [`p${index}@example.com`],
+      phones: [],
+    })
+    setBridge({
+      invoke: async () => [named(1), { ...named(1), emails: ['dupe@example.com'] }, named(2), named(3), named(4), named(5)],
+      listen: async () => () => {},
+    })
+
+    const suggestions = await contactLinkSuggestions('Person')
+    expect(suggestions.map((entry) => entry.fullName)).toEqual([
+      'Person 1',
+      'Person 2',
+      'Person 3',
+      'Person 4',
+    ])
   })
 })
 

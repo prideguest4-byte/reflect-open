@@ -6,8 +6,9 @@ entry. v2 keeps that role but reads the **Apple Contacts** store instead of
 syncing provider address books through a server.
 
 Shipped: the Rust `contacts` capability (`CNContactStore` via `objc2`), the
-Settings → System integrations switch with the permission flow, and the
-suggested-contact card. The meeting-attendee half waits on the
+Settings → System integrations switch with the permission flow, the
+suggested-contact card, and contacts in the `[[` link menu. The
+meeting-attendee half waits on the
 [calendar flow](./calendar-meetings-integration.md) — its resolution policy
 (`resolveAttendeeContact` in `@reflect/core`) is already in place for it to
 consume.
@@ -30,6 +31,16 @@ Decisions taken at implementation time:
   contact's name in the note's `ignoredContacts` frontmatter list (v1's
   `ignoredContactNames`), so a retitled note stays eligible for its own
   suggestion and the state travels with the note through sync and export.
+- **Contacts join the `[[` link menu, like v1's backlink menu.** Word-prefix
+  matches (min two typed characters, capped, deduped against notes the link
+  would resolve to) appear after note suggestions; selecting one inserts the
+  link and creates the person note prefilled with the same details block Add
+  writes. A contact row for the exact typed name replaces the bare Create
+  row.
+- **No `mailto:`/`tel:` links.** v1's rich editor hid link URLs; v2 notes are
+  markdown the user owns, where the syntax would double every value — and the
+  editor's link opener is scoped to `https`. Plain values keep the files
+  clean; autolinking can make them clickable without markup.
 
 ## What v1 did
 

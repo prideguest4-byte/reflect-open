@@ -20,9 +20,16 @@ export function newNoteId(): string {
   return ulid().toLowerCase()
 }
 
-/** The on-disk source for a brand-new note: `id:` frontmatter + H1 title. */
-export function newNoteSource(title: string): string {
-  return upsertFrontmatter(`# ${title.trim()}\n`, { id: newNoteId() })
+/**
+ * The on-disk source for a brand-new note: `id:` frontmatter + H1 title,
+ * plus an optional body block under the H1 (a person note's contact details,
+ * a `- Type: #person` typing line).
+ */
+export function newNoteSource(title: string, body?: string): string {
+  const trimmedBody = body?.trim() ?? ''
+  const content =
+    trimmedBody === '' ? `# ${title.trim()}\n` : `# ${title.trim()}\n\n${trimmedBody}\n`
+  return upsertFrontmatter(content, { id: newNoteId() })
 }
 
 /**
@@ -61,12 +68,17 @@ export function isUntitledNotePath(path: string): boolean {
 
 /**
  * Create a new note titled `title` (Plan 07's create-from-unresolved) at a
- * collision-free slug path. Returns the new graph-relative path. The write
- * carries `generation`, so a create racing a graph switch is rejected loudly
- * instead of landing in the wrong graph.
+ * collision-free slug path, optionally seeded with a `body` block under the
+ * H1. Returns the new graph-relative path. The write carries `generation`,
+ * so a create racing a graph switch is rejected loudly instead of landing in
+ * the wrong graph.
  */
-export async function createNoteWithTitle(title: string, generation: number): Promise<string> {
+export async function createNoteWithTitle(
+  title: string,
+  generation: number,
+  body?: string,
+): Promise<string> {
   const path = await availableNotePath(slugForTitle(title))
-  await writeNote(path, newNoteSource(title), generation)
+  await writeNote(path, newNoteSource(title, body), generation)
   return path
 }

@@ -154,6 +154,7 @@ export {
   type ContactMatch,
 } from './contacts/commands'
 export {
+  contactLinkSuggestions,
   contactNamesEqual,
   matchContactForTitle,
   suggestContactForTitle,
