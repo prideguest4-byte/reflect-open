@@ -2,18 +2,20 @@ import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { setBridge } from '@reflect/core'
-import { LARGE_FILE_BYTES } from '@/lib/large-file-confirm'
-import { useAssetPersistence, type AssetPersistence } from './use-asset-persistence'
-
-const { confirmLargeFileMock } = vi.hoisted(() => ({
-  confirmLargeFileMock: vi.fn(async () => true),
-}))
-vi.mock('@/lib/large-file-confirm', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/large-file-confirm')>()),
-  confirmLargeFile: confirmLargeFileMock,
-}))
+import { resetOperations, useOperations, type Operation } from '@/lib/operations'
+import {
+  LARGE_FILE_BYTES,
+  useAssetPersistence,
+  type AssetPersistence,
+} from './use-asset-persistence'
 
 let persistence: AssetPersistence | null = null
+let operations: Operation[] = []
+
+function OperationsProbe(): ReactNode {
+  operations = useOperations()
+  return null
+}
 
 function Host({
   generation,
@@ -49,8 +51,8 @@ afterEach(() => {
   cleanup()
   setBridge(null)
   persistence = null
-  confirmLargeFileMock.mockReset()
-  confirmLargeFileMock.mockResolvedValue(true)
+  resetOperations()
+  operations = []
 })
 
 describe('useAssetPersistence saveFile', () => {
@@ -90,28 +92,32 @@ describe('useAssetPersistence saveFile', () => {
     expect(saved).toBe('assets/scan-1.tiff')
   })
 
-  it('gates any large file — image or not — on the app confirm', async () => {
-    const invoke = installUploadBridge()
-    render(<Host generation={3} />)
+  it('saves a large file without asking, with a status-line warning after', async () => {
+    installUploadBridge()
+    render(
+      <>
+        <Host generation={3} />
+        <OperationsProbe />
+      </>,
+    )
 
-    confirmLargeFileMock.mockResolvedValueOnce(false)
-    let declined: string | null = 'sentinel'
+    let saved: string | null = null
     await act(async () => {
-      declined = await persistence!.saveFile(
-        fileOf('huge.png', 'image/png', LARGE_FILE_BYTES + 1),
-      )
-    })
-    expect(declined).toBeNull()
-    expect(invoke).not.toHaveBeenCalledWith('asset_upload_begin', expect.anything())
-
-    let approved: string | null = null
-    await act(async () => {
-      approved = await persistence!.saveFile(
+      saved = await persistence!.saveFile(
         fileOf('huge.mov', 'video/quicktime', LARGE_FILE_BYTES + 1),
       )
     })
-    expect(approved).toBe('assets/huge.mov')
-    expect(confirmLargeFileMock).toHaveBeenCalledTimes(2)
+
+    expect(saved).toBe('assets/huge.mov')
+    const warning = operations.find((operation) => operation.status === 'warning')
+    expect(warning?.message).toMatch(/“huge\.mov” is 25 MB/)
+    expect(warning?.message).toMatch(/100 MB/)
+
+    // A small file warns about nothing.
+    await act(async () => {
+      await persistence!.saveFile(fileOf('small.pdf', 'application/pdf'))
+    })
+    expect(operations.filter((operation) => operation.status === 'warning')).toHaveLength(1)
   })
 
   it('declines without a graph session', async () => {
@@ -212,31 +218,4 @@ describe('useAssetPersistence errors', () => {
     expect(persistence!.saveError).toBeNull()
   })
 
-  it('declines a large-file confirm answered after the note switched', async () => {
-    const invoke = installUploadBridge()
-    let approve: ((proceed: boolean) => void) | null = null
-    confirmLargeFileMock.mockImplementationOnce(
-      () =>
-        new Promise<boolean>((resolve) => {
-          approve = resolve
-        }),
-    )
-    const view = render(<Host generation={3} path="notes/a.md" />)
-
-    let savePromise: Promise<string | null> | null = null
-    act(() => {
-      savePromise = persistence!.saveFile(
-        fileOf('huge.mov', 'video/quicktime', LARGE_FILE_BYTES + 1),
-      )
-    })
-    view.rerender(<Host generation={3} path="notes/b.md" />)
-    await act(async () => {
-      approve!(true)
-      await savePromise
-    })
-
-    // Approved too late: nothing is written for a note that is gone.
-    await expect(savePromise).resolves.toBeNull()
-    expect(invoke).not.toHaveBeenCalledWith('asset_upload_begin', expect.anything())
-  })
 })

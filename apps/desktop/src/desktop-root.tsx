@@ -1,7 +1,6 @@
 import { useEffect, type ReactElement } from 'react'
 import { hasBridge } from '@reflect/core'
 import { App } from '@/app'
-import { LargeAttachmentDialog } from '@/components/large-attachment-dialog'
 import { OperationsStatus } from '@/components/operations-status'
 import { UpdateToast } from '@/components/update-toast'
 import { Toaster } from '@/components/ui/sonner'
@@ -37,7 +36,6 @@ export function DesktopRoot(): ReactElement {
           <App />
           <Toaster />
           <OperationsStatus />
-          <LargeAttachmentDialog />
           <UpdateToast />
         </TooltipProvider>
       </GraphProvider>

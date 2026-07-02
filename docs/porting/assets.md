@@ -6,8 +6,8 @@ it into the graph's `assets/` folder and links it relatively. Arbitrary
 or drop inserts a plain `[name](assets/…)` link (meowdown's `onFilePaste`,
 prosekit/meowdown#190), an **Attach file…** command (palette + File menu)
 covers the keyboard-native path, clicking an `assets/` link opens the file
-through the OS, and files over ~25 MB pause on a confirm that explains the
-git-history cost. One deviation from the plan below: dropped files stream
+through the OS, and files over ~25 MB get a non-blocking status-line
+warning about the git-history cost after they land. One deviation from the plan below: dropped files stream
 over **chunked raw-binary IPC** rather than arriving as OS paths — see
 "Finder drops" for why.
 
@@ -95,9 +95,11 @@ else as `[…](…)`, in one drop). Rendering needs nothing new: it's a link;
   (`persist_noclobber`), so two concurrent intakes can never clobber.
 - **Size is a warning, not a wall.** It's the user's disk, but git backup
   is the quiet constraint: every large binary lives in history forever,
-  and GitHub hard-rejects files over 100 MB. Above a threshold
-  (~25 MB), confirm with that context instead of refusing; v1's flat
-  "50mb is the max" alert is not ported.
+  and GitHub hard-rejects files over 100 MB. Above a threshold (~25 MB),
+  a non-blocking status-line warning carries that context after the save
+  lands — never a modal (the drop already said what the user wants), and
+  v1's flat "50mb is the max" alert is not ported. (A confirm-dialog cut
+  was built and removed as an unnecessary interruption.)
 - **No type policing.** v1 accepted effectively everything; v2 does too.
   Nothing executes an asset — links open through the OS.
 

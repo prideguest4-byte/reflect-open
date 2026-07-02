@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { assetFileName, createAsset, errorMessage, openAsset as openAssetCommand } from '@reflect/core'
-import { confirmLargeFile, LARGE_FILE_BYTES } from '@/lib/large-file-confirm'
+import { formatBytes } from '@/lib/format-bytes'
+import { startOperation } from '@/lib/operations'
+
+/**
+ * Above this size, a save gets a non-blocking status-line warning. Never a
+ * wall (it's the user's disk), and not a modal either — the drop already
+ * said what the user wants — but git backup is the quiet constraint: every
+ * binary lives in history forever, and GitHub hard-rejects files over
+ * 100 MB, so the size is worth a mention.
+ */
+export const LARGE_FILE_BYTES = 25 * 1024 * 1024
 
 /** Asset file extension for each image MIME type that gets `pasted-…` naming. */
 const EXTENSION_BY_MIME: Record<string, string> = {
@@ -64,11 +74,12 @@ export interface AssetPersistence {
  * URLs (remote URLs pass through; `assets/` paths map to Tauri asset URLs),
  * open asset links in the OS viewer, and persist pasted/dropped files by
  * streaming them into the graph's `assets/` folder — Rust resolves `-2`-style
- * name collisions at write time. Files over {@link LARGE_FILE_BYTES} pause on
- * the app-global confirm first. `generation` pins every save to the issuing
- * graph session, so a save racing a graph switch is rejected loudly instead
- * of landing in the wrong graph; `path`, when given, scopes the error banner
- * to the note being edited (a pane is reused across note switches).
+ * name collisions at write time. A save over {@link LARGE_FILE_BYTES} gets a
+ * non-blocking status-line warning after it lands. `generation` pins every
+ * save to the issuing graph session, so a save racing a graph switch is
+ * rejected loudly instead of landing in the wrong graph; `path`, when given,
+ * scopes the error banner to the note being edited (a pane is reused across
+ * note switches).
  */
 export function useAssetPersistence(
   graphRoot: string | null,
@@ -77,9 +88,8 @@ export function useAssetPersistence(
 ): AssetPersistence {
   const [saveError, setSaveError] = useState<AssetSaveError | null>(null)
   // Stamps the note session a save was started for. The pane outlives the
-  // note (and graph session) it shows, so a save that finishes — or a
-  // confirm answered — after a switch must neither write, insert, nor put
-  // its outcome on the *next* note's banner.
+  // note (and graph session) it shows, so a save that finishes after a
+  // switch must not put its outcome on the *next* note's banner.
   const sessionEpoch = useRef(0)
 
   useEffect(() => {
@@ -129,14 +139,6 @@ export function useAssetPersistence(
       }
       const epoch = sessionEpoch.current
       const isStale = (): boolean => sessionEpoch.current !== epoch
-      if (file.size > LARGE_FILE_BYTES && !(await confirmLargeFile(file, isStale))) {
-        return null
-      }
-      if (isStale()) {
-        // Approved after the note (or graph) changed: the initiating editor
-        // is gone, so a write now would only mint an unlinked orphan.
-        return null
-      }
       const imageExtension = EXTENSION_BY_MIME[file.type]
       // Rust owns collision suffixes, so two pastes in the same millisecond
       // land as `pasted-<ts>.png` and `pasted-<ts>-2.png`.
@@ -145,6 +147,11 @@ export function useAssetPersistence(
         : assetFileName(file.name)
       try {
         const saved = await createAsset(desiredName, file, generation)
+        if (file.size > LARGE_FILE_BYTES) {
+          startOperation('Large file added').warn(
+            `“${file.name}” is ${formatBytes(file.size)}. Git keeps every version forever; GitHub rejects files over 100 MB.`,
+          )
+        }
         if (!isStale()) {
           setSaveError(null)
         }

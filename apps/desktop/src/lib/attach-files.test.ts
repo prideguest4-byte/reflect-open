@@ -26,6 +26,7 @@ function contextFor(notePath: string | null, generation: number | null): Command
     openPalette: vi.fn(),
     openShortcuts: vi.fn(),
     enableSemanticSearch: vi.fn(),
+    clearScrollState: vi.fn(),
   }
 }
 
