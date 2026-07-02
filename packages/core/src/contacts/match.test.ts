@@ -34,6 +34,13 @@ describe('matchContactForTitle', () => {
     expect(matchContactForTitle('René Descartes', [rene])).toBe(rene)
   })
 
+  it('is diacritic-insensitive, matching the framework predicate that fed it', () => {
+    const rene = contact({ fullName: 'René Descartes' })
+    expect(matchContactForTitle('Rene Descartes', [rene])).toBe(rene)
+    const zoe = contact({ fullName: 'Zoe Muller' })
+    expect(matchContactForTitle('Zoë Müller', [zoe])).toBe(zoe)
+  })
+
   it('rejects the word-prefix hits the framework predicate returns', () => {
     const ada = contact({ fullName: 'Ada Lovelace' })
     expect(matchContactForTitle('Ada', [ada])).toBeNull()

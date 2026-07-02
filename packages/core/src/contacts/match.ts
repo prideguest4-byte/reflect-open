@@ -3,14 +3,26 @@ import { lookupContactsByName, type ContactMatch } from './commands'
 /**
  * The person-note matching rule: a note earns a suggested-contact card only
  * when its title **exactly equals** a contact's full name (case-insensitive,
- * whitespace-collapsed, unicode-normalized). Exactness is the false-positive
- * guard the porting doc asks for — a two-word note title like "Meeting Notes"
- * never matches, and no `#person` tag or other opt-in is required.
+ * diacritic-insensitive, whitespace-collapsed). Exactness is the
+ * false-positive guard the porting doc asks for — a two-word note title like
+ * "Meeting Notes" never matches, and no `#person` tag or other opt-in is
+ * required.
  */
 
-/** Normalize a name for exact comparison: NFC, trimmed, collapsed, lowercased. */
+/**
+ * Normalize a name for exact comparison: diacritics folded (NFD, marks
+ * stripped), trimmed, collapsed, lowercased. Folding matches the framework's
+ * own name predicate, which is diacritic-insensitive — without it a "Rene
+ * Descartes" title would *receive* the "René Descartes" candidate and then
+ * silently reject it here.
+ */
 function normalizeName(value: string): string {
-  return value.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
 }
 
 /**

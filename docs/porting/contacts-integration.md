@@ -15,9 +15,10 @@ consume.
 Decisions taken at implementation time:
 
 - **Person-note matching is exact.** The card appears only when the note
-  title case-insensitively equals a contact's full name (whitespace-collapsed,
-  unicode-normalized) — no `#person` tag required, and word-prefix hits from
-  the framework's name predicate are discarded (`matchContactForTitle`).
+  title equals a contact's full name — case- and diacritic-insensitive,
+  whitespace-collapsed, mirroring the framework predicate's own folding — with
+  no `#person` tag required, and word-prefix hits from the framework's name
+  predicate discarded (`matchContactForTitle`).
 - **No photos in v1.** Add writes the primary email and phone as plain
   markdown bullets; photos (binary → `assets/`) can follow without rework.
 - **Resolutions live in frontmatter.** Add and Ignore both write
