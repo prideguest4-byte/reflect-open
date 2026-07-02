@@ -39,11 +39,15 @@ describe('hapticImpactLight', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const hapticImpactLight = await loadHaptics()
 
+    // Two taps with both invokes in flight: only the first rejection warns.
     hapticImpactLight()
+    hapticImpactLight()
+    expect(invokeMock).toHaveBeenCalledTimes(2)
     await vi.waitFor(() => expect(warn).toHaveBeenCalledOnce())
 
     hapticImpactLight()
-    expect(invokeMock).toHaveBeenCalledTimes(1)
+    expect(invokeMock).toHaveBeenCalledTimes(2)
+    expect(warn).toHaveBeenCalledOnce()
     warn.mockRestore()
   })
 })

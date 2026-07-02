@@ -17,6 +17,11 @@ export function hapticImpactLight(): void {
     return
   }
   void invoke('plugin:keyboard|impact_light').catch((err: unknown) => {
+    // Re-check the latch: rapid taps can have several invokes in flight
+    // before the first rejection lands, and only one should warn.
+    if (!bridgeAvailable) {
+      return
+    }
     bridgeAvailable = false
     console.warn('haptics unavailable:', err)
   })
