@@ -20,7 +20,7 @@ one-shot model switch).
 - Provider choice (Anthropic / OpenAI / Google) with bundled metered access;
   personal API keys lifted the quotas.
 
-## How it will work in v2
+## How it works in v2
 
 ### User experience
 
@@ -87,12 +87,13 @@ The work splits cleanly along the existing seams:
 - Automatic context beyond the selection (unchanged from v1: prompts see the
   selection only; broader context is the copilot's job).
 
-## Open questions
+## Resolved questions
 
-- Whether the picker is a dedicated selection popover or a filtered mode of
-  the command palette (`mod+k`) — leaning popover, since the palette closes
-  over the editor and loses the selection visual.
-- Whether "Retry" offers a one-shot model switch (cheap to add given the
-  provider catalog, but more UI).
-- Ordering between the meowdown release and the app work — the meowdown
-  primitives land first and independently.
+- The picker is a dedicated selection popover, not a command-palette mode —
+  the palette closes over the editor and loses the selection visual.
+- "Retry" does offer a one-shot model switch (`AiPreviewActions` renders a
+  model dropdown next to Retry, listing the configured providers' catalogs;
+  the pick applies to that retry only).
+- The meowdown primitives landed first ([prosekit/meowdown#191](https://github.com/prosekit/meowdown/pull/191));
+  the app pins pkg.pr.new snapshots of that PR until it ships in a meowdown
+  release, then a plain dependency bump replaces the override.

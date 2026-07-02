@@ -88,6 +88,7 @@ export function AiPromptDialog({ prompt, onSave, onClose }: AiPromptDialogProps)
             <span className={FIELD_LABEL_CLASS}>Label</span>
             <Input
               {...register('label', { required: true })}
+              aria-invalid={formState.errors.label !== undefined || undefined}
               placeholder="Translate to French"
               autoFocus
             />
@@ -96,6 +97,7 @@ export function AiPromptDialog({ prompt, onSave, onClose }: AiPromptDialogProps)
             <span className={FIELD_LABEL_CLASS}>Prompt</span>
             <Textarea
               {...register('body', { required: true })}
+              aria-invalid={formState.errors.body !== undefined || undefined}
               rows={5}
               placeholder={'Translate the following text to French.\n\n{{selectedText}}'}
             />
@@ -119,9 +121,7 @@ export function AiPromptDialog({ prompt, onSave, onClose }: AiPromptDialogProps)
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!formState.isValid && formState.isSubmitted}>
-              {prompt === null ? 'Add prompt' : 'Save'}
-            </Button>
+            <Button type="submit">{prompt === null ? 'Add prompt' : 'Save'}</Button>
           </div>
         </form>
       </DialogContent>

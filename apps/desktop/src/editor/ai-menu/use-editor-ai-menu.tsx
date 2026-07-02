@@ -66,7 +66,11 @@ interface ActiveRun {
 
 export function useEditorAiMenu({ path, editorRef }: EditorAiMenuOptions): EditorAiMenuValue {
   const noteRow = useNoteRow(path)
-  const isPrivate = noteRow?.isPrivate ?? false
+  // Fail closed: an unresolved row counts as private, so the menu (and the
+  // CloudSafe mint below) never treats a not-yet-loaded note as sendable. The
+  // row is overlay-backed, so an in-app "Mark as private" flips this
+  // immediately; only an external edit waits on the watcher's re-index.
+  const isPrivate = noteRow?.isPrivate ?? true
   const { providers, defaultProvider } = useAiProviders()
   const { prompts } = useAiPrompts()
   const { navigate } = useRouter()
@@ -86,7 +90,15 @@ export function useEditorAiMenu({ path, editorRef }: EditorAiMenuOptions): Edito
       const run: ActiveRun = { controller: new AbortController(), prompt, context }
       runRef.current = run
 
+      // Failing tears the whole run down, not just the preview: the discard
+      // usually triggers the resolve callback's cleanup, but when the stage is
+      // already gone (or never staged) this path must not leave a live run.
       const fail = (message: string): void => {
+        run.controller.abort()
+        if (runRef.current === run) {
+          runRef.current = null
+          setRunMode(null)
+        }
         editorRef.current?.discardPendingReplacement()
         toast.error(message)
       }
@@ -135,6 +147,7 @@ export function useEditorAiMenu({ path, editorRef }: EditorAiMenuOptions): Edito
           editorRef.current?.appendPendingReplacementText(event.text)
         } else if (event.type === 'error') {
           fail(event.message)
+          return
         }
         // 'complete' and 'aborted' need no action: the preview holds the text
         // and the user decides with Accept/Discard.
@@ -235,8 +248,11 @@ export function useEditorAiMenu({ path, editorRef }: EditorAiMenuOptions): Edito
   }, [])
 
   const openMenu = useCallback((): boolean => {
-    if (isPrivate) return false
-    editorRef.current?.openSelectionMenu()
+    const editor = editorRef.current
+    // Only consume the key when the menu can actually open — a private note
+    // or an empty selection lets ⌘⇧J fall through.
+    if (isPrivate || !editor || editor.getSelectedText() === '') return false
+    editor.openSelectionMenu()
     return true
   }, [isPrivate, editorRef])
 

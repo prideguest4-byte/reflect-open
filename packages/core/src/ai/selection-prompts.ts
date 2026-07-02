@@ -127,7 +127,9 @@ Do not return anything other than the decorated text. ${FILLER}`,
 export function renderSelectionPrompt(body: string, selectedText: string): string {
   if (SELECTED_TEXT_PLACEHOLDER.test(body)) {
     SELECTED_TEXT_PLACEHOLDER.lastIndex = 0
-    return body.replaceAll(SELECTED_TEXT_PLACEHOLDER, selectedText)
+    // A replacer function, not the string form: `$&`/`$$` sequences in the
+    // selection must land verbatim, not as replacement patterns.
+    return body.replaceAll(SELECTED_TEXT_PLACEHOLDER, () => selectedText)
   }
   return `${body}
 

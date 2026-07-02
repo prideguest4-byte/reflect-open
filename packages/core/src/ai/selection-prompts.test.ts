@@ -19,6 +19,12 @@ describe('renderSelectionPrompt', () => {
     )
   })
 
+  it('keeps dollar sequences in the selection verbatim', () => {
+    expect(renderSelectionPrompt('Fix: {{selectedText}}', 'costs $$40 and $& more')).toBe(
+      'Fix: costs $$40 and $& more',
+    )
+  })
+
   it('is stateful-regex safe: consecutive calls behave identically', () => {
     const body = 'Fix: {{selectedText}}'
     expect(renderSelectionPrompt(body, 'a')).toBe('Fix: a')
