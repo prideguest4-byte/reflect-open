@@ -89,10 +89,14 @@ describe('insertTemplate', () => {
 })
 
 describe('createTemplate', () => {
-  it('writes the name as the H1 at the probed slug path', async () => {
+  it('names the template via frontmatter so insertion never injects the name', async () => {
     await expect(createTemplate('  Daily Review ', 7)).resolves.toBe('templates/daily-review.md')
     expect(availableTemplatePath).toHaveBeenCalledWith('daily-review')
-    expect(writeNote).toHaveBeenCalledWith('templates/daily-review.md', '# Daily Review\n', 7)
+    expect(writeNote).toHaveBeenCalledWith(
+      'templates/daily-review.md',
+      '---\ntitle: Daily Review\n---\n',
+      7,
+    )
   })
 })
 

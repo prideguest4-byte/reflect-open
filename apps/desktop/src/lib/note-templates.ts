@@ -55,15 +55,17 @@ export async function insertTemplate(
 
 /**
  * Create a template named `name` at a collision-free `templates/<slug>.md`
- * (the `-2` suffix policy notes use), seeded with the name as its H1 so the
- * title matches from the first open. Returns the new graph-relative path.
- * The first template write also creates the `templates/` folder — it is not
- * bootstrapped with the graph (no-litter).
+ * (the `-2` suffix policy notes use), named via frontmatter `title:` — the
+ * v1 split between name (metadata) and body (content): insertion strips
+ * frontmatter, so the name never lands in a note as a stray heading. An
+ * authored H1 still works (and inserts) when the user wants one. Returns the
+ * new graph-relative path. The first template write also creates the
+ * `templates/` folder — it is not bootstrapped with the graph (no-litter).
  */
 export async function createTemplate(name: string, generation: number): Promise<string> {
   const title = name.trim()
   const path = await availableTemplatePath(slugForTitle(title))
-  await writeNote(path, `# ${title}\n`, generation)
+  await writeNote(path, upsertFrontmatter('', { title }), generation)
   return path
 }
 

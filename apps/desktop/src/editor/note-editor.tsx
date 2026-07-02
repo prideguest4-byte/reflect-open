@@ -189,7 +189,21 @@ export function NoteEditor({
     (): NoteEditorHandle => ({
       getMarkdown: () => innerRef.current?.getMarkdown() ?? '',
       setMarkdown: (markdown) => innerRef.current?.setMarkdown(markdown),
-      insertMarkdown: (markdown) => innerRef.current?.insertMarkdown(markdown),
+      insertMarkdown: (markdown) => {
+        const inner = innerRef.current
+        if (inner === null) {
+          return
+        }
+        // Interim shim until prosekit/meowdown#206 ships: collapse an active
+        // selection first — inserting a template is a host-initiated action,
+        // not a paste, and must never delete selected text (v1 parity).
+        const selection = inner.getSelection()
+        if (selection.anchor !== selection.head) {
+          const caret = Math.min(selection.anchor, selection.head)
+          inner.setSelection({ type: 'text', anchor: caret, head: caret })
+        }
+        inner.insertMarkdown(markdown)
+      },
       focus: () => innerRef.current?.focus(),
       setSelection: (position) => innerRef.current?.setSelection(position),
     }),

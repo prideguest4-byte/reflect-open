@@ -1,9 +1,15 @@
 # Porting note templates
 
-**Status: shipped.** The editor slash-menu entry point rides meowdown's new
-host-items API ([prosekit/meowdown#192](https://github.com/prosekit/meowdown/pull/192)),
-currently consumed via a pkg.pr.new pin in `pnpm-workspace.yaml` — swap it
-for the real `@meowdown/*` bump when the release lands.
+**Status: shipped.** The editor slash-menu entry point rides meowdown's
+host-items API (landed upstream as
+[#197](https://github.com/prosekit/meowdown/pull/197)/[#198](https://github.com/prosekit/meowdown/pull/198),
+released in 0.31.0), currently consumed via a pkg.pr.new pin in
+`pnpm-workspace.yaml`; the bump to ^0.31.0 rides the `onFilePaste`
+adaptation (PR #457). Two v1-parity refinements are pending upstream in
+[#206](https://github.com/prosekit/meowdown/pull/206): insert-collapses-
+selection (shimmed locally in `note-editor.tsx` meanwhile) and slash-menu
+`keywords` (the `/template` affordance — TODO in
+`use-template-slash-items.ts`).
 The [product vision](../reflect-v2-product-vision.md) deferred templates
 with "markdown snippets may be enough" — and that is exactly the design:
 templates are markdown files in the graph.
@@ -62,11 +68,12 @@ Templates are files first: creating, renaming, and deleting all work from
 any text editor or file manager, and the watcher picks the changes up. In
 the app, **Settings → Note templates** lists them with open / rename /
 delete rows, and a "New template" dialog (also a palette command) creates
-`templates/<slug>.md` seeded with the name as its H1. Renaming moves the
-file onto the new name's slug, carrying any open editor session; deleting
-sends the file to the trash. Templates open in the normal editor, but title
-edits do **not** rename the file (the rename pipeline's slug targets live
-under `notes/`) — the settings rename is the in-app rename.
+`templates/<slug>.md` named via frontmatter `title:` (metadata, stripped on
+insert — v1's name/body split). Renaming moves the file onto the new name's
+slug **and** rewrites the authored title, carrying any open editor session;
+deleting sends the file to the trash. Templates open in the normal editor,
+but title edits do **not** rename the file (the rename pipeline's slug
+targets live under `notes/`) — the settings rename is the in-app rename.
 
 ## v1 → v2 mapping
 
@@ -82,10 +89,61 @@ under `notes/`) — the settings rename is the in-app rename.
 ## Explicitly not ported
 
 - Starter templates written into every new graph — scaffolding stays
-  minimal; the docs carry copy-pasteable **journal**/**person**/**company**
-  examples instead.
+  minimal; the copy-pasteable **journal**/**person**/**company** examples
+  below carry v1's seed content instead.
 - Duplicate-name tolerance quirks: filenames make names unique per graph by
   construction.
+- `unwrapInvisibleList` (v1's insert extension peeled a wrapper list off the
+  template) — an artifact of v1's mandatory outer-bullet document shape,
+  meaningless in markdown.
+- Newest-first ordering in the preferences list — A→Z everywhere, as decided
+  above.
+
+## Starter examples
+
+v1 seeded every new graph with these three. Create a file under
+`templates/` and paste one in. The frontmatter `title:` is the template's
+display name; frontmatter is stripped on insert, so — exactly like v1 —
+the name never lands in a note. (An H1 also works as the name, but then it
+inserts with the body.)
+
+`templates/journal.md`
+
+```markdown
+---
+title: Journal
+---
+- [[Journal]]
+  - Grateful for
+  - On my mind
+  - Working on
+  - Daily habits
+    + [ ] Exercise
+```
+
+`templates/person.md`
+
+```markdown
+---
+title: Person
+---
+- Title:
+- Company:
+- Type: #person
+- Email:
+- Phone:
+- Location:
+```
+
+`templates/company.md`
+
+```markdown
+---
+title: Company
+---
+- type: #company
+- domain:
+```
 
 ## How it was built
 
