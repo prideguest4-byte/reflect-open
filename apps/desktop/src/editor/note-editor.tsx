@@ -30,6 +30,8 @@ import {
   type LightboxImage,
 } from '@/editor/image-lightbox'
 import { useLightboxTransition } from '@/editor/use-lightbox-transition'
+import { dispatchDeepLink } from '@/lib/deep-links/intake'
+import { isDeepLinkUrl } from '@/lib/deep-links/parse'
 import { cn } from '@/lib/utils'
 
 /**
@@ -274,6 +276,13 @@ export function NoteEditor({
         void Promise.resolve(openAssetRef.current?.(assetPath)).catch((cause) => {
           console.error('open asset failed:', errorMessage(cause))
         })
+        return
+      }
+      // A `reflect://` link routes through the in-app deep-link pipeline —
+      // the OS opener would deny the scheme (and a round-trip could land on
+      // another installed flavor).
+      if (isDeepLinkUrl(href)) {
+        dispatchDeepLink(href)
         return
       }
       void openUrl(href).catch((cause) => {

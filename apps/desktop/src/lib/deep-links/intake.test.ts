@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import {
+  dispatchDeepLink,
   resetDeepLinkIntakeForTests,
   setDeepLinkHandler,
   startDeepLinkListener,
@@ -103,6 +104,24 @@ describe('deep-link intake', () => {
     setDeepLinkHandler(handler)
 
     expect(handler.mock.calls).toEqual([['reflect://today'], ['reflect://tasks']])
+  })
+
+  it('delivers an in-app dispatch (a clicked note link) straight to the handler', () => {
+    const handler = vi.fn()
+    setDeepLinkHandler(handler)
+
+    dispatchDeepLink('reflect://note/from-a-note-body')
+
+    expect(handler).toHaveBeenCalledWith('reflect://note/from-a-note-body')
+  })
+
+  it('buffers an in-app dispatch when no handler is attached', () => {
+    dispatchDeepLink('reflect://today')
+
+    const handler = vi.fn()
+    setDeepLinkHandler(handler)
+
+    expect(handler).toHaveBeenCalledWith('reflect://today')
   })
 
   it('buffers again after the handler detaches (graph switch gap)', async () => {

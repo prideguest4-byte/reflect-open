@@ -51,6 +51,19 @@ export function parseDeepLink(raw: string): DeepLink | null {
   }
 }
 
+/**
+ * Whether an href uses the app's `reflect:` scheme — the routing predicate
+ * for links clicked *inside* the app, which must dispatch through the in-app
+ * deep-link pipeline instead of the OS opener (the opener capability denies
+ * the scheme, dev builds don't register it, and another installed flavor
+ * could claim the OS round-trip). Scheme-only: true does not promise
+ * {@link parseDeepLink} accepts the URL — a malformed link still dispatches,
+ * so it fails on the status line like any other bad deep link.
+ */
+export function isDeepLinkUrl(href: string): boolean {
+  return tryParseUrl(href)?.protocol === `${DEEP_LINK_SCHEME}:`
+}
+
 function tryParseUrl(raw: string): URL | null {
   try {
     return new URL(raw)
