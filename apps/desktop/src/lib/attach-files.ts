@@ -71,8 +71,10 @@ export async function attachFilesToNote(context: CommandContext): Promise<void> 
     }
   }
   if (failures.length > 0) {
-    const names = failures.map(({ name }) => name).join(', ')
-    problems.push(`${names} could not be copied: ${errorMessage(failures[0]?.cause)}`)
+    const details = failures
+      .map(({ name, cause }) => `${name} (${errorMessage(cause)})`)
+      .join(', ')
+    problems.push(`could not be copied: ${details}`)
   }
   if (problems.length > 0) {
     // Command dispatch has no error channel of its own — surface everything
