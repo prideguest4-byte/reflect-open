@@ -40,7 +40,13 @@ export function SuggestedContactCard({ path, className }: SuggestedContactCardPr
     setError(null)
     try {
       await action()
-      queryClient.setQueryData(suggestedContactQueryKey(graph?.root, path), null)
+      // Invalidate rather than hand-set null: the refetch reads the live
+      // source, so a handled note computes null (card hides) while a stale
+      // Ignore — which skipped the mark — computes the renamed title's own
+      // suggestion instead of suppressing it until the next disk write.
+      await queryClient.invalidateQueries({
+        queryKey: suggestedContactQueryKey(graph?.root, path),
+      })
     } catch (cause) {
       setError(errorMessage(cause))
     } finally {

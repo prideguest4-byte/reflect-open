@@ -81,6 +81,14 @@ describe('IntegrationsSection', () => {
     expect(requests).toBe(0)
   })
 
+  it('offers the prompt again when enabled but never asked (e.g. after a restart)', async () => {
+    settings.current = { contactsEnabled: true }
+    renderSection()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Allow contacts access' }))
+    await waitFor(() => expect(requests).toBe(1))
+  })
+
   it('points a denied permission at System Settings', async () => {
     authorization = 'denied'
     settings.current = { contactsEnabled: true }

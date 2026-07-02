@@ -1,4 +1,4 @@
-import { useEffect, type ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { requestContactsAccess } from '@reflect/core'
 import { InlineAlert } from '@/components/inline-alert'
@@ -32,6 +32,7 @@ export function IntegrationsSection(): ReactElement | null {
   const { settings, updateSettings } = useSettings()
   const authorization = useContactsAuthorization()
   const refreshAuthorization = useRefreshContactsAuthorization()
+  const [isPrompting, setIsPrompting] = useState(false)
 
   // The user grants access in System Settings, not in the app, so re-read the
   // permission whenever the window regains focus while the integration is on.
@@ -53,15 +54,30 @@ export function IntegrationsSection(): ReactElement | null {
 
   const showDenied =
     settings.contactsEnabled && (authorization === 'denied' || authorization === 'restricted')
+  // Enabled but never asked — the toggle-on prompt didn't complete (quit
+  // mid-prompt, settings restored from another machine). Offer the prompt
+  // again rather than sitting silently gated off. Suppressed while a prompt
+  // is up, so it doesn't flash under the OS dialog on a fresh toggle.
+  const showPrompt =
+    settings.contactsEnabled && authorization === 'notDetermined' && !isPrompting
 
-  async function enableContacts(): Promise<void> {
-    updateSettings({ contactsEnabled: true })
-    if (authorization === 'notDetermined') {
+  async function promptForAccess(): Promise<void> {
+    setIsPrompting(true)
+    try {
       // A failed prompt (e.g. it timed out unanswered) isn't surfaced here —
       // the refreshed status is the truth, and a denied/restricted answer
       // shows the System Settings pointer below.
       await requestContactsAccess().catch(() => {})
       await refreshAuthorization()
+    } finally {
+      setIsPrompting(false)
+    }
+  }
+
+  async function enableContacts(): Promise<void> {
+    updateSettings({ contactsEnabled: true })
+    if (authorization === 'notDetermined') {
+      await promptForAccess()
     }
   }
 
@@ -94,6 +110,20 @@ export function IntegrationsSection(): ReactElement | null {
                 Open System Settings
               </button>{' '}
               to allow it, then return here.
+            </InlineAlert>
+          </div>
+        ) : null}
+        {showPrompt ? (
+          <div className="px-4 pb-3.5">
+            <InlineAlert tone="warning">
+              Reflect hasn’t asked for contacts access yet.{' '}
+              <button
+                type="button"
+                className="font-medium underline underline-offset-2"
+                onClick={() => void promptForAccess()}
+              >
+                Allow contacts access
+              </button>
             </InlineAlert>
           </div>
         ) : null}
