@@ -242,8 +242,10 @@ export function NotePaneComponent({
         <SyncConflictNotice path={path} className="mb-4" />
 
         {/* Daily notes are date-titled, so a contact can never match one —
-            the hook gates on it, and skipping the mount keeps the stream lean. */}
-        {!dailyNote ? <SuggestedContactCard path={path} /> : null}
+            the hook gates on it, and skipping the mount keeps the stream lean.
+            Keyed by path: a note switch must not carry one card's busy/error
+            state into the next note's card. */}
+        {!dailyNote ? <SuggestedContactCard key={path} path={path} /> : null}
       </div>
 
       <NoteEditor
