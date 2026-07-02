@@ -57,6 +57,22 @@ describe('deep-link intake', () => {
     expect(onOpenUrlMock).toHaveBeenCalledTimes(2)
   })
 
+  it('tears down the subscription when getCurrent fails, so a retry cannot double-deliver', async () => {
+    const unlisten = vi.fn()
+    onOpenUrlMock.mockResolvedValue(unlisten)
+    getCurrentMock.mockRejectedValueOnce(new Error('ipc failure'))
+
+    await expect(startDeepLinkListener()).rejects.toThrow('ipc failure')
+    expect(unlisten).toHaveBeenCalledTimes(1)
+
+    await startDeepLinkListener()
+    const handler = vi.fn()
+    setDeepLinkHandler(handler)
+    pluginDeliver(['reflect://today'])
+
+    expect(handler).toHaveBeenCalledTimes(1)
+  })
+
   it('delivers straight to an attached handler', async () => {
     await startDeepLinkListener()
     const handler = vi.fn()

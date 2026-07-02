@@ -1,4 +1,4 @@
-import { dateFromDailyPath, errorMessage, isDaily, parseNote } from '@reflect/core'
+import { dateFromDailyPath, errorMessage, indexNote, isDaily, parseNote } from '@reflect/core'
 import { newNoteId } from '@/lib/create-note'
 import { isIsoDate } from '@/lib/dates'
 import { dailyDeepLink, noteDeepLink } from '@/lib/deep-links/format'
@@ -30,6 +30,14 @@ export async function deepLinkForNote(path: string, generation: number): Promise
   }
   const id = newNoteId()
   await commitNoteFrontmatter(path, { id }, generation)
+  // Resolution reads the index, which trails local writes by a watcher
+  // debounce — index the mint now so the copied link resolves immediately.
+  // Best-effort: the watcher pass covers this on its own schedule anyway.
+  try {
+    await indexNote(path, { generation })
+  } catch {
+    // the copied link still works once the watcher reindexes the note
+  }
   return noteDeepLink(id)
 }
 

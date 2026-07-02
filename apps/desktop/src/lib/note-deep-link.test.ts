@@ -3,12 +3,14 @@ import type { NoteSession } from '@/editor/note-session'
 
 const readNote = vi.hoisted(() => vi.fn<(path: string) => Promise<string>>())
 const writeNote = vi.hoisted(() => vi.fn(async () => {}))
+const indexNote = vi.hoisted(() => vi.fn(async () => {}))
 const openSession = vi.hoisted(() => vi.fn<(path: string) => NoteSession | null>(() => null))
 
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   readNote,
   writeNote,
+  indexNote,
 }))
 vi.mock('@/editor/open-documents', () => ({ openSession }))
 
@@ -19,6 +21,7 @@ const ULID_RE = /^[0-9a-hjkmnp-tv-z]{26}$/
 beforeEach(() => {
   readNote.mockReset()
   writeNote.mockClear()
+  indexNote.mockClear()
   openSession.mockReset()
   openSession.mockReturnValue(null)
 })
@@ -43,16 +46,17 @@ describe('deepLinkForNote', () => {
     expect(writeNote).toHaveBeenCalled()
   })
 
-  it('uses the existing frontmatter id without writing', async () => {
+  it('uses the existing frontmatter id without writing or reindexing', async () => {
     readNote.mockResolvedValue('---\nid: 01hzy3v9k2m4n6p8q0r2s4t6vw\n---\n# A\n')
 
     await expect(deepLinkForNote('notes/a.md', 3)).resolves.toBe(
       'reflect://note/01hzy3v9k2m4n6p8q0r2s4t6vw',
     )
     expect(writeNote).not.toHaveBeenCalled()
+    expect(indexNote).not.toHaveBeenCalled()
   })
 
-  it('mints a ULID id on first copy and lands it on disk', async () => {
+  it('mints a ULID id on first copy, lands it on disk, and indexes it immediately', async () => {
     readNote.mockResolvedValue('# A\n')
 
     const url = await deepLinkForNote('notes/a.md', 3)
@@ -60,6 +64,18 @@ describe('deepLinkForNote', () => {
     const id = decodeURIComponent(url.replace('reflect://note/', ''))
     expect(id).toMatch(ULID_RE)
     expect(writeNote).toHaveBeenCalledWith('notes/a.md', `---\nid: ${id}\n---\n# A\n`, 3)
+    // The index trails local writes by a watcher debounce; without this the
+    // just-copied link answers "Note not found" until the reindex.
+    expect(indexNote).toHaveBeenCalledWith('notes/a.md', { generation: 3 })
+  })
+
+  it('still returns the link when the immediate reindex fails', async () => {
+    readNote.mockResolvedValue('# A\n')
+    indexNote.mockRejectedValueOnce(new Error('index busy'))
+
+    const url = await deepLinkForNote('notes/a.md', 3)
+
+    expect(url.startsWith('reflect://note/')).toBe(true)
   })
 
   it('mints through the live session when one owns the note', async () => {

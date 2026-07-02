@@ -53,8 +53,9 @@ export async function startDeepLinkListener(): Promise<void> {
     return
   }
   started = true
+  let unlisten: (() => void) | null = null
   try {
-    await onOpenUrl((urls) => {
+    unlisten = await onOpenUrl((urls) => {
       for (const url of urls) {
         deliverDeepLink(url)
       }
@@ -63,8 +64,11 @@ export async function startDeepLinkListener(): Promise<void> {
       deliverDeepLink(url)
     }
   } catch (cause) {
-    // Unlatch so a later call can retry — a failed subscription must not
-    // disable deep links for the rest of the app run.
+    // Unlatch so a later call can retry — a failed start must not disable
+    // deep links for the rest of the app run. If the subscription itself
+    // succeeded (`getCurrent` failed), tear it down first, or the retry
+    // would stack a second subscription and double-deliver every URL.
+    unlisten?.()
     started = false
     throw cause
   }
