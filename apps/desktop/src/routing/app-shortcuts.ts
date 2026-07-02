@@ -83,7 +83,7 @@ function idForKeyDown(event: KeyboardEvent): string | null {
  * mounted (`setMenuCommandDispatch`).
  */
 export function useAppShortcuts(): CommandContext {
-  const { route, navigate, back, forward } = useRouter()
+  const { route, navigate, back, forward, clearScrollState } = useRouter()
   const focusedDailyDate = useFocusedDailyDate()
   const { resolvedTheme, setTheme } = useTheme()
   const { graph } = useGraph()
@@ -129,6 +129,7 @@ export function useAppShortcuts(): CommandContext {
       },
       back,
       forward,
+      clearScrollState,
       toggleTheme: () => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'),
       toggleSidebar,
       newChat,
@@ -147,6 +148,7 @@ export function useAppShortcuts(): CommandContext {
       navigate,
       back,
       forward,
+      clearScrollState,
       resolvedTheme,
       setTheme,
       openPalette,
