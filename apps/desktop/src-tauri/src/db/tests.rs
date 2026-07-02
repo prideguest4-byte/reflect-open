@@ -590,11 +590,11 @@ fn note_kind_daily_date_invariant_is_enforced() {
 }
 
 #[test]
-fn kind_invariant_rebuild_preserves_rows_and_schema() {
-    // The 0015 table rebuild drops and recreates `notes` while six child
-    // tables reference it ON DELETE CASCADE. Migrations run with foreign keys
-    // off precisely so that DROP cannot cascade — staged rows in both parent
-    // and children must come out the other side intact.
+fn kind_invariant_migration_wipes_the_projection_for_reindex() {
+    // 0015 drops and recreates `notes` (a table-level CHECK cannot be ADDed)
+    // while six child tables reference it ON DELETE CASCADE. The projection
+    // is wiped children-first (so the DROP's implicit DELETE cascades over
+    // empty tables even with enforcement on) and the next open re-indexes.
     let mut conn = open_in_memory().expect("open");
     conn.execute_batch("PRAGMA foreign_keys=ON;").expect("fk");
     migrate_to(&mut conn, 14).expect("migrate to v14");
@@ -607,38 +607,29 @@ fn kind_invariant_rebuild_preserves_rows_and_schema() {
            VALUES('notes/a.md', 'wiki', 'July 1st, 2026', 'july 1st, 2026', 0, 0);
          INSERT INTO tags(note_path, tag, tag_key) VALUES('notes/a.md', 'X', 'x');
          INSERT INTO tasks(note_path, marker_offset, text, raw, checked)
-           VALUES('notes/a.md', 0, 'buy milk', '[ ] buy milk', 0);",
+           VALUES('notes/a.md', 0, 'buy milk', '[ ] buy milk', 0);
+         INSERT INTO search_fts(path, title, body) VALUES('notes/a.md', 'A', 'A body');
+         INSERT INTO index_meta(key, value) VALUES('k', 'v');",
     )
     .expect("stage v14 rows");
 
     migrate(&mut conn).expect("migrate to latest");
 
-    for (table, expected) in [
-        ("notes", 2),
-        ("note_text", 1),
-        ("links", 1),
-        ("tags", 1),
-        ("tasks", 1),
-    ] {
+    for table in ["notes", "note_text", "links", "tags", "tasks", "search_fts"] {
         let count: i64 = conn
             .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(count, expected, "{table} rows must survive the rebuild");
+        assert_eq!(count, 0, "{table} should be wiped for the re-index");
     }
-
-    // The recreated views resolve over the new table (wiki link → daily date).
-    let backlink_sources: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM backlinks WHERE target_path = 'daily/2026-07-01.md'",
-            [],
-            |row| row.get(0),
-        )
+    // Bookkeeping outlives the wipe (same contract as index_clear).
+    let meta: i64 = conn
+        .query_row("SELECT count(*) FROM index_meta", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(backlink_sources, 1);
+    assert_eq!(meta, 1);
 
-    // Every notes index came back with the rebuild.
+    // Every notes index came back with the recreated table.
     for index in [
         "notes_title_key",
         "notes_daily_date",
@@ -653,21 +644,30 @@ fn kind_invariant_rebuild_preserves_rows_and_schema() {
             .unwrap()
             .exists([index])
             .unwrap();
-        assert!(exists, "index {index} must be recreated by the rebuild");
+        assert!(exists, "index {index} must be recreated with the table");
     }
 
-    // Foreign-key enforcement is restored after the migration run, and the
-    // child cascades still point at the rebuilt table.
-    let enforced: i64 = conn
-        .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+    // The write path, the views, and the child cascades all bind to `notes`
+    // by name — prove they resolve against the recreated table.
+    apply_note(&conn, &note("notes/a.md", "A", vec![wiki("Target")])).unwrap();
+    apply_note(&conn, &note("notes/target.md", "Target", vec![])).unwrap();
+    let backlink_sources: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM backlinks WHERE target_path = 'notes/target.md'",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
-    assert_eq!(enforced, 1, "migrate() must restore PRAGMA foreign_keys");
+    assert_eq!(backlink_sources, 1);
     conn.execute("DELETE FROM notes WHERE path = 'notes/a.md'", [])
         .unwrap();
     let orphans: i64 = conn
-        .query_row("SELECT count(*) FROM tasks", [], |row| row.get(0))
+        .query_row("SELECT count(*) FROM links", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(orphans, 0, "ON DELETE CASCADE must survive the rebuild");
+    assert_eq!(
+        orphans, 0,
+        "ON DELETE CASCADE must target the recreated table"
+    );
 }
 
 #[test]

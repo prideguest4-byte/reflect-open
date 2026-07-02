@@ -4,14 +4,27 @@
 -- construction — but nothing made SQLite reject a drifted writer, and surfaces
 -- filter on one column or the other interchangeably.
 --
--- SQLite cannot ADD a table-level CHECK to an existing table, so this is the
--- documented table-rebuild recipe (lang_altertable.html#otheralter). Six child
--- tables reference notes(path) ON DELETE CASCADE; `migrate()` in lib.rs runs
--- the whole set with `PRAGMA foreign_keys` OFF so the DROP below cannot fire
--- their cascades, and this migration's foreign-key check re-verifies every
--- child reference against the rebuilt table before the transaction commits.
+-- SQLite cannot ADD a table-level CHECK to an existing table, so `notes` is
+-- dropped and recreated with the constraint — and, like 0004/0006/0014, the
+-- projection is wiped rather than copied so the next open re-indexes from
+-- markdown. Wiping the children first also keeps the DROP safe under the
+-- app's runtime `PRAGMA foreign_keys = ON`: DROP TABLE runs an implicit
+-- DELETE FROM, and the child tables' ON DELETE CASCADE clauses have nothing
+-- left to fire on. `index_meta` is bookkeeping and the embedding tables are
+-- content-hash-keyed, so they survive; `chat_*` is durable history and must
+-- never be touched.
+DELETE FROM note_text;
+DELETE FROM links;
+DELETE FROM tags;
+DELETE FROM aliases;
+DELETE FROM assets;
+DELETE FROM tasks;
+DELETE FROM notes;
+DELETE FROM search_fts;
 
-CREATE TABLE notes_new (
+DROP TABLE notes;
+
+CREATE TABLE notes (
   path TEXT PRIMARY KEY NOT NULL,
   id TEXT,
   title TEXT NOT NULL,
@@ -31,26 +44,10 @@ CREATE TABLE notes_new (
   CHECK ((kind = 'daily') = (daily_date IS NOT NULL))
 );
 
--- Existing rows satisfy the invariant by construction; a violation here means
--- real corruption and must fail the migration loudly rather than be rewritten.
-INSERT INTO notes_new (path, id, title, title_key, daily_date, is_private, file_hash,
-                       mtime, updated_at, is_pinned, pinned_order, preview,
-                       has_conflict, gist_url, gist_stale, kind)
-  SELECT path, id, title, title_key, daily_date, is_private, file_hash,
-         mtime, updated_at, is_pinned, pinned_order, preview,
-         has_conflict, gist_url, gist_stale, kind
-  FROM notes;
-
--- The views name `notes`; drop them so the rename below never has to re-parse
--- a statement that references the just-dropped table, then recreate them
--- verbatim from 0014.
-DROP VIEW backlinks;
-DROP VIEW note_keys;
-
-DROP TABLE notes;
-ALTER TABLE notes_new RENAME TO notes;
-
--- Recreate every index the DROP took with it (0001, 0007, 0010, 0013).
+-- Recreate every index the DROP took with it (0001, 0007, 0010, 0013). The
+-- child tables' REFERENCES clauses and the `note_keys`/`backlinks` views
+-- (0014) bind to `notes` by name, so they resolve against the recreated
+-- table unchanged.
 CREATE INDEX notes_title_key ON notes(title_key);
 CREATE INDEX notes_daily_date ON notes(daily_date);
 CREATE INDEX notes_id ON notes(id) WHERE id IS NOT NULL;
@@ -58,17 +55,3 @@ CREATE INDEX notes_daily_date_mtime_path ON notes(daily_date, mtime DESC, path);
 CREATE INDEX notes_non_daily_mtime ON notes(mtime DESC, path) WHERE daily_date IS NULL;
 CREATE INDEX notes_pinned ON notes(is_pinned, pinned_order, title_key, path) WHERE is_pinned = 1;
 CREATE INDEX notes_has_conflict ON notes(path) WHERE has_conflict = 1;
-
-CREATE VIEW note_keys AS
-  SELECT path AS note_path, title_key AS key FROM notes WHERE kind != 'template'
-  UNION
-  SELECT note_path, alias_key AS key FROM aliases
-    JOIN notes ON notes.path = aliases.note_path AND notes.kind != 'template'
-  UNION
-  SELECT path AS note_path, daily_date AS key FROM notes WHERE daily_date IS NOT NULL;
-
-CREATE VIEW backlinks AS
-  SELECT k.note_path AS target_path, l.source_path, l.kind, l.target_raw, l.alias, l.pos_from, l.pos_to
-  FROM links l JOIN note_keys k ON k.key = l.target_key
-  JOIN notes source ON source.path = l.source_path AND source.kind != 'template'
-  WHERE l.kind = 'wiki';

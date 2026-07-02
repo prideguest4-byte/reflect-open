@@ -57,9 +57,7 @@ mod schema {
             M::up(include_str!("../migrations/0012_task_due_date.sql")),
             M::up(include_str!("../migrations/0013_perf_indexes.sql")),
             M::up(include_str!("../migrations/0014_note_kind.sql")),
-            // The table rebuild drops and recreates `notes`; verify every
-            // child-table reference against the new table before committing.
-            M::up(include_str!("../migrations/0015_note_kind_invariant.sql")).foreign_key_check(),
+            M::up(include_str!("../migrations/0015_note_kind_invariant.sql")),
         ])
     });
 
@@ -138,45 +136,19 @@ mod schema {
         Ok(Connection::open_in_memory()?)
     }
 
-    /// Runs `operation` with `PRAGMA foreign_keys` OFF, restoring the previous
-    /// value afterwards — the SQLite table-rebuild recipe (0015) drops and
-    /// recreates `notes` while six child tables reference it ON DELETE CASCADE,
-    /// and with enforcement on, the DROP would run an implicit DELETE that
-    /// cascade-wipes them. The pragma is a no-op inside a transaction (each
-    /// migration runs in one), so it has to be toggled out here; rebuild
-    /// migrations carry `foreign_key_check()` to keep references honest.
-    fn with_foreign_keys_off<T>(
-        conn: &mut Connection,
-        operation: impl FnOnce(&mut Connection) -> Result<T, SchemaError>,
-    ) -> Result<T, SchemaError> {
-        let enforced: bool = conn.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
-        conn.pragma_update(None, "foreign_keys", false)?;
-        let outcome = operation(conn);
-        let restored = conn.pragma_update(None, "foreign_keys", enforced);
-        match (outcome, restored) {
-            (Ok(value), Ok(())) => Ok(value),
-            (Ok(_), Err(err)) => Err(err.into()),
-            (Err(err), _) => Err(err),
-        }
-    }
-
     /// Bring the connection up to the latest schema version (no-op if current).
     pub fn migrate(conn: &mut Connection) -> Result<(), SchemaError> {
-        with_foreign_keys_off(conn, |conn| {
-            MIGRATIONS
-                .to_latest(conn)
-                .map_err(|err| SchemaError::Migration(err.to_string()))
-        })
+        MIGRATIONS
+            .to_latest(conn)
+            .map_err(|err| SchemaError::Migration(err.to_string()))
     }
 
     /// Stop at schema `version`, so schema-evolution tests can stage data in an
     /// older shape and assert what a later migration does with it.
     pub fn migrate_to(conn: &mut Connection, version: usize) -> Result<(), SchemaError> {
-        with_foreign_keys_off(conn, |conn| {
-            MIGRATIONS
-                .to_version(conn, version)
-                .map_err(|err| SchemaError::Migration(format!("to version {version}: {err}")))
-        })
+        MIGRATIONS
+            .to_version(conn, version)
+            .map_err(|err| SchemaError::Migration(format!("to version {version}: {err}")))
     }
 
     /// Open (creating if needed) and migrate `<root>/.reflect/index.sqlite`.
