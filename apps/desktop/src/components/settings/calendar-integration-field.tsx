@@ -12,7 +12,6 @@ import {
   useCalendars,
 } from '@/lib/use-calendar'
 import { useSettings } from '@/providers/settings-provider'
-import { SettingsSection } from './section'
 import { SettingsSwitchField } from './switch-field'
 
 /** The macOS privacy pane where a revoked calendar grant is flipped back on. */
@@ -23,15 +22,15 @@ const ACTION_BUTTON_CLASS =
   'rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors duration-100 hover:bg-surface-hover'
 
 /**
- * The calendar integration settings (docs/porting/calendar-meetings-integration.md):
+ * The calendar integration field (docs/porting/calendar-meetings-integration.md):
  * one switch, then — once macOS grants access — every calendar on the Mac as
  * checkboxes, grouped by account. There are no credentials here and none to
  * go stale: macOS Calendar owns the accounts (Google, iCloud, Exchange), so a
  * denied or revoked grant shows one explanation with a System Settings
- * button, not an error-badge-and-reconnect loop. macOS-only; the section
+ * button, not an error-badge-and-reconnect loop. macOS-only; the field
  * renders nothing elsewhere.
  */
-export function CalendarSection(): ReactElement | null {
+export function CalendarIntegrationField(): ReactElement | null {
   const { settings, updateSettings, updateSettingsWith } = useSettings()
   const queryClient = useQueryClient()
   const status = useCalendarAuthorization(settings.calendarEnabled)
@@ -162,16 +161,14 @@ export function CalendarSection(): ReactElement | null {
   }
 
   return (
-    <SettingsSection id="calendar">
-      <div>
-        <SettingsSwitchField
-          legend="Calendar events"
-          description="Show the day's meetings from Apple Calendar beside the daily note."
-          checked={settings.calendarEnabled}
-          onCheckedChange={handleToggle}
-        />
-        {detail !== null && <div className="px-4 pb-3.5">{detail}</div>}
-      </div>
-    </SettingsSection>
+    <div>
+      <SettingsSwitchField
+        legend="Calendar events"
+        description="Show the day's meetings from Apple Calendar beside the daily note."
+        checked={settings.calendarEnabled}
+        onCheckedChange={handleToggle}
+      />
+      {detail !== null && <div className="px-4 pb-3.5">{detail}</div>}
+    </div>
   )
 }

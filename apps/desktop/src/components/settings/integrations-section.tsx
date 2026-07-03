@@ -7,6 +7,7 @@ import {
   useRefreshContactsAuthorization,
 } from '@/hooks/use-contacts-authorization'
 import { useSettings } from '@/providers/settings-provider'
+import { CalendarIntegrationField } from './calendar-integration-field'
 import { SettingsSection } from './section'
 import { SettingsSwitchField } from './switch-field'
 
@@ -20,12 +21,13 @@ const CONTACTS_PRIVACY_PANE =
   'x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts'
 
 /**
- * The System integrations section (the contacts-integration port): a Contacts
- * switch backed by live `CNContactStore` reads — permission on/off is the
- * whole state, so there is no sync status to show. Turning it on triggers the
- * OS permission prompt; a denial keeps the switch on and points at System
- * Settings, since the app cannot re-prompt once the user has decided. The
- * section renders only where the framework exists (macOS/iOS) — see
+ * The Integrations section: Apple Contacts and Calendar live together here
+ * because both are OS-backed context sources. The Contacts switch is backed
+ * by live `CNContactStore` reads — permission on/off is the whole state, so
+ * there is no sync status to show. Turning it on triggers the OS permission
+ * prompt; a denial keeps the switch on and points at System Settings, since
+ * the app cannot re-prompt once the user has decided. The section renders
+ * only where the framework exists (macOS/iOS) — see
  * {@link useVisibleSettingsSections}.
  */
 export function IntegrationsSection(): ReactElement | null {
@@ -133,6 +135,7 @@ export function IntegrationsSection(): ReactElement | null {
           </div>
         ) : null}
       </div>
+      <CalendarIntegrationField />
     </SettingsSection>
   )
 }

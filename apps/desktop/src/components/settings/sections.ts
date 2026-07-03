@@ -12,9 +12,8 @@ export const SETTINGS_SECTIONS = [
   { id: 'search', title: 'Search' },
   { id: 'ai-providers', title: 'AI providers' },
   { id: 'ai-prompts', title: 'AI prompts' },
-  { id: 'calendar', title: 'Calendar' },
   // Only shown where the OS frameworks exist — see use-visible-settings-sections.
-  { id: 'integrations', title: 'System integrations' },
+  { id: 'integrations', title: 'Integrations' },
   { id: 'backup', title: 'Backup' },
   { id: 'about', title: 'About' },
   { id: 'destructive', title: 'Danger zone' },

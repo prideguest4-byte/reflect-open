@@ -5,7 +5,6 @@ import { AiProvidersSection } from './settings/ai-providers-section'
 import { AllNotesSection } from './settings/all-notes-section'
 import { AppearanceSection } from './settings/appearance-section'
 import { BackupSection } from './settings/backup-section'
-import { CalendarSection } from './settings/calendar-section'
 import { DateTimeSection } from './settings/date-time-section'
 import { DestructiveSection } from './settings/destructive-section'
 import { EditorSection } from './settings/editor-section'
@@ -31,7 +30,6 @@ export function SettingsScreen(): ReactElement {
         <SearchSection />
         <AiProvidersSection />
         <AiPromptsSection />
-        <CalendarSection />
         <IntegrationsSection />
         <BackupSection />
         <AboutSection />

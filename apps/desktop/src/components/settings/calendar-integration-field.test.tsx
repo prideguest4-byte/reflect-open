@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '@reflect/core'
 import { SettingsProvider } from '@/providers/settings-provider'
-import { CalendarSection } from './calendar-section'
+import { CalendarIntegrationField } from './calendar-integration-field'
 
 // The section renders only in the macOS desktop webview; jsdom is neither.
 vi.mock('@/lib/platform', () => ({ isMacosDesktop: true }))
@@ -57,7 +57,7 @@ function renderSection(): void {
   render(
     <QueryClientProvider client={queryClient}>
       <SettingsProvider>
-        <CalendarSection />
+        <CalendarIntegrationField />
       </SettingsProvider>
     </QueryClientProvider>,
   )
@@ -84,7 +84,7 @@ afterEach(() => {
   queryClient.clear()
 })
 
-describe('CalendarSection', () => {
+describe('CalendarIntegrationField', () => {
   it('starts switched off with no calendar detail', async () => {
     renderSection()
     await waitFor(() => expect(calendarSwitch().getAttribute('aria-checked')).toBe('false'))
