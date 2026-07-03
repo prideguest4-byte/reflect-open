@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input'
 import { formatTimeOfDay } from '@/lib/dates'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
+import { AttendeeCombobox } from './attendee-combobox'
 
 interface AddMeetingDialogProps {
   /** The daily note receiving the entry — a validated ISO date. */
@@ -37,19 +38,19 @@ const FIELD_LABEL_CLASS = 'text-xs font-medium text-text-secondary'
 
 /**
  * v1's "Add event" modal: an editable meeting name, an editable attendee
- * list, and the create-backlinked-note choice (defaulted on for recurring
- * events, as v1 did — a recurring meeting's shared note is where its notes
- * accumulate). Submitting writes `- [[Meeting]] with [[Person]]…` under the
- * daily note's `## Meetings` heading and creates missing notes; after that
- * nothing stays tied to the calendar. With the contacts integration on,
- * fresh person notes are pre-filled from Apple Contacts by attendee email.
+ * list (with note/contact autocomplete — {@link AttendeeCombobox}), and the
+ * create-backlinked-note choice (defaulted on for recurring events, as v1
+ * did — a recurring meeting's shared note is where its notes accumulate).
+ * Submitting writes `- [[Meeting]] with [[Person]]…` under the daily note's
+ * `## Meetings` heading and creates missing notes; after that nothing stays
+ * tied to the calendar. With the contacts integration on, fresh person notes
+ * are pre-filled from Apple Contacts by attendee email.
  */
 export function AddMeetingDialog({ date, event, onClose }: AddMeetingDialogProps): ReactElement {
   const { settings } = useSettings()
   const { graph } = useGraph()
   const [name, setName] = useState(event.title)
   const [attendees, setAttendees] = useState<MeetingAttendee[]>(() => defaultAttendees(event))
-  const [newAttendee, setNewAttendee] = useState('')
   const [createNote, setCreateNote] = useState(event.recurring)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -65,17 +66,12 @@ export function AddMeetingDialog({ date, event, onClose }: AddMeetingDialogProps
     }
   }, [])
 
-  const addAttendee = (): void => {
-    const attendeeName = newAttendee.trim()
-    if (attendeeName === '') {
-      return
-    }
+  const addAttendee = (attendee: MeetingAttendee): void => {
     setAttendees((current) =>
-      current.some((existing) => existing.name.toLowerCase() === attendeeName.toLowerCase())
+      current.some((existing) => existing.name.toLowerCase() === attendee.name.toLowerCase())
         ? current
-        : [...current, { name: attendeeName }],
+        : [...current, attendee],
     )
-    setNewAttendee('')
   }
 
   const removeAttendee = (attendeeName: string): void => {
@@ -147,9 +143,11 @@ export function AddMeetingDialog({ date, event, onClose }: AddMeetingDialogProps
             />
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="add-meeting-attendee" className={FIELD_LABEL_CLASS}>
+            {/* The combobox input's real label is cmdk's hidden one (same
+                text); an htmlFor can't reach a cmdk input. */}
+            <div aria-hidden className={FIELD_LABEL_CLASS}>
               Attendees
-            </label>
+            </div>
             {attendees.length > 0 && (
               <ul className="flex flex-wrap gap-1.5">
                 {attendees.map((attendee) => (
@@ -170,19 +168,7 @@ export function AddMeetingDialog({ date, event, onClose }: AddMeetingDialogProps
                 ))}
               </ul>
             )}
-            <Input
-              id="add-meeting-attendee"
-              value={newAttendee}
-              onChange={(changeEvent) => setNewAttendee(changeEvent.target.value)}
-              onKeyDown={(keyEvent) => {
-                if (keyEvent.key === 'Enter') {
-                  keyEvent.preventDefault()
-                  addAttendee()
-                }
-              }}
-              onBlur={addAttendee}
-              placeholder="Add attendee"
-            />
+            <AttendeeCombobox attendees={attendees} onAdd={addAttendee} />
           </div>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-text-secondary">
             <Checkbox

@@ -21,12 +21,20 @@ vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/graph', generation: 3 } }),
 }))
 
+// jsdom can't scroll; cmdk scrolls the highlighted suggestion into view.
+window.HTMLElement.prototype.scrollIntoView = () => {}
+
 // The action itself is covered in @reflect/core; here it is the seam the
-// dialog submits through.
+// dialog submits through. The attendee combobox's suggestion sources are
+// stubbed empty — the combobox itself is covered by its own test file.
 const addMeetingToDaily = vi.hoisted(() => vi.fn(async () => ({ appended: true, createdNotes: [] })))
+const suggestWikiTargets = vi.hoisted(() => vi.fn(async () => []))
+const contactLinkSuggestions = vi.hoisted(() => vi.fn(async () => []))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   addMeetingToDaily,
+  suggestWikiTargets,
+  contactLinkSuggestions,
 }))
 
 const DATE = '2026-07-01'
