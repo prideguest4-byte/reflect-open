@@ -16,7 +16,7 @@ import {
 } from '@/editor/editor-handle-registry'
 import { markModeFromSyntax } from '@/editor/mark-mode'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
-import { useAssetPersistence } from '@/editor/use-asset-persistence'
+import { resolveAssetFileLink, useAssetPersistence } from '@/editor/use-asset-persistence'
 import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
 import { useNoteDocument } from '@/editor/use-note-document'
 import { useTagNavigation } from '@/editor/use-tag-navigation'
@@ -146,6 +146,7 @@ export function NotePaneComponent({
     resolveAssetOpenPath,
     openAsset,
     saveFile,
+    resolveFileInfo,
     saveError,
   } = useAssetPersistence(graphRoot, generation, path)
   const onWikiLinkClick = useWikiLinkNavigation(generation)
@@ -312,6 +313,11 @@ export function NotePaneComponent({
         resolveAssetOpenPath={resolveAssetOpenPath}
         openAsset={openAsset}
         saveFile={saveFile}
+        // Claims `assets/…` links (what saveFile inserts for a dropped
+        // non-image file) so they render as file pills, sized by
+        // resolveFileInfo.
+        resolveFileLink={resolveAssetFileLink}
+        resolveFileInfo={resolveFileInfo}
         onWikiLinkClick={onWikiLinkClick}
         onTagClick={onTagClick}
         onWikilinkSearch={onWikilinkSearch}

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { assetFileName, createAsset, errorMessage, openAsset as openAssetCommand } from '@reflect/core'
+import type { FileInfo, FileLinkPayload } from '@meowdown/core'
+import {
+  assetFileName,
+  createAsset,
+  errorMessage,
+  listDir,
+  openAsset as openAssetCommand,
+  type FileMeta,
+} from '@reflect/core'
 import { formatBytes } from '@/lib/format-bytes'
 import { startOperation } from '@/lib/operations'
 
@@ -42,6 +50,16 @@ function isSafeAssetSource(sourcePath: string): boolean {
     )
 }
 
+/**
+ * Claims a `[label](url)` markdown link as a file attachment when its
+ * destination is a safe graph-relative `assets/…` path, so meowdown renders
+ * it as a file pill instead of a plain link. Pure by contract (meowdown
+ * caches and diffs parse results), which a stateless path check satisfies.
+ */
+export function resolveAssetFileLink({ href }: FileLinkPayload): boolean {
+  return isSafeAssetSource(href)
+}
+
 /** The failed save the pane reports on: which banner copy, and the cause. */
 export interface AssetSaveError {
   /** 'image' for `image/*` files, 'file' for everything else. */
@@ -65,6 +83,12 @@ export interface AssetPersistence {
    * is the visible link text.
    */
   saveFile: (file: File) => Promise<string | null>
+  /**
+   * Resolve the size a file pill shows for a claimed `assets/…` link
+   * (see {@link resolveAssetFileLink}); undefined for anything else or a
+   * file that no longer exists.
+   */
+  resolveFileInfo: (href: string) => Promise<FileInfo | undefined>
   /** The most recent failed save; cleared by the next success. */
   saveError: AssetSaveError | null
 }
@@ -91,6 +115,11 @@ export function useAssetPersistence(
   // note (and graph session) it shows, so a save that finishes after a
   // switch must not put its outcome on the *next* note's banner.
   const sessionEpoch = useRef(0)
+  // File-pill sizes by graph-relative asset path, seeded by every save (the
+  // size is already in hand) and backfilled by one shared `assets/` listing,
+  // so a note full of pills stats the directory once, not once per pill.
+  const sizeByAssetPath = useRef(new Map<string, number>())
+  const pendingAssetListing = useRef<Promise<FileMeta[]> | null>(null)
 
   useEffect(() => {
     return () => {
@@ -98,6 +127,14 @@ export function useAssetPersistence(
       setSaveError(null)
     }
   }, [path, generation])
+
+  useEffect(() => {
+    const cache = sizeByAssetPath.current
+    return () => {
+      cache.clear()
+      pendingAssetListing.current = null
+    }
+  }, [generation])
 
   const resolveImageUrl = useCallback(
     (src: string): string | null => {
@@ -147,6 +184,7 @@ export function useAssetPersistence(
         : assetFileName(file.name)
       try {
         const saved = await createAsset(desiredName, file, generation)
+        sizeByAssetPath.current.set(saved, file.size)
         if (file.size > LARGE_FILE_BYTES) {
           startOperation('Large file added').warn(
             `“${file.name}” is ${formatBytes(file.size)}. Git keeps every version forever; GitHub rejects files over 100 MB.`,
@@ -174,8 +212,36 @@ export function useAssetPersistence(
     [generation],
   )
 
+  const resolveFileInfo = useCallback(
+    async (href: string): Promise<FileInfo | undefined> => {
+      if (generation === null || !isSafeAssetSource(href)) {
+        return undefined
+      }
+      const cache = sizeByAssetPath.current
+      if (!cache.has(href)) {
+        pendingAssetListing.current ??= listDir('assets', generation).finally(() => {
+          pendingAssetListing.current = null
+        })
+        const entries = await pendingAssetListing.current
+        for (const entry of entries) {
+          cache.set(entry.path, entry.size)
+        }
+      }
+      const size = cache.get(href)
+      return size === undefined ? undefined : { size }
+    },
+    [generation],
+  )
+
   return useMemo<AssetPersistence>(
-    () => ({ resolveImageUrl, resolveAssetOpenPath, openAsset, saveFile, saveError }),
-    [resolveImageUrl, resolveAssetOpenPath, openAsset, saveFile, saveError],
+    () => ({
+      resolveImageUrl,
+      resolveAssetOpenPath,
+      openAsset,
+      saveFile,
+      resolveFileInfo,
+      saveError,
+    }),
+    [resolveImageUrl, resolveAssetOpenPath, openAsset, saveFile, resolveFileInfo, saveError],
   )
 }

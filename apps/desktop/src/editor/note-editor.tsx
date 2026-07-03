@@ -12,6 +12,9 @@ import { errorMessage } from '@reflect/core'
 import {
   type AcceptPendingReplacementOptions,
   type ExitBoundaryHandler,
+  type FileClickHandler,
+  type FileInfoResolver,
+  type FileLinkResolver,
   type MarkMode,
   type StartPendingReplacementOptions,
 } from '@meowdown/core'
@@ -122,6 +125,15 @@ interface NoteEditorProps {
    * and `[name](dest)` for everything else.
    */
   saveFile?: (file: File) => Promise<string | null>
+  /**
+   * Claim a `[label](url)` link as a file attachment, rendered as an inline
+   * file pill instead of a plain link. Clicking a pill routes through the
+   * same href handling as a link click (asset opener, deep links, OS
+   * opener). Must be pure; read once on first render, like `initialContent`.
+   */
+  resolveFileLink?: FileLinkResolver
+  /** Resolve the file size a rendered file pill shows next to its name. */
+  resolveFileInfo?: FileInfoResolver
   /** Click on a `[[wiki link]]`. */
   onWikiLinkClick?: (target: string) => void
   /** Click on an inline `#tag`. The tag name arrives without the leading `#`. */
@@ -175,6 +187,8 @@ export function NoteEditor({
   resolveAssetOpenPath,
   openAsset,
   saveFile,
+  resolveFileLink,
+  resolveFileInfo,
   onWikiLinkClick,
   onTagClick,
   onWikilinkSearch,
@@ -201,6 +215,7 @@ export function NoteEditor({
   const resolveAssetOpenPathRef = useRef(resolveAssetOpenPath)
   const openAssetRef = useRef(openAsset)
   const saveFileRef = useRef(saveFile)
+  const resolveFileInfoRef = useRef(resolveFileInfo)
   const onExitBoundaryRef = useRef(onExitBoundary)
   useLayoutEffect(() => {
     onChangeRef.current = onChange
@@ -210,6 +225,7 @@ export function NoteEditor({
     resolveAssetOpenPathRef.current = resolveAssetOpenPath
     openAssetRef.current = openAsset
     saveFileRef.current = saveFile
+    resolveFileInfoRef.current = resolveFileInfo
     onExitBoundaryRef.current = onExitBoundary
   })
 
@@ -293,6 +309,17 @@ export function NoteEditor({
     },
     [],
   )
+  // A file pill is a claimed link, so a click on it routes exactly like a
+  // link click: `assets/…` through the asset opener, anything else through
+  // the deep-link/URL path.
+  const handleFileClick: FileClickHandler = useCallback(
+    ({ href, event }) => handleLinkClick({ href, event }),
+    [handleLinkClick],
+  )
+  const handleResolveFileInfo: FileInfoResolver = useCallback(
+    (href) => resolveFileInfoRef.current?.(href),
+    [],
+  )
   const handleImageClick = useCallback(
     ({ src, alt, event }: { src: string; alt: string; event: MouseEvent }) => {
       const displayUrl = resolveImageUrlRef.current?.(src) ?? null
@@ -352,6 +379,9 @@ export function NoteEditor({
         {...(onSlashMenuSearch !== undefined ? { onSlashMenuSearch } : {})}
         resolveImageUrl={handleResolveImageUrl}
         onFilePaste={handleFilePaste}
+        {...(resolveFileLink !== undefined ? { resolveFileLink } : {})}
+        resolveFileInfo={handleResolveFileInfo}
+        onFileClick={handleFileClick}
         onExitBoundary={handleExitBoundary}
       >
         <EditorInputTraits />

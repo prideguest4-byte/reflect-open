@@ -5,6 +5,7 @@ import { setBridge } from '@reflect/core'
 import { resetOperations, useOperations, type Operation } from '@/lib/operations'
 import {
   LARGE_FILE_BYTES,
+  resolveAssetFileLink,
   useAssetPersistence,
   type AssetPersistence,
 } from './use-asset-persistence'
@@ -129,6 +130,97 @@ describe('useAssetPersistence saveFile', () => {
       saved = await persistence!.saveFile(fileOf('a.pdf', 'application/pdf'))
     })
     expect(saved).toBeNull()
+    expect(invoke).not.toHaveBeenCalled()
+  })
+})
+
+function fileLink(href: string): { href: string; label: string; title: string } {
+  return { href, label: 'label', title: '' }
+}
+
+describe('resolveAssetFileLink', () => {
+  it('claims safe graph-relative assets/ links only', () => {
+    expect(resolveAssetFileLink(fileLink('assets/q3-report.pdf'))).toBe(true)
+    expect(resolveAssetFileLink(fileLink('assets/sub/archive.zip'))).toBe(true)
+
+    expect(resolveAssetFileLink(fileLink('https://example.com/q3.pdf'))).toBe(false)
+    expect(resolveAssetFileLink(fileLink('notes/other.md'))).toBe(false)
+    expect(resolveAssetFileLink(fileLink('assets/../secrets.env'))).toBe(false)
+    expect(resolveAssetFileLink(fileLink('assets\\evil.pdf'))).toBe(false)
+    expect(resolveAssetFileLink(fileLink('assets/'))).toBe(false)
+  })
+})
+
+/** A bridge whose upload commands succeed and whose `dir_list` serves `entries`. */
+function installListingBridge(
+  entries: Array<{ path: string; size: number }>,
+): ReturnType<typeof vi.fn> {
+  const invoke = vi.fn(async (command: string, args: Record<string, unknown>) =>
+    command === 'dir_list'
+      ? entries.map((entry) => ({ ...entry, modifiedMs: 0 }))
+      : command === 'asset_upload_begin'
+        ? 'upload-1'
+        : command === 'asset_upload_commit'
+          ? `assets/${args['desiredName'] as string}`
+          : null,
+  )
+  setBridge({ invoke, invokeBinary: async () => null, listen: async () => () => {} })
+  return invoke
+}
+
+describe('useAssetPersistence resolveFileInfo', () => {
+  it('lists the assets directory once for a burst of pills', async () => {
+    const invoke = installListingBridge([
+      { path: 'assets/q3-report.pdf', size: 1234 },
+      { path: 'assets/archive.zip', size: 5678 },
+    ])
+    render(<Host generation={3} />)
+
+    const [report, archive] = await Promise.all([
+      persistence!.resolveFileInfo('assets/q3-report.pdf'),
+      persistence!.resolveFileInfo('assets/archive.zip'),
+    ])
+
+    expect(report).toEqual({ size: 1234 })
+    expect(archive).toEqual({ size: 5678 })
+    expect(invoke.mock.calls.filter(([command]) => command === 'dir_list')).toHaveLength(1)
+  })
+
+  it('serves a just-saved file from the save itself, without a listing', async () => {
+    const invoke = installListingBridge([])
+    render(<Host generation={3} />)
+
+    await act(async () => {
+      await persistence!.saveFile(fileOf('Q3 Report.PDF', 'application/pdf', 1234))
+    })
+
+    await expect(persistence!.resolveFileInfo('assets/q3-report.pdf')).resolves.toEqual({
+      size: 1234,
+    })
+    expect(invoke.mock.calls.filter(([command]) => command === 'dir_list')).toHaveLength(0)
+  })
+
+  it('declines remote or unsafe hrefs without touching the bridge', async () => {
+    const invoke = installListingBridge([])
+    render(<Host generation={3} />)
+
+    await expect(persistence!.resolveFileInfo('https://example.com/q3.pdf')).resolves.toBeUndefined()
+    await expect(persistence!.resolveFileInfo('assets/../secrets.env')).resolves.toBeUndefined()
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('returns undefined for an asset missing from the listing', async () => {
+    installListingBridge([{ path: 'assets/other.pdf', size: 9 }])
+    render(<Host generation={3} />)
+
+    await expect(persistence!.resolveFileInfo('assets/gone.pdf')).resolves.toBeUndefined()
+  })
+
+  it('declines without a graph session', async () => {
+    const invoke = installListingBridge([{ path: 'assets/q3.pdf', size: 9 }])
+    render(<Host generation={null} />)
+
+    await expect(persistence!.resolveFileInfo('assets/q3.pdf')).resolves.toBeUndefined()
     expect(invoke).not.toHaveBeenCalled()
   })
 })

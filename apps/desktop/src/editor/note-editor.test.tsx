@@ -19,6 +19,11 @@ interface CapturedEditorProps {
   onLinkClick?: (payload: { href: string; event: MouseEvent }) => void
   onTagClick?: (payload: { tag: string; event: MouseEvent }) => void
   onFilePaste?: (file: File) => Promise<string | undefined>
+  resolveFileLink?: (payload: { href: string; label: string; title: string }) => boolean
+  resolveFileInfo?: (
+    href: string,
+  ) => { size: number } | undefined | Promise<{ size: number } | undefined>
+  onFileClick?: (payload: { href: string; name: string; event: MouseEvent | KeyboardEvent }) => void
 }
 
 const captured = vi.hoisted(() => ({ props: null as CapturedEditorProps | null }))
@@ -310,6 +315,40 @@ describe('NoteEditor link opening', () => {
 
     expect(dispatchDeepLink).toHaveBeenCalledWith('reflect://note/abc123')
     expect(openUrl).not.toHaveBeenCalled()
+  })
+})
+
+describe('NoteEditor file pills', () => {
+  it('passes the file-link resolver through unchanged (meowdown reads it once)', () => {
+    const resolveFileLink = vi.fn(() => true)
+    render(<NoteEditor initialContent="" resolveFileLink={resolveFileLink} />)
+    expect(captured.props?.resolveFileLink).toBe(resolveFileLink)
+  })
+
+  it('omits the resolver when the host claims no file links', () => {
+    render(<NoteEditor initialContent="" />)
+    expect('resolveFileLink' in (captured.props ?? {})).toBe(false)
+  })
+
+  it('opens a clicked assets/ pill through the graph asset opener, not the URL opener', () => {
+    const openAsset = vi.fn(async () => {})
+    renderEditor(openAsset)
+
+    const event = new MouseEvent('click')
+    act(() => captured.props?.onFileClick?.({ href: 'assets/cat.png', name: 'cat.png', event }))
+
+    expect(openAsset).toHaveBeenCalledWith('assets/cat.png')
+    expect(openUrl).not.toHaveBeenCalled()
+  })
+
+  it('forwards pill size lookups to resolveFileInfo', async () => {
+    const resolveFileInfo = vi.fn(async () => ({ size: 42 }))
+    render(<NoteEditor initialContent="" resolveFileInfo={resolveFileInfo} />)
+
+    await expect(captured.props?.resolveFileInfo?.('assets/q3.pdf')).resolves.toEqual({
+      size: 42,
+    })
+    expect(resolveFileInfo).toHaveBeenCalledExactlyOnceWith('assets/q3.pdf')
   })
 })
 
