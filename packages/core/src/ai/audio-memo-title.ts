@@ -1,4 +1,5 @@
-import { generateText } from 'ai'
+import { generateObject } from 'ai'
+import { z } from 'zod'
 import type { AiProvidersState } from './provider-config'
 import type { AiProviderConfig } from '../settings/schema'
 import { wikiLinkSafe } from '../markdown/edit'
@@ -11,6 +12,10 @@ const MAX_FALLBACK_WORDS = 8
 const OPENAI_AUDIO_MEMO_TITLE_MODEL = 'gpt-5.4-nano'
 const ANTHROPIC_AUDIO_MEMO_TITLE_MODEL = 'claude-haiku-4-5'
 const GOOGLE_AUDIO_MEMO_TITLE_MODEL = 'gemini-3.1-flash-lite'
+
+const audioMemoTitleSchema = z.object({
+  title: z.string(),
+})
 
 interface AudioMemoTitleCredentials {
   /** The provider entry whose provider selects the fixed small title model. */
@@ -142,17 +147,18 @@ export async function generateAudioMemoTitle(
     return fallback
   }
   try {
-    const result = await generateText({
+    const result = await generateObject({
       model: languageModel(
         titleConfig,
         request.credentials.apiKey,
         request.fetchFn ?? fetch,
       ),
+      schema: audioMemoTitleSchema,
       prompt: titlePrompt(request.transcript),
       abortSignal: AbortSignal.timeout(TITLE_TIMEOUT_MS),
       maxRetries: 0,
     })
-    return normalizedTitle(result.text) ?? fallback
+    return normalizedTitle(result.object.title) ?? fallback
   } catch {
     return fallback
   }

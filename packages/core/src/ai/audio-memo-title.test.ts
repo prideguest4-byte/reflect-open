@@ -52,7 +52,7 @@ function modelAnswering(text: string): void {
   languageModelMock.mockReturnValue(
     new MockLanguageModelV3({
       doGenerate: async () => ({
-        content: [{ type: 'text', text }],
+        content: [{ type: 'text', text: JSON.stringify({ title: text }) }],
         finishReason: { unified: 'stop' as const, raw: undefined },
         usage: USAGE,
         warnings: [],
