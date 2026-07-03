@@ -81,7 +81,7 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
   const deferredQuery = useDeferredValue(query)
   const searchTerm = deferredQuery.trim()
 
-  const { data: fetched } = useQuery({
+  const { data: fetched, isPlaceholderData } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'attendee-suggestions', searchTerm, contactsInMenu],
     queryFn: async () => {
       const [suggestions, contacts] = await Promise.all([
@@ -112,6 +112,11 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
     (entry) => !chosen.has(foldKey(entryName(entry))),
   )
   const open = !dismissed && query.trim() !== '' && entries.length > 0
+  // The list lags the input twice over (the deferred value, then the fetch —
+  // keepPreviousData shows the prior query's rows meanwhile). Enter may only
+  // take the highlighted row when the rows answer exactly what's typed;
+  // anything staler falls back to the typed text, like blur always does.
+  const entriesMatchInput = !isPlaceholderData && searchTerm === query.trim()
 
   const select = (entry: AutocompleteEntry): void => {
     onAdd(entryAttendee(entry))
@@ -135,9 +140,10 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
       // stopPropagation keeps cmdk's root handler from double-selecting.
       keyEvent.preventDefault()
       keyEvent.stopPropagation()
-      const entry = open
-        ? entries.find((candidate) => entryKey(candidate) === highlighted)
-        : undefined
+      const entry =
+        open && entriesMatchInput
+          ? entries.find((candidate) => entryKey(candidate) === highlighted)
+          : undefined
       if (entry !== undefined) {
         select(entry)
       } else {

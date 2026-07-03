@@ -105,6 +105,23 @@ describe('AttendeeCombobox', () => {
     expect(input.value).toBe('')
   })
 
+  it('Enter during a pending refetch adds the typed text, not a stale row', async () => {
+    suggestWikiTargets.mockResolvedValue([noteSuggestion('Ada Lovelace')])
+    const input = renderCombobox()
+
+    fireEvent.change(input, { target: { value: 'ada' } })
+    await findHighlighted('Ada Lovelace')
+
+    // Keep typing: the popover still shows the previous query's rows
+    // (keepPreviousData) while the new fetch hangs. Enter must take the
+    // live text, not the stale highlighted suggestion.
+    suggestWikiTargets.mockReturnValue(new Promise(() => {}))
+    fireEvent.change(input, { target: { value: 'Adam Smith' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(onAdd).toHaveBeenCalledWith({ name: 'Adam Smith' })
+  })
+
   it('offers an Add row for a name that matches nothing exactly', async () => {
     suggestWikiTargets.mockResolvedValue([noteSuggestion('Ada Lovelace')])
     const input = renderCombobox()
