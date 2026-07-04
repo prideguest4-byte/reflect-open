@@ -300,15 +300,40 @@ fn adopt_graph(root: &Path) -> AppResult<String> {
             "iCloud Drive already contains a graph named \"{name}\" — open that one instead, or rename one of the two"
         )));
     }
-    let copied = copy_graph_tree(root, &target)?;
-    let landed = count_graph_tree(&target)?;
+    adopt_into(root, &target)?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+/// Copy + count/byte verification, with retry hygiene: a failed or
+/// unverified copy must not strand a half-copied tree at the target —
+/// `dir_has_notes` would then refuse every retry until the user cleaned
+/// iCloud Drive by hand. On failure the target is removed, but **only** when
+/// this attempt effectively created it (missing or empty before); a
+/// pre-existing non-empty folder is never deleted wholesale.
+fn adopt_into(root: &Path, target: &Path) -> AppResult<()> {
+    let target_was_fresh = !target.exists()
+        || std::fs::read_dir(target)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false);
+    let outcome = copy_and_verify(root, target);
+    if outcome.is_err() && target_was_fresh {
+        let _ = std::fs::remove_dir_all(target); // best-effort retry hygiene
+    }
+    outcome
+}
+
+/// The copy + count/byte verification half of [`adopt_into`], separated so
+/// its failure paths share one cleanup decision in the caller.
+fn copy_and_verify(root: &Path, target: &Path) -> AppResult<()> {
+    let copied = copy_graph_tree(root, target)?;
+    let landed = count_graph_tree(target)?;
     if copied != landed {
         return Err(AppError::io(format!(
             "the iCloud copy did not verify (copied {} files / {} bytes, found {} / {}); the original graph is untouched",
             copied.0, copied.1, landed.0, landed.1
         )));
     }
-    Ok(target.to_string_lossy().into_owned())
+    Ok(())
 }
 
 /// What stays behind on a move-in: the rebuildable local state, the backup
@@ -430,6 +455,61 @@ mod tests {
         assert!(!target.join(".reflect").exists());
         assert!(!target.join(".git").exists());
         assert!(!target.join(".DS_Store").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_adopt_cleans_a_fresh_target_so_retries_work() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // An unreadable source subdir aborts the copy partway (CI runners
+        // and dev machines don't run tests as root).
+        let source = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(source.path().join("notes")).expect("mkdir");
+        std::fs::write(source.path().join("notes/a.md"), b"# A").expect("write");
+        let locked = source.path().join("zz-locked");
+        std::fs::create_dir_all(&locked).expect("mkdir");
+        std::fs::write(locked.join("f.md"), b"x").expect("write");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+
+        let container = tempfile::tempdir().expect("tempdir");
+        let target = container.path().join("Notes");
+        let result = adopt_into(source.path(), &target);
+
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod back");
+        assert!(result.is_err());
+        // The half-copied tree is gone — dir_has_notes won't block the retry.
+        assert!(!target.exists(), "partial adopt tree left behind");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_adopt_never_deletes_a_preexisting_folder() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let source = tempfile::tempdir().expect("tempdir");
+        let locked = source.path().join("zz-locked");
+        std::fs::create_dir_all(&locked).expect("mkdir");
+        std::fs::write(locked.join("f.md"), b"x").expect("write");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+
+        // The target already exists with unrelated content (no notes, so the
+        // has-notes gate upstream allowed the adopt).
+        let container = tempfile::tempdir().expect("tempdir");
+        let target = container.path().join("Notes");
+        std::fs::create_dir_all(&target).expect("mkdir");
+        std::fs::write(target.join("keep.txt"), b"precious").expect("write");
+
+        let result = adopt_into(source.path(), &target);
+
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod back");
+        assert!(result.is_err());
+        assert!(
+            target.join("keep.txt").exists(),
+            "pre-existing content deleted"
+        );
     }
 
     #[test]
