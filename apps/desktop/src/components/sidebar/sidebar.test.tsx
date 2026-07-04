@@ -19,6 +19,7 @@ const getPinnedNotes = vi.hoisted(() => vi.fn<() => Promise<PinnedNote[]>>(async
 const revealItemInDir = vi.hoisted(() => vi.fn<(path: string) => Promise<void>>(async () => {}))
 const openRecent = vi.hoisted(() => vi.fn())
 const pickAndOpen = vi.hoisted(() => vi.fn())
+const chooseGraph = vi.hoisted(() => vi.fn())
 interface NativeContextMenuItemForTest {
   text: string
   action: () => void
@@ -59,6 +60,7 @@ vi.mock('@/providers/graph-provider', () => ({
     indexing: false,
     openRecent,
     pickAndOpen,
+    chooseGraph,
   }),
 }))
 vi.mock('@/providers/settings-provider', () => ({
@@ -111,6 +113,9 @@ beforeEach(() => {
   audioMemo.unavailableReason = null
   audioMemo.toggle.mockReset()
   revealItemInDir.mockClear()
+  openRecent.mockClear()
+  pickAndOpen.mockClear()
+  chooseGraph.mockClear()
   openNativeContextMenu.mockClear()
   unpinNote.mockClear()
 })
@@ -349,7 +354,8 @@ describe('Sidebar', () => {
 
     await userEvent.click(view.getByRole('button', { name: /Notes/ }))
     await userEvent.click(view.getByRole('menuitem', { name: /open another graph/i }))
-    expect(pickAndOpen).toHaveBeenCalled()
+    expect(chooseGraph).toHaveBeenCalled()
+    expect(pickAndOpen).not.toHaveBeenCalled()
   })
 
   it('the graph footer opens user settings from the graph menu', async () => {

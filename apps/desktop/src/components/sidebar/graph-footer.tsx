@@ -62,7 +62,7 @@ interface GraphFooterProps {
 }
 
 export function GraphFooter({ graph, context }: GraphFooterProps): ReactElement {
-  const { recents, indexing, openRecent, pickAndOpen } = useGraph()
+  const { recents, indexing, openRecent, chooseGraph } = useGraph()
   const { colorFor, setColor } = useGraphColors()
   const currentColor = colorFor(graph.root) ?? DEFAULT_GRAPH_COLOR
   const { backup } = useSync()
@@ -167,7 +167,7 @@ export function GraphFooter({ graph, context }: GraphFooterProps): ReactElement 
             <span className="min-w-0 flex-1 truncate">Reveal graph in Finder</span>
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => void pickAndOpen()}
+            onSelect={() => void chooseGraph()}
             className={MENU_ITEM_CLASS}
           >
             <FolderOpen aria-hidden strokeWidth={1.75} className="size-3.5 shrink-0" />
