@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { conflictMarkerLabels, detectConflictMarkers, resolveConflictMarkers } from './conflict-markers'
+import {
+  conflictMarkerBlockCount,
+  conflictMarkerLabels,
+  detectConflictMarkers,
+  resolveConflictMarkers,
+} from './conflict-markers'
 
 const CONFLICTED = [
   '# Shared',
@@ -120,5 +125,19 @@ describe('conflictMarkerLabels', () => {
     expect(conflictMarkerLabels('<<<<<<< a\nunterminated')).toBeNull()
     // Out-of-order marker lines are prose, not a conflict.
     expect(conflictMarkerLabels('=======\n>>>>>>> b\n<<<<<<< a\n')).toBeNull()
+  })
+})
+
+describe('conflictMarkerBlockCount', () => {
+  it('counts complete blocks only', () => {
+    expect(conflictMarkerBlockCount('plain\ntext\n')).toBe(0)
+    expect(conflictMarkerBlockCount(CONFLICTED)).toBe(1)
+    expect(conflictMarkerBlockCount('<<<<<<< a\nunterminated')).toBe(0)
+  })
+
+  it('counts the iCloud sweep’s stacked three-way shape as two blocks', () => {
+    const stacked =
+      '<<<<<<< Mac\nmac\n=======\nphone\n>>>>>>> iPhone\n<<<<<<< Mac\n=======\nipad\n>>>>>>> iPad\n'
+    expect(conflictMarkerBlockCount(stacked)).toBe(2)
   })
 })

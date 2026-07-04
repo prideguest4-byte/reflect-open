@@ -98,6 +98,39 @@ export function conflictMarkerLabels(source: string): ConflictMarkerLabels | nul
   return null
 }
 
+/**
+ * How many complete conflict blocks `source` carries. The iCloud sweep's
+ * three-plus-way folds stack one block per extra side (Plan 21), and the
+ * resolution notice pluralizes its buttons past one block — `theirs` keeps
+ * every non-first side, not a single device's.
+ */
+export function conflictMarkerBlockCount(source: string): number {
+  let count = 0
+  let stage: 'start' | 'separator' | 'end' = 'start'
+  for (const rawLine of source.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    switch (stage) {
+      case 'start':
+        if (line.startsWith('<<<<<<< ')) {
+          stage = 'separator'
+        }
+        break
+      case 'separator':
+        if (line === '=======') {
+          stage = 'end'
+        }
+        break
+      case 'end':
+        if (line.startsWith('>>>>>>> ')) {
+          count += 1
+          stage = 'start'
+        }
+        break
+    }
+  }
+  return count
+}
+
 /** True when `source` contains a complete Git conflict-marker block. */
 export function detectConflictMarkers(source: string): boolean {
   let stage: 'start' | 'separator' | 'end' = 'start'

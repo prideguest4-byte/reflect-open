@@ -511,6 +511,7 @@ export {
   upsertFrontmatter,
   detectConflictMarkers,
   resolveConflictMarkers,
+  conflictMarkerBlockCount,
   conflictMarkerLabels,
   type ConflictMarkerLabels,
   parseBody,

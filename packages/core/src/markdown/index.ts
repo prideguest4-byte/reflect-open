@@ -52,6 +52,7 @@ export {
 } from './edit'
 export { parseTaskMarker } from './task-marker'
 export {
+  conflictMarkerBlockCount,
   conflictMarkerLabels,
   detectConflictMarkers,
   resolveConflictMarkers,

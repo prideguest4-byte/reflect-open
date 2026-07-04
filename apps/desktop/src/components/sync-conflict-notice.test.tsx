@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getNote, type GraphInfo } from '@reflect/core'
+import { getNote, readNote, type GraphInfo } from '@reflect/core'
 import { setPlatformSurface } from '@/lib/platform-surface'
 import { SyncConflictNotice } from './sync-conflict-notice'
 
@@ -9,6 +9,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   getNote: vi.fn(),
+  readNote: vi.fn(),
 }))
 
 const graphState = vi.hoisted(() => ({
@@ -94,5 +95,19 @@ describe('SyncConflictNotice', () => {
 
     expect(await screen.findByText(/review on desktop/i)).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('pluralizes the buttons for a stacked three-plus-way conflict', async () => {
+    vi.mocked(getNote).mockResolvedValue(NOTE)
+    vi.mocked(readNote).mockResolvedValue(
+      '<<<<<<< Mac\nmac\n=======\nphone\n>>>>>>> iPhone\n<<<<<<< Mac\n=======\nipad\n>>>>>>> iPad\n',
+    )
+    renderNotice()
+
+    // `theirs` splices in every non-first side — naming one device would lie.
+    expect(await screen.findByRole('button', { name: 'Keep the other versions' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Keep all' })).toBeTruthy()
+    // The first side is still a single device, so it stays named.
+    expect(screen.getByRole('button', { name: 'Keep “Mac”' })).toBeTruthy()
   })
 })
