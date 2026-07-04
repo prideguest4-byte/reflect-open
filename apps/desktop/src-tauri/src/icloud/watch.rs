@@ -124,14 +124,17 @@ mod platform {
         .map_err(|err| AppError::io(format!("failed to reach the main thread: {err}")))
     }
 
-    /// The root plus its canonicalized twin. Spotlight reports real paths —
-    /// on iOS the container lives behind the `/var` → `/private/var` symlink,
-    /// so a predicate (or a prefix strip) built from the un-resolved root
-    /// alone would match nothing and the watch would sit silent.
+    /// The root plus its canonicalized twin, both slash-terminated. Spotlight
+    /// reports real paths — on iOS the container lives behind the `/var` →
+    /// `/private/var` symlink, so a predicate (or a prefix strip) built from
+    /// the un-resolved root alone would match nothing and the watch would sit
+    /// silent. The trailing slash makes both the predicate and the strip a
+    /// real path boundary: `…/Notes` must never claim `…/Notes-old/…`.
     fn root_variants(root: &str) -> Vec<String> {
-        let mut variants = vec![root.to_string()];
+        let with_slash = |value: &str| format!("{}/", value.trim_end_matches('/'));
+        let mut variants = vec![with_slash(root)];
         if let Ok(canonical) = std::fs::canonicalize(root) {
-            let canonical = canonical.to_string_lossy().into_owned();
+            let canonical = with_slash(&canonical.to_string_lossy());
             if !variants.contains(&canonical) {
                 variants.push(canonical);
             }
@@ -202,7 +205,22 @@ mod platform {
         }
 
         if !query.startQuery() {
-            tracing::warn!("iCloud metadata query failed to start");
+            // Per Apple docs this means "already running" or "no predicate" —
+            // neither can happen for this fresh, predicated query, but if it
+            // ever does, an installed-but-dead watch would silently eat the
+            // stop/start lifecycle. Tear the observers down and leave ACTIVE
+            // empty instead; the controller's resume-triggered sweeps keep
+            // conflict handling alive without the query. (The install runs
+            // fire-and-forget on the main thread, so the command has already
+            // returned — an error can't reach the caller from here.)
+            tracing::warn!("iCloud metadata query failed to start; falling back to sweep triggers");
+            let center = NSNotificationCenter::defaultCenter();
+            for token in &tokens {
+                unsafe {
+                    let _: () = msg_send![&center, removeObserver: &**token];
+                }
+            }
+            return;
         }
         *ACTIVE.lock().expect("watch lock") = Some(MainThreadBound::new(
             Watch {
@@ -308,12 +326,13 @@ mod platform {
     /// The watcher's note-tracking rule, over absolute metadata paths:
     /// `.md` under `daily/`, `notes/`, or `templates/`, graph-relative. Tries
     /// every root variant — Spotlight may report either side of the
-    /// `/var` ↔ `/private/var` symlink.
+    /// `/var` ↔ `/private/var` symlink. Variants are slash-terminated
+    /// ([`root_variants`]), so the strip is a path boundary, not a string
+    /// prefix — a sibling `…/Notes-old/` can never masquerade as the graph.
     fn tracked_note_relpath(path: &str, roots: &[String]) -> Option<String> {
         let rel = roots
             .iter()
-            .find_map(|root| path.strip_prefix(root.as_str()))?
-            .trim_start_matches('/');
+            .find_map(|root| path.strip_prefix(root.as_str()))?;
         let tracked = (rel.starts_with("daily/")
             || rel.starts_with("notes/")
             || rel.starts_with("templates/"))
@@ -349,8 +368,8 @@ mod platform {
         #[test]
         fn tracks_notes_relative_to_any_root_variant() {
             let roots = vec![
-                "/var/mobile/Containers/Notes".to_string(),
-                "/private/var/mobile/Containers/Notes".to_string(),
+                "/var/mobile/Containers/Notes/".to_string(),
+                "/private/var/mobile/Containers/Notes/".to_string(),
             ];
             // Spotlight may report the resolved (/private) side of the root
             // symlink; either variant must strip.
@@ -367,6 +386,12 @@ mod platform {
                 None
             );
             assert_eq!(tracked_note_relpath("/elsewhere/notes/a.md", &roots), None);
+            // A sibling directory sharing the root as a string prefix is not
+            // inside the graph — the slash-terminated variant refuses it.
+            assert_eq!(
+                tracked_note_relpath("/var/mobile/Containers/Notes-old/notes/a.md", &roots),
+                None
+            );
         }
     }
 }

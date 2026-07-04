@@ -36,6 +36,10 @@ pub(crate) use self::io::atomic_write_bytes;
 /// metadata query, which maps placeholders on its own side.
 #[cfg(desktop)]
 pub(crate) use self::io::eviction_placeholder;
+/// "Occupied" probe (real file OR eviction placeholder), shared with the
+/// iCloud sweep's collision folding — an evicted canonical note must not be
+/// treated as a free slot (Plan 21).
+pub(crate) use self::io::file_occupied;
 #[cfg(desktop)]
 pub(crate) use self::io::icloud_placeholder_target;
 /// Sync-exclusion marking, shared with `git::repo` (a freshly initialized
@@ -366,10 +370,20 @@ pub(crate) fn move_note_file(root: &Path, from: &str, to: &str) -> AppResult<()>
 pub fn note_delete(path: String, generation: u64, state: State<GraphState>) -> AppResult<()> {
     let root = root_for_generation(&state, generation)?;
     let abs = resolve(&root, &path)?;
+    // An iCloud-evicted note exists only as its `.name.md.icloud` stub —
+    // trashing the logical path would fail and the note would be
+    // undeletable. Removing the stub deletes the iCloud item (Plan 21).
+    let target = if abs.exists() {
+        abs
+    } else {
+        io::eviction_placeholder(&abs)
+            .filter(|stub| stub.exists())
+            .unwrap_or(abs)
+    };
     #[cfg(desktop)]
-    os_trash_delete(&abs)?;
+    os_trash_delete(&target)?;
     #[cfg(mobile)]
-    move_to_graph_trash(&root, &abs)?;
+    move_to_graph_trash(&root, &target)?;
     // A deleted note's sync ancestor is meaningless — drop it (Plan 21).
     crate::conflict::shadow::ShadowStore::new(&root).forget(&path);
     Ok(())

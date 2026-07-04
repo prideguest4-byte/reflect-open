@@ -50,7 +50,12 @@ export function subscribeOwnWrites(handler: (path: string) => void): () => void 
  */
 export function echoLocalWrite(change: FileChange): void {
   for (const handler of [...ownWriteListeners]) {
-    handler(change.path)
+    try {
+      handler(change.path)
+    } catch (err) {
+      // One misbehaving observer must not break the write echo for everyone.
+      console.error('own-write observer failed:', err)
+    }
   }
   if (echoEnabled) {
     emitFileChanges([change])

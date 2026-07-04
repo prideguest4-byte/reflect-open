@@ -175,32 +175,40 @@ export function createIcloudController(options: IcloudControllerOptions): Icloud
       ownWrites.set(path, now)
       pruneOwnWrites(now)
     }))
-    disposers.push(
-      await subscribeFileChanges((changes) => {
-        if (disposed || applyingSweepResult) {
-          return
-        }
-        const now = Date.now()
-        pruneOwnWrites(now)
-        for (const change of changes) {
-          if (change.kind !== 'upsert' || !isNotePath(change.path)) {
-            continue
+    // Subscriptions are defensive like the watch above: a failed listen must
+    // not reject start() (an unhandled rejection at the provider's call site)
+    // or skip the initial sweep below — resume triggers and the baseline scan
+    // keep conflict handling alive without them.
+    try {
+      disposers.push(
+        await subscribeFileChanges((changes) => {
+          if (disposed || applyingSweepResult) {
+            return
           }
-          if (ownWrites.has(change.path)) {
-            continue // our own save landing — never advances the base
+          const now = Date.now()
+          pruneOwnWrites(now)
+          for (const change of changes) {
+            if (change.kind !== 'upsert' || !isNotePath(change.path)) {
+              continue
+            }
+            if (ownWrites.has(change.path)) {
+              continue // our own save landing — never advances the base
+            }
+            pendingIngest.add(change.path)
           }
-          pendingIngest.add(change.path)
-        }
-        scheduleScan()
-      }),
-    )
-    disposers.push(
-      await subscribeIcloudConflicts(() => {
-        if (!disposed) {
           scheduleScan()
-        }
-      }),
-    )
+        }),
+      )
+      disposers.push(
+        await subscribeIcloudConflicts(() => {
+          if (!disposed) {
+            scheduleScan()
+          }
+        }),
+      )
+    } catch (err) {
+      console.error('iCloud change subscriptions failed to start:', err)
+    }
     // Resume triggers (same shape as the backup controller's): focus for a
     // desktop refocus, visibility → visible for mobile resume and desktop
     // unminimize. Deduped — one transition fires both events.

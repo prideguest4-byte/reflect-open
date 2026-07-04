@@ -125,16 +125,24 @@ fn run_sweep(
             continue;
         }
         let abs = root.join(&file.path);
-        let versions = unresolved_versions(&abs);
-        if versions.is_empty() {
+        let scan = unresolved_versions(&abs);
+        if scan.none() {
+            continue;
+        }
+        if !scan.complete {
+            // A version with no readable store path can't be archived, and
+            // mark_resolved would purge it — defer the whole file instead.
+            outcome.deferred.push(file.path.clone());
             continue;
         }
         if skip.contains(file.path.as_str()) {
             outcome.deferred.push(file.path.clone());
             continue;
         }
-        match resolve_file(root, &file.path, file.modified_ms, versions, &shadow) {
-            Ok(resolved) => apply_file_resolution(root, &file.path, resolved, &mut outcome),
+        match resolve_file(root, &file.path, file.modified_ms, scan.versions, &shadow) {
+            Ok(resolved) => {
+                apply_file_resolution(root, &file.path, resolved, &shadow, &mut outcome)
+            }
             Err(err) => {
                 // One bad note must not stop the sweep; versions stay
                 // unresolved and the next sweep retries it.
@@ -162,7 +170,7 @@ fn advance_base_if_clean(root: &Path, rel: &str, shadow: &ShadowStore, fill_only
         return;
     }
     let abs = root.join(rel);
-    if !unresolved_versions(&abs).is_empty() {
+    if !unresolved_versions(&abs).none() {
         return;
     }
     let Ok(content) = fs::read_to_string(&abs) else {
@@ -265,10 +273,10 @@ fn apply_file_resolution(
     root: &Path,
     rel: &str,
     resolution: FileResolution,
+    shadow: &ShadowStore,
     outcome: &mut SweepOutcome,
 ) {
     let abs = root.join(rel);
-    let shadow = ShadowStore::new(root);
     if resolution.changed {
         if let Err(err) =
             crate::fs::atomic_write_bytes(root, &abs, resolution.final_content.as_bytes())
@@ -325,9 +333,10 @@ fn fold_collision_duplicates(
         let Ok(dup_content) = fs::read_to_string(&dup_abs) else {
             continue;
         };
-        if !canonical_abs.exists() {
-            // The canonical name is free (the winner was deleted/renamed):
-            // the duplicate simply takes its place.
+        if !crate::fs::file_occupied(&canonical_abs) {
+            // The canonical name is genuinely free (the winner was
+            // deleted/renamed — and not merely evicted, which `file_occupied`
+            // sees through): the duplicate simply takes its place.
             if fs::rename(&dup_abs, &canonical_abs).is_err() {
                 continue;
             }
@@ -340,7 +349,7 @@ fn fold_collision_duplicates(
             continue;
         }
         let Ok(canonical_content) = fs::read_to_string(&canonical_abs) else {
-            continue;
+            continue; // occupied but unreadable (evicted): retry once downloaded
         };
         if let Err(err) = archive::archive_version(
             root,
@@ -387,16 +396,22 @@ fn fold_collision_duplicates(
         {
             continue; // duplicate stays; next sweep retries
         }
-        if fs::remove_file(&dup_abs).is_err() {
-            tracing::warn!(path = %file.path, "failed to remove folded collision duplicate");
-        }
-        outcome.changed.push(remove_change(&file.path));
         if merged != canonical_content {
             outcome.changed.push(SweepChange {
                 path: canonical_rel.clone(),
                 kind: "upsert".to_string(),
                 modified_ms: modified_ms_of(&canonical_abs),
             });
+        }
+        // The canonical rewrite above is real either way, but the duplicate's
+        // disappearance must only be reported when it actually happened — a
+        // phantom `remove` would drop the index row while the file remains.
+        // The merged canonical already contains the duplicate's content, so
+        // the retry next sweep is an AlreadyResolved fold + remove.
+        if fs::remove_file(&dup_abs).is_ok() {
+            outcome.changed.push(remove_change(&file.path));
+        } else {
+            tracing::warn!(path = %file.path, "failed to remove folded collision duplicate");
         }
         if is_marked {
             outcome.needs_review.push(canonical_rel.clone());
@@ -527,6 +542,23 @@ mod tests {
         assert!(root.path().join("daily/2026-07-04.md").exists());
         assert!(!root.path().join("daily/2026-07-04 2.md").exists());
         assert_eq!(outcome.needs_review.len(), 0);
+    }
+
+    #[test]
+    fn an_evicted_canonical_is_not_a_free_slot() {
+        // The canonical note exists only as an iCloud eviction stub: the
+        // duplicate must wait (folding retries once the content downloads),
+        // never rename itself onto the reserved name.
+        let root = graph();
+        write(root.path(), "daily/.2026-07-04.md.icloud", "stub");
+        write(root.path(), "daily/2026-07-04 2.md", "- phone only\n");
+
+        let outcome = run_sweep(root.path(), &[], &[], false).unwrap();
+
+        assert!(!root.path().join("daily/2026-07-04.md").exists());
+        assert!(root.path().join("daily/2026-07-04 2.md").exists());
+        assert!(root.path().join("daily/.2026-07-04.md.icloud").exists());
+        assert!(outcome.changed.is_empty());
     }
 
     #[test]

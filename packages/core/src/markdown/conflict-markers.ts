@@ -63,9 +63,9 @@ export function resolveConflictMarkers(source: string, keep: ConflictResolution)
  */
 export interface ConflictMarkerLabels {
   /** The first side — what {@link resolveConflictMarkers} keeps for `ours`. */
-  ours: string
+  readonly ours: string
   /** The second side — kept for `theirs`. */
-  theirs: string
+  readonly theirs: string
 }
 
 /**

@@ -22,11 +22,13 @@ import { useSync } from '@/providers/sync-provider'
 /**
  * Settings → iCloud sync (Plan 21 Phase 1, the desktop leg): see whether the
  * graph syncs through iCloud Drive, and move a local graph into the
- * container. The move copies (count+byte verified), leaves the original
- * folder untouched as the recovery copy, disconnects a Git backup remote
- * first (iCloud sync and a Git remote are mutually exclusive per graph — two
- * merge machines over the same files would fight), then reopens the graph at
- * its iCloud home.
+ * container. The move copies (count+byte verified), then disconnects the
+ * Git backup remote (iCloud sync and a Git remote are mutually exclusive per
+ * graph — two merge machines over the same files would fight; the iCloud
+ * copy carries no `.git`, so the exclusion holds structurally), then reopens
+ * the graph at its iCloud home. Ordered copy-first so a failed copy leaves
+ * everything — including the backup — exactly as it was; the original folder
+ * stays on disk untouched as the recovery copy either way.
  *
  * macOS only — Windows/Linux have no iCloud Drive, and mobile chooses its
  * storage in onboarding.
@@ -58,10 +60,21 @@ export function IcloudSection(): ReactElement | null {
     setBusy(true)
     setError(null)
     try {
-      if (backupConnected) {
-        await disconnectGraph()
-      }
+      // Copy first: if it fails, nothing changed — the backup is still
+      // connected and the graph untouched.
       const newRoot = await icloudAdoptGraph(graph.generation)
+      if (backupConnected) {
+        try {
+          await disconnectGraph()
+        } catch (caught) {
+          // The iCloud copy has no .git, so exclusivity holds for the new
+          // graph regardless; the original folder keeping its backup is the
+          // recovery copy working as intended. Tell the user, don't block.
+          setError(
+            `The graph moved to iCloud, but GitHub backup could not be disconnected from the original folder: ${errorMessage(caught)}`,
+          )
+        }
+      }
       setConfirmOpen(false)
       const opened = await openRecent(newRoot)
       if (!opened) {

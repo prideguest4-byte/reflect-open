@@ -192,6 +192,15 @@ mod platform {
             };
             for entry in entries.flatten() {
                 let path = entry.path();
+                // Never follow links (they can loop, or point out of the
+                // graph) — same rule as the adopt-copy walks below.
+                if entry
+                    .file_type()
+                    .map(|kind| kind.is_symlink())
+                    .unwrap_or(true)
+                {
+                    continue;
+                }
                 if path.is_dir() {
                     stack.push(path);
                     continue;

@@ -2,7 +2,7 @@
 
 How Reflect syncs a graph through iCloud Drive (Plan 21 —
 [design](plans/21-icloud-drive-sync.md)), and what happens when two devices
-edit apart.
+edit the same note while apart.
 
 ## The user contract
 

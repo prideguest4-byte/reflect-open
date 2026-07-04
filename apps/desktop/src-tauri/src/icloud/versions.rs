@@ -21,31 +21,64 @@ pub struct VersionRef {
     pub device: Option<String>,
 }
 
+/// A file's unresolved conflict versions, plus whether the listing is
+/// **complete**. `NSFileVersion.URL` can hand back a URL with no path (file
+/// reference URLs are id-based); such a version can't be read or archived.
+/// When that happens the sweep must not resolve the file at all this round —
+/// `mark_resolved` purges *every* version, including the one that was never
+/// archived, which is exactly the data loss the archive exists to prevent.
+pub struct VersionScan {
+    pub versions: Vec<VersionRef>,
+    pub complete: bool,
+}
+
+impl VersionScan {
+    /// No conflict versions at all (the common case, and the off-Apple stub).
+    pub fn none(&self) -> bool {
+        self.versions.is_empty() && self.complete
+    }
+}
+
 pub use platform::{mark_resolved, unresolved_versions};
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod platform {
-    use super::VersionRef;
+    use super::{VersionRef, VersionScan};
     use objc2_foundation::{NSFileVersion, NSString, NSURL};
     use std::path::Path;
 
     /// The file's unresolved conflict versions (empty when none, or when the
     /// file isn't under iCloud at all).
-    pub fn unresolved_versions(abs: &Path) -> Vec<VersionRef> {
+    pub fn unresolved_versions(abs: &Path) -> VersionScan {
         let url = file_url(abs);
-        let Some(versions) = NSFileVersion::unresolvedConflictVersionsOfItemAtURL(&url) else {
-            return Vec::new();
+        let Some(listed) = NSFileVersion::unresolvedConflictVersionsOfItemAtURL(&url) else {
+            return VersionScan {
+                versions: Vec::new(),
+                complete: true,
+            };
         };
-        versions
-            .iter()
-            .filter_map(|version| describe(&version))
-            .collect()
+        let mut versions = Vec::new();
+        let mut complete = true;
+        for version in listed.iter() {
+            match describe(&version) {
+                Some(described) => versions.push(described),
+                None => {
+                    tracing::warn!(
+                        path = %abs.display(),
+                        "iCloud conflict version has no readable store path; deferring the file"
+                    );
+                    complete = false;
+                }
+            }
+        }
+        VersionScan { versions, complete }
     }
 
     /// Mark every conflict version of `abs` resolved and drop the stale
     /// copies from the version store. Call strictly **after** the archive and
-    /// the resolved write have landed. Best-effort: a failure leaves the
-    /// versions unresolved and the next sweep retries.
+    /// the resolved write have landed, and only when the version scan was
+    /// complete. Best-effort: a failure leaves the versions unresolved and
+    /// the next sweep retries.
     pub fn mark_resolved(abs: &Path) {
         let url = file_url(abs);
         if let Some(versions) = NSFileVersion::unresolvedConflictVersionsOfItemAtURL(&url) {
@@ -88,12 +121,15 @@ mod platform {
 
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 mod platform {
-    use super::VersionRef;
+    use super::VersionScan;
     use std::path::Path;
 
     /// No version store off Apple platforms.
-    pub fn unresolved_versions(_abs: &Path) -> Vec<VersionRef> {
-        Vec::new()
+    pub fn unresolved_versions(_abs: &Path) -> VersionScan {
+        VersionScan {
+            versions: Vec::new(),
+            complete: true,
+        }
     }
 
     pub fn mark_resolved(_abs: &Path) {}
