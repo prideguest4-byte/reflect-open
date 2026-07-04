@@ -53,6 +53,8 @@ interface GraphContextValue {
   error: string | null
   /** Show the OS folder picker, then open (and bootstrap) the chosen graph. */
   pickAndOpen: () => Promise<void>
+  /** Close the active graph and show the desktop graph chooser. */
+  chooseGraph: () => Promise<void>
   /**
    * Create (and open) a graph at an app-chosen absolute path — desktop
    * onboarding's iCloud path names the folder inside the container instead
@@ -436,6 +438,11 @@ export function GraphProvider({
     setStatus('choosing')
   }, [])
 
+  const chooseGraph = useCallback(async (): Promise<void> => {
+    await closeActiveGraph()
+    await loadRecents({ surfaceErrors: true })
+  }, [closeActiveGraph, loadRecents])
+
   const forget = useCallback(
     async (root: string): Promise<void> => {
       try {
@@ -522,6 +529,7 @@ export function GraphProvider({
       indexing,
       error,
       pickAndOpen,
+      chooseGraph,
       createAt,
       openRecent,
       forget,
@@ -539,6 +547,7 @@ export function GraphProvider({
       indexing,
       error,
       pickAndOpen,
+      chooseGraph,
       createAt,
       openRecent,
       forget,

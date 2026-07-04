@@ -201,6 +201,28 @@ describe('GraphProvider open sequencing', () => {
     expect(result.current.indexGeneration).toBeNull()
     expect(result.current.recents).toEqual([])
   })
+
+  it('returns to the graph chooser without opening the folder picker', async () => {
+    storedRecents = [{ root: '/known', name: 'known', openedMs: 1 }]
+    const { result } = renderHook(() => useGraph(), { wrapper })
+
+    await act(async () => {
+      await waitFor(() => expect(pendingOpens.has('/known')).toBe(true))
+      resolveOpen('/known')
+    })
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+
+    vi.mocked(open).mockClear()
+    await act(async () => {
+      await result.current.chooseGraph()
+    })
+
+    expect(result.current.status).toBe('choosing')
+    expect(result.current.graph).toBeNull()
+    expect(result.current.indexGeneration).toBeNull()
+    expect(open).not.toHaveBeenCalled()
+    expect(result.current.recents).toEqual(storedRecents)
+  })
 })
 
 describe('GraphProvider welcome seeding', () => {
