@@ -5,11 +5,15 @@ import { untitledNotePath } from '@reflect/core'
 import { RouterProvider, useRouter, type NavigateOptions } from '@/routing/router'
 import { MobileNote } from './note'
 
-const paneProps = vi.hoisted(() => ({ autoFocus: null as boolean | null }))
+const paneProps = vi.hoisted(() => ({
+  autoFocus: null as boolean | null,
+  gutterClassName: null as string | null,
+}))
 
 vi.mock('@/components/note-pane', () => ({
-  NotePane: ({ autoFocus }: { autoFocus?: boolean }) => {
+  NotePane: ({ autoFocus, gutterClassName }: { autoFocus?: boolean; gutterClassName?: string }) => {
     paneProps.autoFocus = autoFocus ?? false
+    paneProps.gutterClassName = gutterClassName ?? null
     return <div data-testid="fake-pane" />
   },
 }))
@@ -58,12 +62,18 @@ function renderArrival(path: string, options?: NavigateOptions): ReturnType<type
 afterEach(() => {
   cleanup()
   paneProps.autoFocus = null
+  paneProps.gutterClassName = null
 })
 
 describe('MobileNote focus contract', () => {
   it('does not autofocus a plain arrival (no keyboard on browse)', () => {
     renderArrival('notes/target.md')
     expect(paneProps.autoFocus).toBe(false)
+  })
+
+  it('uses the mobile note-body gutter for the editor surface', () => {
+    renderArrival('notes/target.md')
+    expect(paneProps.gutterClassName).toBe('reflect-mobile-content-gutter')
   })
 
   it('autofocuses a fresh untitled note (the + flow)', () => {

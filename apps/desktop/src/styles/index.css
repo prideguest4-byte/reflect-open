@@ -329,6 +329,13 @@ html:root {
   padding-inline: max(2rem, calc((100% - 42rem) / 2));
 }
 
+/* Mobile note-body gutter. This mirrors `.reflect-content-gutter`'s cascade
+   role with a fixed phone-sized inset: the class must be un-layered so it beats
+   `.reflect-editor { padding: 0; }` on the contenteditable itself. */
+.reflect-mobile-content-gutter {
+  padding-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right));
+}
+
 /* Block spacing comes from the element margins below, not the theme's
    uniform sibling gap. */
 .reflect-editor > * + * {

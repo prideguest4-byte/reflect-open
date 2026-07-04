@@ -4,6 +4,7 @@ import { NotePane } from '@/components/note-pane'
 import { formatDayLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { IncomingBacklinks } from '@/mobile/incoming-backlinks'
+import { MOBILE_CONTENT_GUTTER } from '@/mobile/mobile-content-gutter'
 import { useScrollRestore } from '@/mobile/use-scroll-restore'
 import { useSettings } from '@/providers/settings-provider'
 
@@ -77,21 +78,27 @@ export function DaySlide({
       <div ref={contentRef}>
         {/* The date is the daily note's subject (V1 / desktop parity) —
             chrome above the editor, formatted per the user's setting,
-            tinted on today. Shares the note body's px-4 gutter. */}
-        <h2 className={cn('reflect-daily-subject px-4 pt-4 pb-1', day === today && 'text-accent')}>
+            tinted on today. Shares the note body's gutter. */}
+        <h2
+          className={cn(
+            'reflect-daily-subject pt-4 pb-1',
+            MOBILE_CONTENT_GUTTER,
+            day === today && 'text-accent',
+          )}
+        >
           {formatDayLabel(day, settings.dateFormat)}
         </h2>
         <NotePane
           path={dailyPath(day)}
           lazy
           showBacklinks={false}
-          gutterClassName="px-4"
+          gutterClassName={MOBILE_CONTENT_GUTTER}
           editorClassName="min-h-[60dvh]"
         />
         {/* The mobile section (touch chrome) replaces NotePane's built-in
             desktop panel; a daily-note backlink swipes the carousel to that
             date rather than pushing a screen. */}
-        <IncomingBacklinks path={dailyPath(day)} className="px-4 pb-4" />
+        <IncomingBacklinks path={dailyPath(day)} className={cn(MOBILE_CONTENT_GUTTER, 'pb-4')} />
       </div>
     </div>
   )

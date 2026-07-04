@@ -4,7 +4,9 @@ import { ChevronLeft } from 'lucide-react'
 import { NotePane } from '@/components/note-pane'
 import { Button } from '@/components/ui/button'
 import { IncomingBacklinks } from '@/mobile/incoming-backlinks'
+import { MOBILE_CONTENT_GUTTER } from '@/mobile/mobile-content-gutter'
 import { NoteActionsMenu } from '@/mobile/note-actions-menu'
+import { cn } from '@/lib/utils'
 import { useRouter } from '@/routing/router'
 
 /**
@@ -58,13 +60,13 @@ export function MobileNote({ path }: { path: string }): ReactElement {
           lazy
           autoFocus={untitled || focusRequested}
           showBacklinks={false}
-          gutterClassName="px-4"
+          gutterClassName={MOBILE_CONTENT_GUTTER}
           editorClassName="min-h-[60dvh]"
         />
         {/* The mobile section (touch chrome) replaces NotePane's built-in
             desktop panel; a daily-note backlink opens the Daily surface at
             that date rather than pushing another note screen. */}
-        <IncomingBacklinks path={path} className="px-4 pb-4" />
+        <IncomingBacklinks path={path} className={cn(MOBILE_CONTENT_GUTTER, 'pb-4')} />
       </main>
     </div>
   )
