@@ -29,7 +29,9 @@ use crate::conflict::{archive, markers, ConflictSide, Resolution};
 use crate::error::{AppError, AppResult};
 use crate::fs::GraphState;
 
-use super::versions::{mark_resolved, unresolved_versions, VersionRef};
+use super::versions::{
+    current_version_modified_ms, mark_resolved, unresolved_versions, VersionRef,
+};
 
 /// The label for the side that lives in this device's working file. Device
 /// names for the *other* side come from the provider's version metadata;
@@ -150,7 +152,13 @@ fn run_sweep(
             outcome.deferred.push(file.path.clone());
             continue;
         }
-        match resolve_file(root, &file.path, file.modified_ms, scan.versions, &shadow) {
+        // Order the working copy by the version store's date for it — the
+        // metadata the *other* device sees for this same content as a
+        // conflict version — never the filesystem mtime, which iCloud does
+        // not propagate bit-exactly. Mixed keys would let two devices order
+        // the same content pair differently and emit different merged bytes.
+        let current_ms = current_version_modified_ms(&abs).unwrap_or(file.modified_ms);
+        match resolve_file(root, &file.path, current_ms, scan.versions, &shadow) {
             Ok(resolved) => {
                 apply_file_resolution(root, &file.path, resolved, &shadow, &mut outcome)
             }
@@ -539,16 +547,21 @@ fn fold_duplicate(
     let input = ConflictInput {
         path: canonical_rel,
         base: None, // independent creations share no ancestor
+        // Version-store dates, not filesystem mtimes, for the same reason as
+        // the edit-conflict pass: both devices fold this same pair, and the
+        // store's dates are the metadata iCloud actually propagates.
         sides: (
             ConflictSide {
                 content: canonical_content.clone(),
                 label: canonical_rel.to_string(),
-                modified_ms: modified_ms_of(&canonical_abs).unwrap_or(0),
+                modified_ms: current_version_modified_ms(&canonical_abs)
+                    .or_else(|| modified_ms_of(&canonical_abs))
+                    .unwrap_or(0),
             },
             ConflictSide {
                 content: dup_content,
                 label: file.path.clone(),
-                modified_ms: file.modified_ms,
+                modified_ms: current_version_modified_ms(&dup_abs).unwrap_or(file.modified_ms),
             },
         ),
         creation_collision: true,

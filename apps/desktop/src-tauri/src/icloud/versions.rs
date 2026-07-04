@@ -39,12 +39,12 @@ impl VersionScan {
     }
 }
 
-pub use platform::{mark_resolved, unresolved_versions};
+pub use platform::{current_version_modified_ms, mark_resolved, unresolved_versions};
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod platform {
     use super::{VersionRef, VersionScan};
-    use objc2_foundation::{NSFileVersion, NSString, NSURL};
+    use objc2_foundation::{NSDate, NSFileVersion, NSString, NSURL};
     use std::path::Path;
 
     /// The file's unresolved conflict versions (empty when none, or when the
@@ -74,6 +74,19 @@ mod platform {
         VersionScan { versions, complete }
     }
 
+    /// The on-disk content's modification time (epoch ms) as the **version
+    /// store** records it. This is the same shared metadata another device
+    /// sees for this content as a *conflict* version, so ordering the
+    /// working-copy side by it — rather than by the filesystem mtime, which
+    /// iCloud does not propagate bit-exactly — keeps the ladder's side order
+    /// (and therefore its output bytes) identical across devices. `None`
+    /// when the file has no current version (not under iCloud) or no date.
+    pub fn current_version_modified_ms(abs: &Path) -> Option<u64> {
+        let url = file_url(abs);
+        let version = NSFileVersion::currentVersionOfItemAtURL(&url)?;
+        version.modificationDate().map(|date| date_ms(&date))
+    }
+
     /// Mark every conflict version of `abs` resolved and drop the stale
     /// copies from the version store. Call strictly **after** the archive and
     /// the resolved write have landed, and only when the version scan was
@@ -95,14 +108,7 @@ mod platform {
         let store_path = version.URL().path()?.to_string();
         let modified_ms = version
             .modificationDate()
-            .map(|date| {
-                let seconds = date.timeIntervalSince1970();
-                if seconds <= 0.0 {
-                    0
-                } else {
-                    (seconds * 1000.0) as u64
-                }
-            })
+            .map(|date| date_ms(&date))
             .unwrap_or(0);
         let device = version
             .localizedNameOfSavingComputer()
@@ -112,6 +118,18 @@ mod platform {
             modified_ms,
             device,
         })
+    }
+
+    /// `NSDate` → epoch ms, clamped at zero. Both the conflict-version and
+    /// current-version keys convert through here so the two sides of a pair
+    /// can never round differently.
+    fn date_ms(date: &NSDate) -> u64 {
+        let seconds = date.timeIntervalSince1970();
+        if seconds <= 0.0 {
+            0
+        } else {
+            (seconds * 1000.0) as u64
+        }
     }
 
     fn file_url(abs: &Path) -> objc2::rc::Retained<NSURL> {
@@ -130,6 +148,10 @@ mod platform {
             versions: Vec::new(),
             complete: true,
         }
+    }
+
+    pub fn current_version_modified_ms(_abs: &Path) -> Option<u64> {
+        None
     }
 
     pub fn mark_resolved(_abs: &Path) {}
