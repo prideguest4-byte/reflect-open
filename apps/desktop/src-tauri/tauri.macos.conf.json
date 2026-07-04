@@ -6,7 +6,10 @@
       "binaries/reflect-capture-host"
     ],
     "macOS": {
-      "entitlements": "Entitlements.plist"
+      "entitlements": "Entitlements.plist",
+      "files": {
+        "embedded.provisionprofile": "Reflect.provisionprofile"
+      }
     }
   }
 }

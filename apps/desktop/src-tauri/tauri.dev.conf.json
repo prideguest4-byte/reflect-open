@@ -22,7 +22,10 @@
       "icons-dev/128x128@2x.png",
       "icons-dev/icon.icns",
       "icons-dev/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "entitlements": "Entitlements.dev.plist"
+    }
   },
   "plugins": {
     "updater": {

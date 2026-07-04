@@ -18,22 +18,20 @@
 	     permission prompt in notarized builds. -->
 	<key>com.apple.security.personal-information.addressbook</key>
 	<true/>
-	<!-- iCloud Drive document sync (Plan 21) — DELIBERATELY COMMENTED OUT.
-	     These are *restricted* entitlements: unlike the capability grants
-	     above, codesign only honors them when a provisioning profile that
-	     lists them is embedded in the app — signing with them and no profile
-	     produces an app that fails to launch. Enabling iCloud on the desktop
-	     release therefore needs, once, in the developer portal: (1) an App ID
-	     for app.reflect.desktop with the iCloud capability and the container
-	     below assigned, (2) a Developer ID provisioning profile for it,
-	     embedded by the release script as embedded.provisionprofile, then
-	     (3) uncomment this block. The container id must stay byte-identical
-	     to the iOS app's (gen/apple entitlements) — it IS the shared folder
-	     both apps sync through. Until then `icloud_status` honestly reports
-	     unavailable and the settings section explains itself.
+	<!-- iCloud Drive document sync (Plan 21). These are *restricted*
+	     entitlements: codesign only honors them when a provisioning profile
+	     granting them is embedded in the app — that's Reflect.provisionprofile
+	     (stable) / Reflect-beta.provisionprofile, placed at
+	     Contents/embedded.provisionprofile by `bundle.macOS.files` before
+	     signing. The profiles are bound to the Developer ID Application
+	     certificate expiring 2027-02-01 (portal id AZZYZ7YTGR); a certificate
+	     rotation or App ID capability edit means regenerating and
+	     re-committing both. The container id must stay byte-identical to the
+	     iOS app's (gen/apple entitlements) — it IS the shared folder both
+	     apps sync through, and container ids are permanent. -->
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
-		<string>iCloud.app.reflect.ios</string>
+		<string>iCloud.app.reflect</string>
 	</array>
 	<key>com.apple.developer.icloud-services</key>
 	<array>
@@ -41,8 +39,7 @@
 	</array>
 	<key>com.apple.developer.ubiquity-container-identifiers</key>
 	<array>
-		<string>iCloud.app.reflect.ios</string>
+		<string>iCloud.app.reflect</string>
 	</array>
-	-->
 </dict>
 </plist>

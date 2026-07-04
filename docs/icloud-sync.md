@@ -52,12 +52,17 @@ provisioned:
 
 - **iOS**: the entitlements + `NSUbiquitousContainers` declaration are in
   `ios.project.yml` / `gen/apple`; Xcode automatic signing registers the
-  container (`iCloud.app.reflect.ios`) on the first entitled build.
-- **macOS**: the same container's entitlements are present but **commented
-  out** in `apps/desktop/src-tauri/Entitlements.plist` — they are restricted
-  entitlements that require a Developer ID provisioning profile, which the
-  release pipeline does not embed yet. The comment in that file is the
-  checklist for turning them on.
+  container (`iCloud.app.reflect`) on the first entitled build.
+- **macOS**: the entitlements live in
+  `apps/desktop/src-tauri/Entitlements.plist`, granted by the committed
+  Developer ID provisioning profiles (`Reflect.provisionprofile` /
+  `Reflect-beta.provisionprofile`, embedded pre-signing via
+  `bundle.macOS.files`). They're bound to one specific Developer ID
+  certificate — rotating it, or editing the App IDs' capabilities in the
+  portal, means regenerating and re-committing both profiles. The dev flavor
+  signs with `Entitlements.dev.plist` (no iCloud — its App ID has no
+  profile), and plain contributor builds without Reflect's certificate
+  simply report iCloud as unavailable.
 
 Everything below the platform calls — the resolution ladder, the shadow
 merge-base store, the conflict sweep — is plain Rust with unit tests

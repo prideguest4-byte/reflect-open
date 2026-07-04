@@ -22,7 +22,12 @@
       "icons-beta/128x128@2x.png",
       "icons-beta/icon.icns",
       "icons-beta/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "files": {
+        "embedded.provisionprofile": "Reflect-beta.provisionprofile"
+      }
+    }
   },
   "plugins": {
     "updater": {
