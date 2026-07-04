@@ -267,8 +267,7 @@ mod tests {
         assert_eq!(find_graph_dir(documents.path()), None);
 
         std::fs::create_dir_all(documents.path().join("Notes/daily")).expect("mkdir");
-        std::fs::write(documents.path().join("Notes/daily/2026-07-04.md"), b"# hi")
-            .expect("write");
+        std::fs::write(documents.path().join("Notes/daily/2026-07-04.md"), b"# hi").expect("write");
         assert_eq!(
             find_graph_dir(documents.path()),
             Some(documents.path().join("Notes"))
