@@ -1,25 +1,33 @@
 //! iCloud Drive document storage for the mobile graph (Plan 21).
 //!
 //! iCloud document sync is the primary way phone + desktop share a graph:
-//! the iOS app keeps its notes in the app's iCloud Drive container (visible
-//! as "Reflect" in the Files app and in Finder's iCloud Drive), and the OS
-//! moves the markdown between devices. Rust owns only the storage
-//! primitives — resolving the container, detecting existing notes, and
-//! nudging undownloaded files ("dataless" `.icloud` placeholders) onto the
-//! device. Which root the graph actually opens in is frontend policy
-//! (`GraphProvider` + the onboarding screen).
+//! per Plan 21 contract 1 the graph lives at `<container>/Documents/<name>/`
+//! in the app's iCloud Drive container (visible as "Reflect" in the Files
+//! app and in Finder's iCloud Drive), and the OS moves the markdown between
+//! devices. Rust owns only the storage primitives — resolving the
+//! container, finding an existing graph inside it, and nudging undownloaded
+//! files ("dataless" `.icloud` placeholders) onto the device. Which root
+//! the graph actually opens in is frontend policy (`GraphProvider` + the
+//! onboarding screen).
 //!
 //! Platform shape mirrors `contacts.rs`: real implementations on iOS, an
 //! honest "no iCloud here" answer elsewhere, and the commands registered on
 //! every platform so the IPC surface never branches.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 #[cfg(mobile)]
 use tauri::Manager;
 
 use crate::error::{AppError, AppResult};
+
+/// The graph directory created inside the container for a fresh start. A
+/// plain, human name — it reads as `iCloud Drive → Reflect → Notes` in
+/// Files/Finder, and becomes the graph's display name. (Referenced only by
+/// the mobile `mobile_storage` body, hence the desktop allowance.)
+#[cfg_attr(desktop, allow(dead_code))]
+const DEFAULT_ICLOUD_GRAPH_DIR: &str = "Notes";
 
 /// The storage locations available to the mobile graph, as the onboarding
 /// screen and `GraphProvider` consume them.
@@ -30,15 +38,17 @@ pub struct MobileStorage {
     /// synced. iOS container paths embed a UUID that changes across
     /// restore/update, so callers must never persist this absolute path.
     pub local_root: String,
-    /// The `Documents/` directory of the app's iCloud Drive container, when
-    /// iCloud Drive is usable (entitled build + signed-in account). `None`
-    /// when the user is signed out of iCloud or the platform has no iCloud.
-    /// Same rule as `local_root`: derive fresh, never persist.
+    /// The graph directory inside the app's iCloud Drive container
+    /// (`<container>/Documents/<name>/`, Plan 21 contract 1), when iCloud
+    /// Drive is usable (entitled build + signed-in account): an existing
+    /// graph directory when one is found, otherwise the default one to
+    /// create. `None` when the user is signed out of iCloud or the platform
+    /// has no iCloud. Same rule as `local_root`: derive fresh, never persist.
     pub icloud_root: Option<String>,
-    /// True when the iCloud root already holds notes (or placeholders for
-    /// notes not yet downloaded) — a returning user's graph. Best-effort:
-    /// content still syncing down can flip this after first launch, which is
-    /// safe because the container root *is* the graph root either way.
+    /// True when `icloud_root` is an existing graph (notes or placeholders
+    /// for notes not yet downloaded) — a returning user. Best-effort:
+    /// content still syncing down at first launch can flip this later, which
+    /// only relabels the onboarding button.
     pub icloud_has_graph: bool,
 }
 
@@ -57,8 +67,14 @@ pub async fn mobile_storage(app: tauri::AppHandle) -> AppResult<MobileStorage> {
             .document_dir()
             .map_err(|err| AppError::io(format!("no documents directory: {err}")))?;
         tauri::async_runtime::spawn_blocking(move || {
-            let icloud_root = platform::ubiquity_documents_dir();
-            let icloud_has_graph = icloud_root.as_deref().is_some_and(dir_has_notes);
+            let documents = platform::ubiquity_documents_dir();
+            let existing = documents.as_deref().and_then(find_graph_dir);
+            let icloud_has_graph = existing.is_some();
+            let icloud_root = match (existing, documents) {
+                (Some(graph), _) => Some(graph),
+                (None, Some(documents)) => Some(documents.join(DEFAULT_ICLOUD_GRAPH_DIR)),
+                (None, None) => None,
+            };
             Ok(MobileStorage {
                 local_root: local.to_string_lossy().into_owned(),
                 icloud_root: icloud_root.map(|dir| dir.to_string_lossy().into_owned()),
@@ -90,14 +106,30 @@ pub async fn icloud_download_pending(root: String) -> AppResult<u32> {
         .map_err(|err| AppError::io(err.to_string()))?
 }
 
+/// Find an existing graph among the container `Documents/` subdirectories:
+/// the first (by name, for determinism) that holds notes. Multiple graph
+/// directories are possible once desktop migration lands (Plan 21 Phase 1);
+/// v1 mobile opens the first and leaves choosing among several to later.
+///
+/// Only the mobile `mobile_storage` body reaches this at runtime — desktop
+/// builds compile it for the tests alone, hence the dead-code allowance.
+#[cfg_attr(desktop, allow(dead_code))]
+fn find_graph_dir(documents: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(documents).ok()?;
+    let mut dirs: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    dirs.sort();
+    dirs.into_iter().find(|dir| dir_has_notes(dir))
+}
+
 /// True when `root` already contains note files (downloaded or placeholder).
 ///
 /// Looks one level into the standard note directories rather than requiring
 /// `.reflect/meta.json`: the index directory is excluded from sync on
 /// purpose, so a synced-down graph arrives as bare `daily/`/`notes/` content.
-///
-/// Only the mobile `mobile_storage` body reaches this at runtime — desktop
-/// builds compile it for the tests alone, hence the dead-code allowance.
 #[cfg_attr(desktop, allow(dead_code))]
 fn dir_has_notes(root: &Path) -> bool {
     const NOTE_DIRS: [&str; 3] = ["daily", "notes", "templates"];
@@ -222,6 +254,36 @@ mod tests {
         assert_eq!(
             placeholder_target(".2026-07-04.md.icloud"),
             Some("2026-07-04.md")
+        );
+    }
+
+    #[test]
+    fn find_graph_dir_picks_the_first_directory_with_notes() {
+        let documents = tempfile::tempdir().expect("tempdir");
+        assert_eq!(find_graph_dir(documents.path()), None);
+
+        // An empty graph dir (e.g. created then abandoned) is not a graph.
+        std::fs::create_dir_all(documents.path().join("Empty/daily")).expect("mkdir");
+        assert_eq!(find_graph_dir(documents.path()), None);
+
+        std::fs::create_dir_all(documents.path().join("Notes/daily")).expect("mkdir");
+        std::fs::write(documents.path().join("Notes/daily/2026-07-04.md"), b"# hi")
+            .expect("write");
+        assert_eq!(
+            find_graph_dir(documents.path()),
+            Some(documents.path().join("Notes"))
+        );
+
+        // Deterministic under multiple graphs: first by name.
+        std::fs::create_dir_all(documents.path().join("Archive/notes")).expect("mkdir");
+        std::fs::write(
+            documents.path().join("Archive/notes/.old.md.icloud"),
+            b"stub",
+        )
+        .expect("write");
+        assert_eq!(
+            find_graph_dir(documents.path()),
+            Some(documents.path().join("Archive"))
         );
     }
 
