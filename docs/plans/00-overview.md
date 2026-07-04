@@ -77,6 +77,8 @@ before the editor, and the editor lands before search/AI.
 | 17 | [Readable filenames](17-readable-filenames.md) | Title-derived note filenames (slug + collision suffix), frontmatter `id` adoption, rename-on-settled-title file moves, id-healed external renames |
 | 18 | [Tasks](18-tasks.md) | **Post-release add-on.** Round-checkbox (`+ [ ]`) tasks as a rebuildable projection: interactive editor checkboxes, Tasks view (Overdue/Today/Upcoming), `[[date]]`/daily scheduling, guarded toggle write-back, square checklists excluded |
 | 19 | [Mobile companion](19-mobile.md) | **In progress.** iOS target of the existing Tauri app: mobile root gate, fixed graph root, onboarding, Daily/All shell, editable notes, keyboard plugin; device validation + store hardening remain |
+| 20 | [Asset descriptions](20-asset-descriptions.md) | **Post-release add-on.** AI-generated `.reflect.md` description files for referenced, non-private images/PDFs under `assets/`; BYOK, privacy-gated, manual backfill |
+| 21 | [iCloud document sync](21-icloud-document-sync.md) | **In progress.** iCloud Drive as the primary sync home: iOS app container (`iCloud Drive/Reflect`), iCloud-first mobile onboarding, `.reflect/` sync-exclusion, resume download-nudge + reconcile; git stays the versioned-backup path |
 
 ## Milestone map
 

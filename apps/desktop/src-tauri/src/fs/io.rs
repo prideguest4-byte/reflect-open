@@ -17,12 +17,12 @@ use super::FileMeta;
 pub(super) const REFLECT_DIR: &str = ".reflect";
 const META_SCHEMA_VERSION: u32 = 1;
 pub(super) const TOP_LEVEL_DIRS: [&str; 4] = ["daily", "notes", "assets", REFLECT_DIR];
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 const APPLE_EXCLUSION_KEYS: [&str; 2] = [
     "NSURLUbiquitousItemIsExcludedFromSyncKey",
     "NSURLIsExcludedFromBackupKey",
 ];
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 const LOCAL_ONLY_XATTRS: [(&str, &[u8]); 2] = [
     ("com.apple.fileprovider.ignore#P", b"1"),
     ("com.dropbox.ignored", b"1"),
@@ -67,10 +67,10 @@ fn sweep_upload_staging(root: &Path) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 fn mark_reflect_dir_local_only(_reflect_dir: &Path) {}
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn mark_reflect_dir_local_only(reflect_dir: &Path) {
     for err in set_apple_sync_exclusions(reflect_dir) {
         tracing::warn!(
@@ -88,7 +88,7 @@ fn mark_reflect_dir_local_only(reflect_dir: &Path) {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn set_apple_sync_exclusions(reflect_dir: &Path) -> Vec<String> {
     use core_foundation::base::TCFType;
     use core_foundation::{number, string, url};
@@ -120,7 +120,7 @@ fn set_apple_sync_exclusions(reflect_dir: &Path) -> Vec<String> {
     errors
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn set_local_only_xattrs(reflect_dir: &Path) -> Vec<String> {
     let mut errors = Vec::new();
 
@@ -229,7 +229,7 @@ mod tests {
         assert!(dir.path().join(".reflect/meta.json").exists());
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[test]
     fn bootstrap_marks_reflect_dir_with_provider_ignore_xattrs() {
         let dir = tempdir().unwrap();
@@ -245,7 +245,7 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[test]
     fn apple_sync_exclusion_accepts_reflect_dir() {
         let dir = tempdir().unwrap();
