@@ -74,6 +74,8 @@ export async function icloudDownloadPending(root: string): Promise<number> {
 const icloudStatusSchema = z.object({
   available: z.boolean(),
   documentsRoot: z.string().nullable(),
+  /** An existing graph in the container — onboarding's open-instead path. */
+  existingGraphRoot: z.string().nullable(),
 })
 
 /**

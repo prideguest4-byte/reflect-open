@@ -17,6 +17,7 @@ import {
   isMobilePlatform,
   loadSettings,
   mobileStorage,
+  createGraph,
   openGraph,
   recentGraphs,
   type AppPlatform,
@@ -52,6 +53,12 @@ interface GraphContextValue {
   error: string | null
   /** Show the OS folder picker, then open (and bootstrap) the chosen graph. */
   pickAndOpen: () => Promise<void>
+  /**
+   * Create (and open) a graph at an app-chosen absolute path — desktop
+   * onboarding's iCloud path names the folder inside the container instead
+   * of showing a picker. Resolves true only on a confirmed open.
+   */
+  createAt: (root: string) => Promise<boolean>
   /** Open a graph by its root path. Resolves true only when it reached 'ready'. */
   openRecent: (root: string) => Promise<boolean>
   /** Drop a graph from the recents list. */
@@ -349,6 +356,25 @@ export function GraphProvider({
     }
   }, [loadRecents, openRecent, platform])
 
+  /**
+   * Create (and open) a graph at an app-chosen path — desktop onboarding's
+   * iCloud path, where the app names the folder inside the container rather
+   * than showing a picker. Same serialized open flow as `openRecent`;
+   * `createGraph` bootstraps the directory first (idempotent when it exists).
+   */
+  const createAt = useCallback(
+    async (root: string): Promise<boolean> => {
+      try {
+        await createGraph(root)
+      } catch (err) {
+        setError(errorMessage(err))
+        return false
+      }
+      return openRecent(root)
+    },
+    [openRecent],
+  )
+
   const pickAndOpen = useCallback(async (): Promise<void> => {
     let selected: string | null = null
     try {
@@ -453,6 +479,7 @@ export function GraphProvider({
       indexing,
       error,
       pickAndOpen,
+      createAt,
       openRecent,
       forget,
       needsOnboarding,
@@ -469,6 +496,7 @@ export function GraphProvider({
       indexing,
       error,
       pickAndOpen,
+      createAt,
       openRecent,
       forget,
       needsOnboarding,

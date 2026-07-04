@@ -111,9 +111,8 @@ pub async fn icloud_download_pending(root: String) -> AppResult<u32> {
 /// directories are possible once desktop migration lands (Plan 21 Phase 1);
 /// v1 mobile opens the first and leaves choosing among several to later.
 ///
-/// Only the mobile `mobile_storage` body reaches this at runtime — desktop
-/// builds compile it for the tests alone, hence the dead-code allowance.
-#[cfg_attr(desktop, allow(dead_code))]
+/// Shared by mobile `mobile_storage` and desktop `icloud_status` — both
+/// offer the returning-user open-what-exists path.
 fn find_graph_dir(documents: &Path) -> Option<PathBuf> {
     let entries = std::fs::read_dir(documents).ok()?;
     let mut dirs: Vec<PathBuf> = entries
@@ -235,7 +234,7 @@ mod platform {
     }
 }
 
-/// iCloud availability as the desktop settings section consumes it.
+/// iCloud availability as desktop onboarding and settings consume it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IcloudStatus {
@@ -245,6 +244,11 @@ pub struct IcloudStatus {
     pub available: bool,
     /// The container's `Documents/` directory when available.
     pub documents_root: Option<String>,
+    /// An existing graph inside the container, when one is found — the
+    /// returning-user fast path: onboarding offers to open it instead of
+    /// creating a fresh one. Same rule as every container path: derive
+    /// fresh, never persist.
+    pub existing_graph_root: Option<String>,
 }
 
 /// Command: can this build reach the iCloud container? Runs on a blocking
@@ -255,9 +259,14 @@ pub struct IcloudStatus {
 pub async fn icloud_status() -> AppResult<IcloudStatus> {
     tauri::async_runtime::spawn_blocking(|| {
         let documents = platform::ubiquity_documents_dir();
+        let existing_graph_root = documents
+            .as_deref()
+            .and_then(find_graph_dir)
+            .map(|dir| dir.to_string_lossy().into_owned());
         Ok(IcloudStatus {
             available: documents.is_some(),
             documents_root: documents.map(|dir| dir.to_string_lossy().into_owned()),
+            existing_graph_root,
         })
     })
     .await

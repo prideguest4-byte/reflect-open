@@ -9,10 +9,14 @@ edit the same note while apart.
 - **Where the graph lives.** In the app's iCloud Drive container — visible as
   **iCloud Drive → Reflect** in Files (iOS) and Finder (macOS). Notes stay
   plain markdown files; iCloud moves them between devices.
-- **Turning it on.** iOS offers iCloud first during onboarding. On macOS,
-  Settings → **iCloud sync** → *Move graph to iCloud…* copies the graph into
-  the container (verified file-by-file) and reopens it there; the original
-  folder stays on disk, untouched, as a recovery copy.
+- **Turning it on.** Both platforms offer iCloud first during onboarding: on
+  macOS the welcome screen's recommended card names the graph and creates it
+  straight in the container (or offers **Open** if one is already there);
+  choosing your own folder remains the self-managed alternative. An existing
+  local graph moves later via Settings → **iCloud sync** → *Move graph to
+  iCloud…*, which copies it into the container (verified file-by-file) and
+  reopens it there; the original folder stays on disk, untouched, as a
+  recovery copy.
 - **iCloud or GitHub, not both.** A graph syncs through iCloud Drive *or* a
   Git remote. Two sync engines merging the same files fight each other, and a
   `.git` directory must never ride a file-sync provider (object-store
