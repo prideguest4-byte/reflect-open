@@ -86,6 +86,7 @@ describe('app shortcuts', () => {
       'Mod-[',
       'Mod-]',
       'Mod-k',
+      'Alt-Mod-l',
     ]) {
       expect(bindings.get(key)).toBe('app')
     }

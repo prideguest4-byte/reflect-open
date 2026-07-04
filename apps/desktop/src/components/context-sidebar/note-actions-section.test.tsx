@@ -182,6 +182,14 @@ describe('NoteActionsSection private toggle', () => {
 
 })
 
+describe('NoteActionsSection deep-link action', () => {
+  it('does not offer Copy deep link in note actions', () => {
+    const view = renderSection('notes/a.md')
+    expect(view.queryByRole('button', { name: /Copy deep link/ })).toBeNull()
+    view.unmount()
+  })
+})
+
 describe('NoteActionsSection trash action', () => {
   it('does not offer trash unless the note sidebar opts in', () => {
     const view = renderSection('notes/a.md')

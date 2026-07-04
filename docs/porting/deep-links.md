@@ -85,8 +85,8 @@ reason ids exist), then date, title, or alias. "Copy deep link" therefore
 prefers the id form, so a link outlives any rename; a human-written
 `reflect://note/Project%20X` still works via title resolution.
 
-A "Copy deep link" entry joins the command palette and the note context
-menu, porting v1's `alt+mod+l`.
+A "Copy deep link" command joins the command palette and keeps v1's
+`alt+mod+l` shortcut.
 
 ### Write actions go through the inbox, not straight into notes
 
@@ -124,7 +124,7 @@ three front doors (palette, CLI, links).
 | `reflect://?command=append-to-daily-note`       | `reflect://append?text=…` via the capture inbox       |
 | `reflect://?command=create-task`                | `reflect://task?text=…` via the capture inbox         |
 | Web URLs (`reflect.app/g/…`)                    | Not ported — no server; `reflect://` + file paths     |
-| "Copy link to note" (`alt+mod+l`)               | "Copy deep link" (palette + context menu)             |
+| "Copy link to note" (`alt+mod+l`)               | "Copy deep link" (palette + shortcut)                 |
 | Published `reflect.site` pages                  | Not ported here (a publishing story is separate)      |
 | REST API create/append                          | CLI + capture inbox + plain files                     |
 | `DDMMYYYY` daily ids                            | ISO `YYYY-MM-DD`, as everywhere in v2                 |

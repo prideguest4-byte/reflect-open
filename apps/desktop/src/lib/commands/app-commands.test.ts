@@ -14,6 +14,7 @@ const embedStatus = vi.hoisted(() =>
 const backfillEmbeddingsVisibly = vi.hoisted(() => vi.fn(async () => 'completed'))
 const toggleNotePinned = vi.hoisted(() => vi.fn(async () => true))
 const toggleNotePrivate = vi.hoisted(() => vi.fn(async () => true))
+const runCopyDeepLink = vi.hoisted(() => vi.fn(async () => undefined))
 const getNote = vi.hoisted(() => vi.fn<() => Promise<NoteRow | undefined>>(async () => undefined))
 const getPinnedNotes = vi.hoisted(() => vi.fn<() => Promise<PinnedNote[]>>(async () => []))
 const hasBridge = vi.hoisted(() => vi.fn(() => true))
@@ -28,6 +29,7 @@ vi.mock('@/lib/semantic', async (importOriginal) => ({
 }))
 vi.mock('@/lib/note-pin', () => ({ toggleNotePinned }))
 vi.mock('@/lib/note-private', () => ({ toggleNotePrivate }))
+vi.mock('@/lib/note-deep-link', () => ({ runCopyDeepLink }))
 vi.mock('@/lib/operations', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/operations')>()),
   startOperation,
@@ -111,6 +113,10 @@ describe('keybindingFor', () => {
 
   it('dev.toggleDevtools is bound to Mod-Shift-i', () => {
     expect(keybindingFor('dev.toggleDevtools')).toBe('Mod-Shift-i')
+  })
+
+  it('note.copyDeepLink keeps the V1 copy-link shortcut', () => {
+    expect(keybindingFor('note.copyDeepLink')).toBe('Alt-Mod-l')
   })
 })
 
@@ -278,6 +284,22 @@ describe('app commands', () => {
     const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
     await expect(command('note.togglePrivate').run(context)).resolves.toBeUndefined()
     expect(startOperation).toHaveBeenCalledWith('Unlocking note')
+  })
+
+  it('note.copyDeepLink copies the route note through the keyboard command', async () => {
+    runCopyDeepLink.mockClear()
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    await command('note.copyDeepLink').run(context)
+    expect(runCopyDeepLink).toHaveBeenCalledWith('notes/a.md', 7)
+  })
+
+  it('note.copyDeepLink no-ops on note-less routes and without a graph', async () => {
+    runCopyDeepLink.mockClear()
+    const { context } = fakeContext({ route: () => ({ kind: 'settings' }) })
+    await command('note.copyDeepLink').run(context)
+    const { context: noGraph } = fakeContext({ generation: () => null })
+    await command('note.copyDeepLink').run(noGraph)
+    expect(runCopyDeepLink).not.toHaveBeenCalled()
   })
 
   it('dev.toggleDevtools toggles the inspector through the native shell', async () => {

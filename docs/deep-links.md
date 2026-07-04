@@ -28,7 +28,7 @@ reflect://tasks                     the tasks view
 Ambiguity resolves to the first path alphabetically — the CLI's rule. Links
 resolve **in the open graph**; there is no cross-graph addressing.
 
-**Copy deep link** (note actions, ⌘K palette, `⌥⌘L`) puts the id form on the
+**Copy deep link** (⌘K palette, `⌥⌘L`) puts the id form on the
 clipboard, minting an `id:` into the note's frontmatter on first copy for
 notes that predate ids — so a copied link outlives any rename. Daily notes
 are addressed by date instead. A human-written

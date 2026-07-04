@@ -50,7 +50,7 @@ export async function deepLinkForNote(path: string, generation: number): Promise
 }
 
 /**
- * The copy action as both entry points run it (Note actions, ⌘K command):
+ * The copy action as keyboard surfaces run it (⌥⌘L and the ⌘K command):
  * build the link, put it on the clipboard, and confirm through the operations
  * status line — the app's no-toast feedback channel.
  */
