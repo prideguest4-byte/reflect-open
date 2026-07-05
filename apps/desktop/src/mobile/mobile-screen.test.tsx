@@ -370,6 +370,16 @@ describe('MobileShell', () => {
     expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
   })
 
+  it('switches to the Tasks tab, which renders the grouped task list', async () => {
+    const user = userEvent.setup()
+    const view = mount({ kind: 'today' })
+
+    await user.click(view.getByRole('button', { name: 'Tasks' }))
+    expect(view.getByRole('searchbox', { name: 'Search tasks' })).toBeTruthy()
+    // The fake bridge's index is empty, so the tab lands on its empty state.
+    expect((await view.findByText('No tasks to show')).textContent).toBe('No tasks to show')
+  })
+
   it('hides the tab bar while the software keyboard is up (V1: the keyboard covered it)', () => {
     const view = mount({ kind: 'today' })
     expect(view.getByRole('navigation', { name: 'Sections' })).toBeTruthy()

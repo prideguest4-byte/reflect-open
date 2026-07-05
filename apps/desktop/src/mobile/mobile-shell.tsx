@@ -42,9 +42,11 @@ export function MobileShell(): ReactElement {
   const tab: MobileTab =
     route.kind === 'allNotes' || route.kind === 'search'
       ? 'all'
-      : route.kind === 'today' || route.kind === 'daily'
-        ? 'daily'
-        : lastTab
+      : route.kind === 'tasks'
+        ? 'tasks'
+        : route.kind === 'today' || route.kind === 'daily'
+          ? 'daily'
+          : lastTab
   if (tab !== lastTab) {
     setLastTab(tab)
   }
@@ -78,7 +80,13 @@ export function MobileShell(): ReactElement {
         <MobileTabBar
           tab={tab}
           onSelect={(next) =>
-            navigate(next === 'daily' ? { kind: 'today' } : { kind: 'allNotes', tag: null })
+            navigate(
+              next === 'daily'
+                ? { kind: 'today' }
+                : next === 'tasks'
+                  ? { kind: 'tasks' }
+                  : { kind: 'allNotes', tag: null },
+            )
           }
         />
       )}
