@@ -648,6 +648,23 @@ describe('reconcileCaptureEnrichment', () => {
     expect(note).not.toContain('The in-page description.')
   })
 
+  it('meta-only enrichment keeps a drain-written in-page description (never truncates)', async () => {
+    await drainOne({ source: 'ios-share', metaDescription: 'The full in-page description.' })
+    scrapeMock.mockResolvedValue({
+      title: 'An article',
+      description: 'A shorter scraped description.',
+      siteName: null,
+    })
+
+    const outcome = await reconcile({ providers: NO_PROVIDERS })
+
+    expect(outcome.enriched).toBe(1)
+    const note = files.get(IDENTITY.notePath) ?? ''
+    expect(note).toContain('- Description: The full in-page description.')
+    expect(note).not.toContain('A shorter scraped description.')
+    expect(note).toContain('captureStatus: done')
+  })
+
   it('enriches with the scraped description alone when no provider is configured', async () => {
     await drainOne()
     scrapeMock.mockResolvedValue({

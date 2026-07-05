@@ -35,6 +35,10 @@ enum CaptureInboxError: Error {
     /// The App Group container is unreachable — an entitlements mismatch, not
     /// a user-fixable state.
     case containerUnavailable
+    /// The encoded envelope exceeds the relay's spool cap even after
+    /// shedding optional fields — spooling it would only feed the
+    /// quarantine, so the share fails honestly instead.
+    case envelopeTooLarge
 }
 
 /// Field caps in UTF-16 code units — the unit zod's `.max()` counts on the
@@ -57,6 +61,10 @@ enum CaptureInbox {
     /// same directory name (`SHARED_INBOX_DIR`).
     static let inboxDir = "inbox"
 
+    /// The relay's spool cap (`INBOX_SPOOL_MAX_BYTES` in `capture.rs`) — an
+    /// envelope over it is quarantined unread, so it must never be spooled.
+    static let spoolMaxBytes = 64 * 1024
+
     /// Spool a link capture. Empty titles are allowed (the drain falls back
     /// to the URL's host); empty selections and descriptions are dropped.
     static func spoolLink(
@@ -66,7 +74,7 @@ enum CaptureInbox {
         metaDescription: String?
     ) throws {
         let id = envelopeId()
-        let envelope = LinkCaptureEnvelope(
+        var envelope = LinkCaptureEnvelope(
             id: id,
             url: url,
             title: capped(title, at: FieldCap.title),
@@ -74,7 +82,20 @@ enum CaptureInbox {
             metaDescription: nonEmpty(capped(metaDescription ?? "", at: FieldCap.description)),
             capturedAt: capturedAt()
         )
-        try spool(try JSONEncoder().encode(envelope), id: id)
+        // The URL is the one uncapped field (truncating it would save a
+        // broken link): a pathological one can outgrow the spool cap. Shed
+        // the biggest optional field first; past that the share fails
+        // honestly rather than claiming "Saved" for a file the relay can
+        // only quarantine.
+        var data = try JSONEncoder().encode(envelope)
+        if data.count > spoolMaxBytes, envelope.selection != nil {
+            envelope.selection = nil
+            data = try JSONEncoder().encode(envelope)
+        }
+        guard data.count <= spoolMaxBytes else {
+            throw CaptureInboxError.envelopeTooLarge
+        }
+        try spool(data, id: id)
     }
 
     /// Spool shared text as an append capture — the daily note gets a bullet.
