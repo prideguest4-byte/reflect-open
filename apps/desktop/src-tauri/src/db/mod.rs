@@ -83,6 +83,21 @@ fn emit_index_written<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let _ = app.emit(INDEX_WRITTEN_EVENT, ());
 }
 
+/// Broadcast event fired after a note's rows move to a new path (an in-app
+/// rename or an id-healed external one). The in-process `followHealedMove`
+/// hook only runs in the window that drove the move — a secondary note
+/// window with the note open must also retarget its session, or its next
+/// save would resurrect the dead file at the old path.
+const NOTE_MOVED_EVENT: &str = "note:moved";
+
+fn emit_note_moved<R: tauri::Runtime>(app: &tauri::AppHandle<R>, from: &str, to: &str) {
+    use tauri::Emitter;
+    let _ = app.emit(
+        NOTE_MOVED_EVENT,
+        serde_json::json!({ "from": from, "to": to }),
+    );
+}
+
 // ---- commands --------------------------------------------------------------
 
 /// Open + migrate the index for the active graph (reads the root from state).
@@ -113,14 +128,15 @@ pub fn index_open(graph: State<GraphState>, index: State<IndexState>) -> AppResu
 /// one-note and batch commands). No-op if the generation is stale — a superseded
 /// pass must not write the new graph's index. One transaction + cached statements
 /// keeps a full rebuild cheap; an empty batch commits a no-op transaction.
+/// Returns whether it committed, so callers only broadcast real writes.
 fn apply_in_txn(
     index: &State<IndexState>,
     generation: u64,
     notes: &[IndexedNote],
-) -> AppResult<()> {
+) -> AppResult<bool> {
     let mut state = lock_state(index)?;
     if state.generation != generation {
-        return Ok(());
+        return Ok(false);
     }
     let conn = state.conn.as_mut().ok_or_else(AppError::no_graph)?;
     let tx = conn.transaction()?;
@@ -128,7 +144,7 @@ fn apply_in_txn(
         write::apply_note(&tx, note)?;
     }
     tx.commit()?;
-    Ok(())
+    Ok(true)
 }
 
 /// Apply one note's extracted projection in a single transaction.
@@ -139,8 +155,9 @@ pub fn index_apply<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     index: State<IndexState>,
 ) -> AppResult<()> {
-    apply_in_txn(&index, generation, std::slice::from_ref(&note))?;
-    emit_index_written(&app);
+    if apply_in_txn(&index, generation, std::slice::from_ref(&note))? {
+        emit_index_written(&app);
+    }
     Ok(())
 }
 
@@ -152,8 +169,9 @@ pub fn index_apply_batch<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     index: State<IndexState>,
 ) -> AppResult<()> {
-    apply_in_txn(&index, generation, &notes)?;
-    emit_index_written(&app);
+    if apply_in_txn(&index, generation, &notes)? {
+        emit_index_written(&app);
+    }
     Ok(())
 }
 
@@ -235,6 +253,7 @@ pub fn note_move_indexed<R: tauri::Runtime>(
         }
     }
     emit_index_written(&app);
+    emit_note_moved(&app, &from, &to);
     Ok(())
 }
 
@@ -273,6 +292,7 @@ pub fn index_move<R: tauri::Runtime>(
         move_rows(conn, &from, &to)?;
     }
     emit_index_written(&app);
+    emit_note_moved(&app, &from, &to);
     Ok(())
 }
 

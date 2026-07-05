@@ -46,8 +46,15 @@ export function useWikiLinkNavigation(
     (target: string, event?: MouseEvent | KeyboardEvent) => {
       const newWindow = isNewWindowClick(event)
       const open = async (route: Route, options?: { focusEditor: boolean }): Promise<void> => {
-        if (newWindow && (await openRouteInNewWindow(route))) {
-          return
+        if (newWindow) {
+          if (await openRouteInNewWindow(route)) {
+            return
+          }
+          // The await above opened an unmount window; a late fallback must
+          // not yank a pane the user already left.
+          if (unmountedRef.current) {
+            return
+          }
         }
         navigate(route, options)
       }

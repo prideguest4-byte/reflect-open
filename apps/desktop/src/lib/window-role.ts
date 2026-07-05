@@ -18,9 +18,13 @@ export function isMainWindow(): boolean {
   }
   try {
     return getCurrentWindow().label === 'main'
-  } catch {
+  } catch (cause) {
     // A bridge without Tauri window metadata: the jsdom test harness and the
-    // ?platform=ios browser harness. Both are single-window — main.
+    // ?platform=ios browser harness. Both are single-window — main. In a real
+    // Tauri webview the internals are injected before any script runs, so
+    // this can't fire there; warn loudly in case that assumption ever breaks
+    // (a misclassified note window would boot the main-window singletons).
+    console.warn('window label unavailable; assuming the main window:', cause)
     return true
   }
 }

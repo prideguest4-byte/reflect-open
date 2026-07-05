@@ -3,10 +3,12 @@ import {
   errorMessage,
   isMobilePlatform,
   subscribeIndexWritten,
+  subscribeNoteMoved,
   windowBootstrap,
   type AppPlatform,
   type WindowBootstrap,
 } from '@reflect/core'
+import { followHealedMove } from '@/editor/move-note'
 import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { throttledInvalidateIndexQueries } from '@/lib/query-client'
 import { isMainWindow } from '@/lib/window-role'
@@ -38,7 +40,15 @@ export function useNoteWindowBoot({ platform, onAdopted, onFailed }: NoteWindowB
       return
     }
     let active = true
-    let unlistenIndexWritten: (() => void) | null = null
+    const unlisteners: Array<() => void> = []
+    const subscribe = async (subscription: Promise<() => void>): Promise<void> => {
+      const unlisten = await subscription
+      if (active) {
+        unlisteners.push(unlisten)
+      } else {
+        unlisten()
+      }
+    }
     void (async () => {
       try {
         const boot = await windowBootstrap()
@@ -48,12 +58,13 @@ export function useNoteWindowBoot({ platform, onAdopted, onFailed }: NoteWindowB
         if (boot.initialDeepLink !== null) {
           dispatchDeepLink(boot.initialDeepLink)
         }
-        const unlisten = await subscribeIndexWritten(throttledInvalidateIndexQueries)
+        await subscribe(subscribeIndexWritten(throttledInvalidateIndexQueries))
+        // Renames land in whichever window drove them; this window's open
+        // sessions must follow or their next save resurrects the old path.
+        await subscribe(subscribeNoteMoved(followHealedMove))
         if (!active) {
-          unlisten()
           return
         }
-        unlistenIndexWritten = unlisten
         onAdopted(boot)
       } catch (err) {
         if (active) {
@@ -63,7 +74,10 @@ export function useNoteWindowBoot({ platform, onAdopted, onFailed }: NoteWindowB
     })()
     return () => {
       active = false
-      unlistenIndexWritten?.()
+      for (const unlisten of unlisteners) {
+        unlisten()
+      }
+      unlisteners.length = 0
     }
   }, [platform, onAdopted, onFailed])
 }

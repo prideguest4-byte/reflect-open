@@ -100,10 +100,13 @@ pub async fn open_note_window(
     }
 
     if let Err(err) = builder.build() {
-        // The window never booted, so its pending deep link must not linger
-        // (a later same-target open would inherit a stale entry harmlessly,
-        // but hygiene is cheap).
-        lock_init(&init)?.remove(&label);
+        // Clean the pending link up ONLY when no window claimed the label: a
+        // concurrent same-target open can fail exactly because the first
+        // call's window already exists, and that window's bootstrap still
+        // needs the entry (both calls stored the identical link).
+        if app.get_webview_window(&label).is_none() {
+            lock_init(&init)?.remove(&label);
+        }
         return Err(AppError::io(format!("failed to open note window: {err}")));
     }
     Ok(())

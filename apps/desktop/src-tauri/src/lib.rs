@@ -277,22 +277,23 @@ pub fn run() {
                 // confirm itself; with no webview left the window-close path
                 // has already flushed.
                 let quit = app.state::<quit::QuitState>();
-                let window_count = app.webview_windows().len();
-                if code.is_none() && window_count > 0 {
+                let windows: Vec<String> = app.webview_windows().keys().cloned().collect();
+                if code.is_none() && !windows.is_empty() {
                     api.prevent_exit();
-                    quit.arm(window_count);
+                    quit.arm(windows);
                     let _ = app.emit("app:quit-requested", ());
                 }
             }
             tauri::RunEvent::WindowEvent {
+                label,
                 event: tauri::WindowEvent::Destroyed,
                 ..
             } => {
                 // A window destroyed mid-handshake (user closed it while the
-                // quit flush ran) can no longer confirm — count it as done or
+                // quit flush ran) can no longer confirm — settle its label or
                 // the surviving windows' quit would hang forever.
                 let quit = app.state::<quit::QuitState>();
-                if quit.armed() && quit.confirm_one() {
+                if quit.settle(label) {
                     app.exit(0);
                 }
             }

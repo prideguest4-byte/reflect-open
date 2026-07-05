@@ -6,6 +6,10 @@ const windowBootstrap = vi.hoisted(() => vi.fn<() => Promise<WindowBootstrap>>()
 const subscribeIndexWritten = vi.hoisted(() =>
   vi.fn<(handler: () => void) => Promise<() => void>>(),
 )
+const subscribeNoteMoved = vi.hoisted(() =>
+  vi.fn<(handler: (from: string, to: string) => void) => Promise<() => void>>(),
+)
+const followHealedMove = vi.hoisted(() => vi.fn())
 const isMainWindow = vi.hoisted(() => vi.fn(() => false))
 const dispatchDeepLink = vi.hoisted(() => vi.fn())
 const throttledInvalidateIndexQueries = vi.hoisted(() => vi.fn())
@@ -14,7 +18,9 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   windowBootstrap,
   subscribeIndexWritten,
+  subscribeNoteMoved,
 }))
+vi.mock('@/editor/move-note', () => ({ followHealedMove }))
 vi.mock('@/lib/window-role', () => ({ isMainWindow }))
 vi.mock('@/lib/deep-links/intake', () => ({ dispatchDeepLink }))
 vi.mock('@/lib/query-client', () => ({ throttledInvalidateIndexQueries }))
@@ -41,6 +47,7 @@ beforeEach(() => {
   isMainWindow.mockReturnValue(false)
   windowBootstrap.mockResolvedValue(BOOT)
   subscribeIndexWritten.mockResolvedValue(() => {})
+  subscribeNoteMoved.mockResolvedValue(() => {})
 })
 
 describe('useNoteWindowBoot', () => {
@@ -50,8 +57,9 @@ describe('useNoteWindowBoot', () => {
     expect(dispatchDeepLink).toHaveBeenCalledWith(BOOT.initialDeepLink)
     expect(onFailed).not.toHaveBeenCalled()
     // The adopted window refetches on committed index writes — never its own
-    // indexer.
+    // indexer — and follows renames driven elsewhere.
     expect(subscribeIndexWritten).toHaveBeenCalledWith(throttledInvalidateIndexQueries)
+    expect(subscribeNoteMoved).toHaveBeenCalledWith(followHealedMove)
   })
 
   it('skips the deep-link dispatch when none is pending (a reload)', async () => {
@@ -78,12 +86,15 @@ describe('useNoteWindowBoot', () => {
     expect(onFailed).not.toHaveBeenCalled()
   })
 
-  it('unsubscribes the index-written listener on unmount', async () => {
-    const unlisten = vi.fn()
-    subscribeIndexWritten.mockResolvedValue(unlisten)
+  it('unsubscribes both listeners on unmount', async () => {
+    const unlistenWritten = vi.fn()
+    const unlistenMoved = vi.fn()
+    subscribeIndexWritten.mockResolvedValue(unlistenWritten)
+    subscribeNoteMoved.mockResolvedValue(unlistenMoved)
     const { onAdopted, view } = mount()
     await waitFor(() => expect(onAdopted).toHaveBeenCalled())
     view.unmount()
-    expect(unlisten).toHaveBeenCalled()
+    expect(unlistenWritten).toHaveBeenCalled()
+    expect(unlistenMoved).toHaveBeenCalled()
   })
 })
