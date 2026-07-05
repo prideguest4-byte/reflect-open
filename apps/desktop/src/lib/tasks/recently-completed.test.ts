@@ -49,9 +49,9 @@ describe('recently-completed', () => {
 
   it('dedupes by task key', () => {
     const { result } = renderHook(() => useRecentlyCompleted('/g', undefined))
-    const t = task({ notePath: 'a.md', markerOffset: 2 })
-    act(() => markRecentlyCompleted('/g', [t]))
-    act(() => markRecentlyCompleted('/g', [t]))
+    const taskRow = task({ notePath: 'a.md', markerOffset: 2 })
+    act(() => markRecentlyCompleted('/g', [taskRow]))
+    act(() => markRecentlyCompleted('/g', [taskRow]))
     expect(result.current).toHaveLength(1)
   })
 
@@ -64,7 +64,7 @@ describe('recently-completed', () => {
       ]),
     )
     act(() => forgetRecentlyCompleted('/g', ['a.md:2']))
-    expect(result.current.map((t) => t.notePath)).toEqual(['b.md'])
+    expect(result.current.map((row) => row.notePath)).toEqual(['b.md'])
 
     act(() => archiveRecentlyCompleted('/g'))
     expect(result.current).toEqual([])
