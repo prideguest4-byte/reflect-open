@@ -30,7 +30,7 @@ export function MobileNote({ path }: { path: string }): ReactElement {
   return (
     <div className="flex h-full w-screen flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <MobileScreenHeader
-        title={untitled ? 'New note' : noteTitleFromPath(path)}
+        title={untitled ? 'New note' : 'Edit note'}
         onBack={() => (canBack ? back() : navigate({ kind: 'today' }))}
         trailing={
           <NoteActionsMenu
@@ -65,10 +65,4 @@ export function MobileNote({ path }: { path: string }): ReactElement {
       </main>
     </div>
   )
-}
-
-/** Readable filenames (Plan 17) make the basename the working title. */
-function noteTitleFromPath(path: string): string {
-  const base = path.slice(path.lastIndexOf('/') + 1)
-  return base.endsWith('.md') ? base.slice(0, -'.md'.length) : base
 }

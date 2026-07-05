@@ -324,7 +324,7 @@ describe('MobileShell', () => {
     const view = mount({ kind: 'today' }, { kind: 'note', path: 'notes/meeting-notes.md' })
 
     await user.click(view.getByRole('button', { name: 'probe-navigate' }))
-    expect(view.getByRole('heading').textContent).toContain('meeting-notes')
+    expect(view.getByRole('heading').textContent).toBe('Edit note')
 
     await user.click(view.getByRole('button', { name: 'Back' }))
     expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
@@ -441,7 +441,7 @@ describe('MobileShell', () => {
     files['notes/meeting-notes.md'] = 'agenda'
     const view = mount({ kind: 'note', path: 'notes/meeting-notes.md' })
 
-    expect(view.getByRole('heading').textContent).toContain('meeting-notes')
+    expect(view.getByRole('heading').textContent).toBe('Edit note')
     await waitFor(() => {
       expect(within(visibleLayer(view)).getByTestId('fake-editor').textContent).toContain('agenda')
     })
@@ -541,7 +541,7 @@ describe('MobileStack transitions & back-swipe', () => {
     const layers = stackLayers(view)
     expect(layers).toHaveLength(3)
     expect(layers.at(-1)!.className).toContain('mobile-stack-slide-out')
-    expect(within(visibleLayer(view)).getByRole('heading').textContent).toContain('source')
+    expect(within(visibleLayer(view)).getByRole('heading').textContent).toBe('Edit note')
     fireEvent.animationEnd(layers.at(-1)!)
     expect(stackLayers(view)).toHaveLength(2)
   })
@@ -665,7 +665,7 @@ describe('MobileStack transitions & back-swipe', () => {
       expect(card.style.transform).toBe('translate3d(0, 0, 0)')
 
       fireEvent.transitionEnd(card)
-      expect(view.getByRole('heading').textContent).toContain('meeting-notes')
+      expect(view.getByRole('heading').textContent).toBe('Edit note')
       expect(stackLayers(view)).toHaveLength(2)
     } finally {
       nowSpy.mockRestore()
