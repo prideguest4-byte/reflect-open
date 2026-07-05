@@ -1,9 +1,15 @@
 # Porting the Tasks tab
 
-**v2 status: post-release.** Tasks are explicitly out of mobile v1
-(Plan 19); the desktop Tasks surface (Plan 18) has shipped, so the mobile
-wave is "put a touch surface over the existing task getters" — plus the
-three genuinely mobile-native interactions V1 added, recorded here.
+**v2 status: shipped** (`apps/desktop/src/mobile/screens/tasks.tsx` and the
+`mobile/task-*` components): a third Tasks tab over the desktop (Plan 18)
+task getters, groups, and guarded write-backs — reused verbatim via the
+shared queries/actions and `composeVisibleTaskGroups`. The touch surface is
+V1 mobile's: checkbox toggles with a light haptic, tap-to-quick-edit in a
+bottom sheet (text, scheduling chips + month grid, complete, convert to
+bullet, open note, delete), a filters sheet with desktop's bucket toggles +
+"Show archived", per-group "+" add, and struck-until-archived completions.
+Drag-between-groups scheduling is **not** ported — the sheet's date picker
+covers rescheduling; revisit only if real usage misses the gesture.
 
 ## What V1 mobile does
 
@@ -52,12 +58,13 @@ those were desktop-only or nonexistent in V1.
   screen over search getters.
 - **Reuse desktop's grouping and semantics verbatim** (V1-parity there
   was already litigated on desktop). The mobile-specific work is
-  interaction: touch checkboxes with haptics, the quick-edit modal, and
-  drag-between-groups as the touch equivalent of desktop's scheduling
-  calendar.
-- **Drag activation distance matters.** V1's 8 pt PointerSensor threshold
-  is the difference between "drag to schedule" and "every tap flickers a
-  drag" — port the constraint, whatever the DnD implementation.
+  interaction: touch checkboxes with haptics, the quick-edit sheet, and
+  scheduling — shipped as a date picker in the sheet rather than
+  drag-between-groups (see the status note above).
+- **If drag-to-schedule is ever added: activation distance matters.**
+  V1's 8 pt PointerSensor threshold is the difference between "drag to
+  schedule" and "every tap flickers a drag" — port the constraint,
+  whatever the DnD implementation.
 - Editing a task from the list writes through the same note-session write
   path as any edit (no second write path), which also keeps the
   in-process file-change seam and sync dirty-marking working for free.
@@ -68,7 +75,7 @@ those were desktop-only or nonexistent in V1.
 | ------------------------------------------- | -------------------------------------------------------------- |
 | Task nodes in ProseMirror docs              | `- [ ]` markdown lines, indexed (desktop Plan 18, shipped)     |
 | Overdue / Today / Upcoming / Done groups    | Desktop v2 buckets, reused verbatim                            |
-| Drag between groups = reschedule            | Touch scheduling over `setTaskDueDate`                         |
+| Drag between groups = reschedule            | Sheet date picker over `setTaskDueDate` (drag not ported)      |
 | Quick-edit modal (edit without opening)     | Port: bottom sheet over the task's note session                |
 | Square checkbox + haptic + strikethrough    | Port as-is                                                     |
 | Filters modal                               | Follow desktop's filter set                                    |

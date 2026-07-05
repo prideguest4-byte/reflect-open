@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef, type ReactElement } from 'react'
-import { Files, SquarePen } from 'lucide-react'
+import { CircleCheck, Files, SquarePen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { hapticImpactLight } from '@/mobile/haptics'
 
-export type MobileTab = 'daily' | 'all'
+export type MobileTab = 'daily' | 'all' | 'tasks'
 
 interface MobileTabBarProps {
   tab: MobileTab
@@ -11,8 +11,9 @@ interface MobileTabBarProps {
 }
 
 /**
- * The V1-parity bottom tab bar: Daily (the chronological spine) and All
- * (every note + search). It sits at the very bottom of the shell. In V1 the
+ * The V1-parity bottom tab bar: Daily (the chronological spine), All
+ * (every note + search), and Tasks (every open checkbox, grouped). It sits at
+ * the very bottom of the shell. In V1 the
  * software keyboard simply covered it; the shell root now ends at the
  * keyboard's top, so the shell hides the bar while the keyboard is up to
  * keep that behavior.
@@ -62,6 +63,12 @@ export function MobileTabBar({ tab, onSelect }: MobileTabBarProps): ReactElement
         icon={<Files className="size-5" />}
         active={tab === 'all'}
         onClick={() => onSelect('all')}
+      />
+      <TabButton
+        label="Tasks"
+        icon={<CircleCheck className="size-5" />}
+        active={tab === 'tasks'}
+        onClick={() => onSelect('tasks')}
       />
     </nav>
   )

@@ -12,7 +12,6 @@ import { Archive, CalendarClock, List, Search } from 'lucide-react'
 import {
   getCompletedTasks,
   getOpenTasks,
-  groupTasks,
   hasBridge,
   type OpenTask,
   type TaskGroup,
@@ -25,7 +24,8 @@ import { type InsertTaskTarget } from '@/lib/tasks/task-insert-target'
 import { scrollTaskIntoView } from '@/lib/tasks/task-navigation'
 import { useTaskActions } from '@/lib/tasks/use-task-actions'
 import { useTaskRowHandlers } from '@/lib/tasks/use-task-row-handlers'
-import { useTaskFilters, type TaskFilters } from '@/lib/tasks/task-filters'
+import { useTaskFilters } from '@/lib/tasks/task-filters'
+import { composeVisibleTaskGroups } from '@/lib/tasks/task-visibility'
 import { useTaskKeyboard } from '@/lib/tasks/use-task-keyboard'
 import { useTaskSelection } from '@/lib/tasks/use-task-selection'
 import { completedTasksQueryKey, tasksQueryKey } from '@/lib/tasks/tasks-query'
@@ -38,22 +38,6 @@ import { TaskFiltersMenu } from './task-filters-menu'
 import { TaskGroupSection } from './task-group-section'
 import { TaskScheduleCalendar } from './task-schedule-calendar'
 import { TaskToolbarCountBadge } from './task-toolbar-count-badge'
-
-/** Keep only the groups the active filters allow (V1's per-bucket toggles). */
-function visibleGroups(groups: TaskGroup[], filters: TaskFilters): TaskGroup[] {
-  return groups.filter((group) => {
-    switch (group.kind) {
-      case 'current':
-        return filters.current
-      case 'overdue':
-        return filters.overdue
-      case 'upcoming':
-        return filters.upcoming
-      case 'note':
-        return group.tasks[0]?.isPinned ? filters.pinned : filters.other
-    }
-  })
-}
 
 /** The selected task that owns keyboard focus: the cursor/anchor, else the first row left selected. */
 function focusedSelectedKey(
@@ -125,31 +109,11 @@ export function TasksScreen(): ReactElement {
   const recentlyCompleted = useRecentlyCompleted(graph?.root ?? null)
 
   const needle = query.trim().toLowerCase()
-  const groups = useMemo(() => {
-    if (open === undefined) {
-      return []
-    }
-    // The struck "completed" rows. With archived on, the completed query is the
-    // full history — but a just-completed task may not be in it until the reindex
-    // refetches (and the query reloads blank when you first flip the filter on),
-    // so union the session set on top, deduped, to keep this run's rows visible.
-    // With archived off, the session set is the only source.
-    const completedRows = filters.archived
-      ? [
-          ...(completed ?? []),
-          ...recentlyCompleted.filter(
-            (task) => !(completed ?? []).some((row) => sameTask(row, task)),
-          ),
-        ]
-      : recentlyCompleted
-    // Drop any open row that's also present there — a refetch can briefly restore a
-    // just-completed task to the open cache before the reindex lands, and listing
-    // it both open and struck collides React keys.
-    const completedKeys = new Set(completedRows.map(taskKey))
-    const all = [...open.filter((task) => !completedKeys.has(taskKey(task))), ...completedRows]
-    const matched = needle ? all.filter((task) => task.text.toLowerCase().includes(needle)) : all
-    return visibleGroups(groupTasks(matched, today), filters)
-  }, [open, completed, recentlyCompleted, filters, needle, today])
+  const groups = useMemo(
+    () =>
+      composeVisibleTaskGroups({ open, completed, recentlyCompleted, filters, needle, today }),
+    [open, completed, recentlyCompleted, filters, needle, today],
+  )
 
   // The flat, render-order list of tasks the selection and its shortcuts act on.
   const orderedTasks = useMemo(() => groups.flatMap((group) => group.tasks), [groups])

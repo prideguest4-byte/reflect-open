@@ -3,7 +3,7 @@ import { installBackgroundFlush } from '@/lib/background-flush'
 import { MobileErrorBoundary } from '@/mobile/mobile-error-boundary'
 import { MobileOnboardingScreen } from '@/mobile/onboarding-screen'
 import { MobileShell } from '@/mobile/mobile-shell'
-import { SyncStatusPill } from '@/mobile/sync-status-pill'
+import { MobileStatusLayer } from '@/mobile/status-layer'
 import { useICloudRefresh } from '@/mobile/use-icloud-refresh'
 import { useKeyboardHeightVar } from '@/mobile/use-keyboard'
 import { useTaskCheckboxHaptics } from '@/mobile/use-task-haptics'
@@ -49,7 +49,7 @@ export function MobileApp(): ReactElement {
               plain-language status pill (step 10). */}
           <SyncProvider graph={graph}>
             <MobileShell />
-            <SyncStatusPill />
+            <MobileStatusLayer />
           </SyncProvider>
         </RouterProvider>
       </MobileErrorBoundary>

@@ -1,9 +1,9 @@
 import type { MutableRefObject, ReactElement } from 'react'
-import { AlarmClock, Calendar, FileText, Pin, Plus, Star } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import type { OpenTask, TaskGroup } from '@reflect/core'
+import { addTargetForGroup, taskGroupHeaderStyle } from '@/lib/tasks/task-group-presentation'
 import type { InsertTaskTarget } from '@/lib/tasks/task-insert-target'
 import { taskKey } from '@/lib/tasks/task-identity'
-import { insertTargetForTask, todaysDailyTarget } from '@/lib/tasks/task-navigation'
 import type { TaskSelection } from '@/lib/tasks/use-task-selection'
 import type { TaskRowEditHandlers } from '@/lib/tasks/use-task-row-handlers'
 import { cn } from '@/lib/utils'
@@ -28,35 +28,6 @@ interface TaskGroupSectionProps {
 }
 
 /**
- * Where this group's "+ Add" adds a task (V1: Current → today's daily, a note →
- * that note), or `null` for the aggregate Overdue/Upcoming buckets, which span
- * many notes and so show no Add button.
- */
-function addTargetForGroup(group: TaskGroup, today: string): InsertTaskTarget | null {
-  if (group.kind === 'current') {
-    return todaysDailyTarget(today)
-  }
-  const first = group.tasks[0]
-  return group.kind === 'note' && first !== undefined ? insertTargetForTask(first) : null
-}
-
-/** The icon + accent colour for a group's sticky header, V1's per-bucket styling. */
-function headerStyle(group: TaskGroup): { icon: ReactElement; colorClass: string } {
-  switch (group.kind) {
-    case 'current':
-      return { icon: <Star aria-hidden className="size-4" />, colorClass: 'text-amber-500' }
-    case 'overdue':
-      return { icon: <AlarmClock aria-hidden className="size-4" />, colorClass: 'text-red-500' }
-    case 'upcoming':
-      return { icon: <Calendar aria-hidden className="size-4" />, colorClass: 'text-green-600' }
-    case 'note':
-      return group.tasks[0]?.isPinned
-        ? { icon: <Pin aria-hidden className="size-4" />, colorClass: 'text-accent' }
-        : { icon: <FileText aria-hidden className="size-4" />, colorClass: 'text-text-secondary' }
-  }
-}
-
-/**
  * One section of the Tasks view (V1 design): a sticky, colour-coded header — a
  * date bucket (Current/Overdue/Upcoming) or a note — over its task rows. The
  * header sticks to the top of the scroll container, so the next group's header
@@ -75,7 +46,7 @@ export function TaskGroupSection({
 }: TaskGroupSectionProps): ReactElement {
   const showSource = group.kind !== 'note'
   const { notePath } = group
-  const { icon, colorClass } = headerStyle(group)
+  const { icon, colorClass } = taskGroupHeaderStyle(group)
   const addTarget = addTargetForGroup(group, today)
 
   return (

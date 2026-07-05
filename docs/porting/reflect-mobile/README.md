@@ -56,7 +56,7 @@ never lost. That behavior is what these docs pin down.
 | [Daily notes](./daily-notes.md)                                       | Day carousel + calendar strip              | **v1** — Embla carousel, V1 design parity         |
 | [Editor and keyboard](./editor-and-keyboard.md)                       | Mobile editor + native accessory toolbar   | **v1** editing; toolbar deliberately re-designed  |
 | [Search and All Notes](./search-and-all-notes.md)                     | FTS search, filters, list, AI search chat  | **v1** list+search; filters partial, chat later   |
-| [Tasks](./tasks.md)                                                   | Task groups, drag-and-drop, quick edit     | Later — follows desktop Plan 18 (shipped there)   |
+| [Tasks](./tasks.md)                                                   | Task groups, drag-and-drop, quick edit     | **Shipped** — desktop Plan 18 data + touch surface |
 | [Note actions, sharing, export](./note-actions-sharing-and-export.md) | Pin/share/publish/trash, JSON export       | **v1** pin/share/trash; publish deferred          |
 | [Audio memos](./audio-memos.md)                                       | Native recording + server transcription    | Later wave — raw-first + BYOK transcription       |
 | [Share extension](./share-extension.md)                               | Share-sheet link capture via API           | Later wave — App Group capture inbox              |
