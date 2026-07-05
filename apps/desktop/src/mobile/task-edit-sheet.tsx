@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import {
   ArrowRight,
   CalendarDays,
@@ -13,12 +13,12 @@ import type { OpenTask } from '@reflect/core'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { addDaysIso, formatDayLabel } from '@/lib/dates'
-import { taskContent, resolveTaskEdit } from '@/lib/tasks/task-content'
 import type { TaskActions } from '@/lib/tasks/use-task-actions'
 import { cn } from '@/lib/utils'
 import { hapticImpactLight } from '@/mobile/haptics'
 import { draftDueDate, withDraftDueDate } from '@/mobile/task-draft'
 import { TaskScheduleGrid } from '@/mobile/task-schedule-grid'
+import { useTaskSheetFinalizer } from '@/mobile/use-task-sheet-finalizer'
 import { useSettings } from '@/providers/settings-provider'
 
 interface MobileTaskEditSheetProps {
@@ -41,9 +41,9 @@ interface MobileTaskEditSheetProps {
  * opening the note. The draft is markdown (links and tags intact) and due-date
  * changes edit the draft's `[[YYYY-MM-DD]]` link in place, so everything lands
  * as **one** write when the sheet closes: dismissing commits a changed draft,
- * an emptied draft deletes the task (V1's empty-task rule via
- * {@link resolveTaskEdit}), and an untouched draft writes nothing. The action
- * buttons route through the same {@link TaskActions} the desktop view uses —
+ * an emptied draft deletes the task, and an untouched draft writes nothing —
+ * the exit rules live in {@link useTaskSheetFinalizer}. The action buttons
+ * route through the same {@link TaskActions} the desktop view uses —
  * save-then-act, never a racing second write path.
  */
 export function MobileTaskEditSheet({
@@ -55,90 +55,22 @@ export function MobileTaskEditSheet({
   onOpenNote,
 }: MobileTaskEditSheetProps): ReactElement {
   const { settings } = useSettings()
-  const liveContent = taskContent(task.raw)
-  // The edit baseline is frozen at open (desktop's inline editor does the
-  // same at mount): `task` is the live row, and if a reindex rewrites it while
-  // the sheet is up, comparing the untouched draft against the *new* content
-  // would read as an edit and commit stale text over the external change.
-  const [initial, setInitial] = useState(liveContent)
-  const [draft, setDraft] = useState(liveContent)
   const [showCalendar, setShowCalendar] = useState(false)
-  // Set once an action button has already written/closed, so the dismissal
-  // commit doesn't double-write on the close that follows.
-  const [handled, setHandled] = useState(false)
-  // The sheet stays mounted after closing (the exit animation needs content),
-  // so re-opening it for the same task must reseed everything: the baseline
-  // and draft from the row's current raw (an action may have rewritten it),
-  // the calendar collapsed, and the handled flag cleared — else a visit after
-  // Complete/Convert/Open note would silently drop its edits on dismiss.
-  const [wasOpen, setWasOpen] = useState(open)
-  if (open !== wasOpen) {
-    setWasOpen(open)
-    if (open) {
-      setHandled(false)
-      setInitial(liveContent)
-      setDraft(liveContent)
-      setShowCalendar(false)
-    }
-  }
+  // The commit/cancel/delete rules — baseline frozen at open, reseed on
+  // reopen, dismissal vs navigate vs unmount — live in the finalizer.
+  const { draft, setDraft, resolve, handleOpenChange, closeHandled, closeNavigate } =
+    useTaskSheetFinalizer({
+      task,
+      open,
+      onOpenChange,
+      actions,
+      onReseed: () => setShowCalendar(false),
+    })
   const dueDate = draftDueDate(draft)
-
-  const close = (): void => {
-    setHandled(true)
-    onOpenChange(false)
-  }
-
-  /** Persist the draft: a real change commits, an emptied draft deletes. */
-  const commitDraft = (): void => {
-    const result = resolveTaskEdit(initial, draft)
-    if (result.type === 'commit') {
-      actions.edit(task, result.content)
-    } else if (result.type === 'delete') {
-      actions.remove([task])
-    }
-  }
-
-  /**
-   * Finish an abandoned visit — a dismissal gesture or the sheet unmounting
-   * under an open drawer: commit a changed draft, and additionally treat a
-   * task that was already empty and stayed empty — a "+"-added row abandoned
-   * without typing — as a delete, so no bare `+ [ ]` ghosts in the note
-   * (V1's empty-task rule, desktop's editor-finalizer auto-delete). Not for
-   * "Open note": an untouched empty task must not lose the very line it
-   * navigates to.
-   */
-  const finishAbandonedVisit = (): void => {
-    if (resolveTaskEdit(initial, draft).type === 'cancel' && draft.trim() === '') {
-      actions.remove([task])
-    } else {
-      commitDraft()
-    }
-  }
-
-  const handleOpenChange = (nextOpen: boolean): void => {
-    if (!nextOpen && !handled) {
-      finishAbandonedVisit()
-    }
-    onOpenChange(nextOpen)
-  }
-
-  // A route change (tab switch, back) can unmount the whole screen while the
-  // drawer is open — no dismissal callback fires, so flush like a dismissal
-  // would (desktop's inline editor flushes on unmount the same way). The
-  // latest-closure ref keeps the unmount-only cleanup reading current state.
-  const unmountFlushRef = useRef<() => void>(() => {})
-  useEffect(() => {
-    unmountFlushRef.current = () => {
-      if (open && !handled) {
-        finishAbandonedVisit()
-      }
-    }
-  })
-  useEffect(() => () => unmountFlushRef.current(), [])
 
   const complete = (): void => {
     hapticImpactLight()
-    const result = resolveTaskEdit(initial, draft)
+    const result = resolve()
     if (result.type === 'commit') {
       actions.editAndToggle(task, result.content)
     } else if (result.type === 'delete') {
@@ -148,11 +80,11 @@ export function MobileTaskEditSheet({
     } else {
       actions.checkboxToggle(task)
     }
-    close()
+    closeHandled()
   }
 
   const convertToBullet = (): void => {
-    const result = resolveTaskEdit(initial, draft)
+    const result = resolve()
     if (result.type === 'commit') {
       actions.editAndConvertToBullet(task, result.content)
     } else if (result.type === 'delete') {
@@ -162,18 +94,17 @@ export function MobileTaskEditSheet({
     } else {
       actions.convertToBullet([task])
     }
-    close()
+    closeHandled()
   }
 
   const openNote = (): void => {
-    commitDraft()
-    close()
+    closeNavigate()
     onOpenNote(task.notePath)
   }
 
   const remove = (): void => {
     actions.remove([task])
-    close()
+    closeHandled()
   }
 
   const schedule = (isoDate: string | null): void => {

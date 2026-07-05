@@ -65,8 +65,10 @@ export function TaskScheduleGrid({ today, selected, onPick }: TaskScheduleGridPr
           </div>
         ))}
       </div>
-      {grid.weeks.map((week) => (
-        <div key={week[0]!.date} className="grid grid-cols-7 text-center">
+      {grid.weeks.map((week, weekIndex) => (
+        // buildMonthGrid always fills weeks with 7 cells; the index fallback
+        // only documents that invariant without asserting past the types.
+        <div key={week[0]?.date ?? weekIndex} className="grid grid-cols-7 text-center">
           {week.map((cell) => {
             const isToday = cell.date === today
             const isSelected = cell.date === selected
