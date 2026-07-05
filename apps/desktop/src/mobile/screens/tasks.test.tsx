@@ -430,6 +430,38 @@ describe('MobileTasks', () => {
     view.unmount()
   })
 
+  it('flushes an edited draft when the screen unmounts under an open sheet', async () => {
+    getOpenTasks.mockResolvedValue([task({ text: 'buy milk' })])
+    const user = userEvent.setup()
+    const view = renderScreen()
+
+    await user.click(await view.findByRole('button', { name: 'Edit: buy milk' }))
+    const input = view.getByRole('textbox', { name: 'Task text' })
+    await user.clear(input)
+    await user.type(input, 'buy oat milk')
+
+    // A tab switch unmounts the whole screen — no dismissal callback fires.
+    view.unmount()
+
+    await waitFor(() => expect(editTask).toHaveBeenCalledTimes(1))
+    expect(editTask.mock.calls[0]?.[1]).toBe('buy oat milk')
+  })
+
+  it('deletes an abandoned "+"-added task when the screen unmounts', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ text: 'jotted today', dailyDate: '2026-06-14', notePath: 'daily/2026-06-14.md' }),
+    ])
+    const user = userEvent.setup()
+    const view = renderScreen()
+
+    await user.click(await view.findByRole('button', { name: 'Add a task to today' }))
+    await view.findByRole('textbox', { name: 'Task text' })
+    view.unmount()
+
+    await waitFor(() => expect(deleteTask).toHaveBeenCalledTimes(1))
+    expect(editTask).not.toHaveBeenCalled()
+  })
+
   it('hides buckets through the filter sheet', async () => {
     getOpenTasks.mockResolvedValue([
       task({ text: 'jotted today', dailyDate: '2026-06-14', notePath: 'daily/2026-06-14.md' }),

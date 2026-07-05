@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import {
   ArrowRight,
   CalendarDays,
@@ -98,22 +98,43 @@ export function MobileTaskEditSheet({
     }
   }
 
+  /**
+   * Finish an abandoned visit — a dismissal gesture or the sheet unmounting
+   * under an open drawer: commit a changed draft, and additionally treat a
+   * task that was already empty and stayed empty — a "+"-added row abandoned
+   * without typing — as a delete, so no bare `+ [ ]` ghosts in the note
+   * (V1's empty-task rule, desktop's editor-finalizer auto-delete). Not for
+   * "Open note": an untouched empty task must not lose the very line it
+   * navigates to.
+   */
+  const finishAbandonedVisit = (): void => {
+    if (resolveTaskEdit(initial, draft).type === 'cancel' && draft.trim() === '') {
+      actions.remove([task])
+    } else {
+      commitDraft()
+    }
+  }
+
   const handleOpenChange = (nextOpen: boolean): void => {
     if (!nextOpen && !handled) {
-      // Dismissal (drag down / tap outside) additionally treats a task that
-      // was already empty and stayed empty — a "+"-added row abandoned
-      // without typing — as a delete, so no bare `+ [ ]` ghosts in the note
-      // (V1's empty-task rule, desktop's editor-finalizer auto-delete).
-      // Only here: "Open note" on an untouched empty task must not delete
-      // the very line it navigates to.
-      if (resolveTaskEdit(initial, draft).type === 'cancel' && draft.trim() === '') {
-        actions.remove([task])
-      } else {
-        commitDraft()
-      }
+      finishAbandonedVisit()
     }
     onOpenChange(nextOpen)
   }
+
+  // A route change (tab switch, back) can unmount the whole screen while the
+  // drawer is open — no dismissal callback fires, so flush like a dismissal
+  // would (desktop's inline editor flushes on unmount the same way). The
+  // latest-closure ref keeps the unmount-only cleanup reading current state.
+  const unmountFlushRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    unmountFlushRef.current = () => {
+      if (open && !handled) {
+        finishAbandonedVisit()
+      }
+    }
+  })
+  useEffect(() => () => unmountFlushRef.current(), [])
 
   const complete = (): void => {
     hapticImpactLight()
