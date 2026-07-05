@@ -168,7 +168,12 @@ fn note_emails_apply_move_and_cascade() {
     apply_note(&conn, &person).unwrap();
 
     // Display casing and the folded match key are stored side by side, like tags.
-    let rows = run_query(&conn, "SELECT note_path, email, email_key FROM note_emails", &[]).unwrap();
+    let rows = run_query(
+        &conn,
+        "SELECT note_path, email, email_key FROM note_emails",
+        &[],
+    )
+    .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["email"], Value::from("Jane@Corp.com"));
     assert_eq!(rows[0]["email_key"], Value::from("jane@corp.com"));
