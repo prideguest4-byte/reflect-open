@@ -406,16 +406,33 @@ pub fn note_delete(path: String, generation: u64, state: State<GraphState>) -> A
 }
 
 /// Move the open graph's **entire directory** to the OS trash (recoverable)
-/// and drop it from recents, then invalidate the open session so a straggler
-/// write pinned to the deleted graph fails loudly instead of recreating the
-/// directory. Pinned to `generation` — a delete enqueued before a graph
-/// switch must never trash the newly opened graph. Desktop-only: mobile's
-/// fixed roots have no OS trash and no delete UI.
+/// and drop it from recents. The session is invalidated (root cleared,
+/// generation bumped) **before** the filesystem is touched: a concurrent
+/// write pinned to this generation must fail its root check instead of
+/// `create_dir_all`-recreating directories under a path being trashed. If
+/// the trash move itself then fails, the session stays invalidated and the
+/// frontend re-opens the intact directory to restore a writable session.
+/// Pinned to `generation` — a delete enqueued before a graph switch must
+/// never trash the newly opened graph. Desktop-only: mobile's fixed roots
+/// have no OS trash and no delete UI.
 #[tauri::command]
 pub fn graph_delete(generation: u64, state: State<GraphState>) -> AppResult<()> {
-    let root = root_for_generation(&state, generation)?;
     #[cfg(desktop)]
     {
+        // Check-and-invalidate under one lock hold — `root_for_generation`
+        // followed by a separate invalidation would leave a window where a
+        // pinned write still resolves the doomed root.
+        let root = {
+            let mut inner = lock_graph(&state)?;
+            if inner.generation != generation {
+                return Err(AppError::io(
+                    "the graph changed since this command was issued; dropping it",
+                ));
+            }
+            let root = inner.root.take().ok_or_else(AppError::no_graph)?;
+            inner.generation += 1;
+            root
+        };
         os_trash_delete(&root)?;
         // Recents is a convenience cache (same stance as `activate`): the
         // directory is already in the trash, so a failure to persist must not
@@ -423,16 +440,11 @@ pub fn graph_delete(generation: u64, state: State<GraphState>) -> AppResult<()> 
         if let Err(err) = crate::recents::forget(&root.to_string_lossy()) {
             tracing::warn!(?err, "failed to forget deleted graph");
         }
-        let mut inner = lock_graph(&state)?;
-        if inner.generation == generation {
-            inner.root = None;
-            inner.generation += 1;
-        }
         Ok(())
     }
     #[cfg(mobile)]
     {
-        let _ = root;
+        let _ = (generation, &state);
         Err(AppError::io(
             "deleting a graph is not supported on this platform",
         ))

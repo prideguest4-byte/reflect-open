@@ -469,12 +469,28 @@ export function GraphProvider({
     if (graph === null) {
       return
     }
-    // Trash + forget happen in Rust while the session pin is still valid;
-    // only a confirmed delete tears the UI down to the chooser.
-    await deleteGraphCommand(graph.generation)
-    await closeActiveGraph()
+    const { root, generation } = graph
+    // A newer open while the delete is in flight supersedes it (the Rust
+    // side already refuses the stale generation) — never tear down or
+    // re-open the graph the user switched to.
+    const seq = openSeq.current
+    try {
+      await deleteGraphCommand(generation)
+    } catch (err) {
+      // The command invalidates the Rust session before touching the
+      // filesystem, so a failed trash leaves the directory intact but the
+      // session pin dead — re-open the graph to restore a writable session,
+      // then let the confirm dialog surface the error.
+      if (seq === openSeq.current) {
+        await openRecent(root)
+      }
+      throw err
+    }
+    if (seq === openSeq.current) {
+      await closeActiveGraph()
+    }
     await loadRecents()
-  }, [closeActiveGraph, graph, loadRecents])
+  }, [closeActiveGraph, graph, loadRecents, openRecent])
 
   const completeOnboarding = useCallback(
     async (kind: MobileStorageKind, chosenRoot?: string): Promise<void> => {
