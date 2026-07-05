@@ -115,6 +115,19 @@ describe('useTaskSheetFinalizer', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it('commits once across a duplicate dismissal and the unmount flush', () => {
+    const { result, unmount } = renderHook(() => useTaskSheetFinalizer(deps()))
+
+    act(() => result.current.setDraft('alpha edited'))
+    act(() => result.current.handleOpenChange(false))
+    // A second gesture callback before the parent re-renders, then the
+    // unmount flush with the open prop still true — neither may double-write.
+    act(() => result.current.handleOpenChange(false))
+    unmount()
+
+    expect(edit).toHaveBeenCalledTimes(1)
+  })
+
   it('skips the dismissal commit after an action already handled the close', () => {
     const { result } = renderHook(() => useTaskSheetFinalizer(deps()))
 

@@ -100,6 +100,11 @@ export function useTaskSheetFinalizer({
 
   const handleOpenChange = (nextOpen: boolean): void => {
     if (!nextOpen && !handled) {
+      // Mark handled before finishing: a duplicate dismissal callback, or the
+      // unmount flush racing the parent's close re-render, must not run the
+      // same commit/delete twice (a second delete would trip the stale guard
+      // and surface a spurious failure).
+      setHandled(true)
       finishAbandonedVisit()
     }
     onOpenChange(nextOpen)
