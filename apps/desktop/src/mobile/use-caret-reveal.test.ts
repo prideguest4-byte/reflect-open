@@ -165,6 +165,25 @@ describe('useCaretReveal', () => {
     expect(scrollable.element.scrollTop).toBe(716)
   })
 
+  it('cancelReveal ends an active reveal without touching the scroll position', () => {
+    const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
+
+    hook.result.current.revealEnd()
+    expect(scrollable.element.scrollTop).toBe(400)
+    hook.result.current.cancelReveal()
+    expect(observer()?.disconnected).toBe(true)
+    expect(scrollable.element.scrollTop).toBe(400)
+
+    // An explicit jump-to-top after the cancel must stick: no late re-pin
+    // when the keyboard dismisses or content grows, and no live deadline.
+    scrollable.element.scrollTop = 0
+    scrollable.setScrollRange({ scrollHeight: 900, maxScrollTop: 716 })
+    observer()?.resize()
+    expect(scrollable.element.scrollTop).toBe(0)
+    vi.advanceTimersByTime(REVEAL_WINDOW_MS)
+    expect(scrollable.element.scrollTop).toBe(0)
+  })
+
   it('stops the reveal on unmount', () => {
     const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
 

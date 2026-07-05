@@ -20,6 +20,12 @@ export interface CaretReveal {
    * unmounts; calling it again restarts the window.
    */
   revealEnd: () => void
+  /**
+   * End an active reveal without touching the scroll position. An explicit
+   * re-anchor (the slide's jump-to-top) must call this first — a live reveal
+   * would otherwise re-pin to the end on the next resize and undo it.
+   */
+  cancelReveal: () => void
 }
 
 /**
@@ -68,5 +74,9 @@ export function useCaretReveal({ containerRef, contentRef }: CaretRevealOptions)
     deadline = setTimeout(stop, REVEAL_WINDOW_MS)
   }, [containerRef, contentRef])
 
-  return { revealEnd }
+  const cancelReveal = useCallback(() => {
+    stopRef.current?.()
+  }, [])
+
+  return { revealEnd, cancelReveal }
 }

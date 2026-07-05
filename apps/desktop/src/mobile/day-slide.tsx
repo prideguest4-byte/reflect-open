@@ -64,7 +64,7 @@ export function DaySlide({
     contentRef,
   })
 
-  const { revealEnd } = useCaretReveal({ containerRef, contentRef })
+  const { revealEnd, cancelReveal } = useCaretReveal({ containerRef, contentRef })
 
   // The end-of-note autofocus scrolls the caret into view against the
   // full-height viewport; the keyboard then raises and shrinks the shell by
@@ -90,8 +90,11 @@ export function DaySlide({
       // the selection the editor just placed.
       return
     }
+    // A reveal still settling from a recent double-tap must die first, or
+    // its next re-pin would undo this jump to the top.
+    cancelReveal()
     resetToTop()
-  }, [scrollResetSeq, selected, focusRequested, resetToTop])
+  }, [scrollResetSeq, selected, focusRequested, cancelReveal, resetToTop])
 
   return (
     <div
