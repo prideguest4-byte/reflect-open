@@ -7,25 +7,18 @@ import {
   createAltoolUploadArgs,
   createAltoolValidateArgs,
   createApiKeyAltoolArgs,
+  createTauriIosBuildEnv,
   createTauriIosBuildArgs,
-  createXcodeAuthenticationArgs,
   findIpaInfoPlistPath,
   isFalsePlistValue,
   normalizeApiKeyContent,
 } from './release-ios.mjs'
 
-test('iOS release builds pass App Store Connect export and xcodebuild API key auth through Tauri', () => {
-  const xcodeAuthenticationArgs = createXcodeAuthenticationArgs({
-    issuerId: 'issuer-uuid',
-    keyId: 'ABC123DEFG',
-    keyPath: '/tmp/AuthKey_ABC123DEFG.p8',
-  })
-
+test('iOS release builds pass App Store Connect export and build number through Tauri', () => {
   expect(
     createTauriIosBuildArgs({
       buildNumber: '492',
       exportMethod: 'app-store-connect',
-      xcodeAuthenticationArgs,
     }),
   ).toEqual([
     'tauri',
@@ -36,13 +29,6 @@ test('iOS release builds pass App Store Connect export and xcodebuild API key au
     '--ci',
     '--config',
     JSON.stringify({ bundle: { iOS: { bundleVersion: '492' } } }),
-    '--',
-    '-authenticationKeyPath',
-    '/tmp/AuthKey_ABC123DEFG.p8',
-    '-authenticationKeyID',
-    'ABC123DEFG',
-    '-authenticationKeyIssuerID',
-    'issuer-uuid',
   ])
 })
 
@@ -55,6 +41,28 @@ test('iOS release builds can rely on local Xcode accounts when no API key is sup
     'release-testing',
     '--ci',
   ])
+})
+
+test('iOS release builds expose the staged API key path to Tauri signing', () => {
+  expect(
+    createTauriIosBuildEnv({
+      baseEnv: {
+        APPLE_API_ISSUER: 'issuer-uuid',
+        APPLE_API_KEY: 'ABC123DEFG',
+        CI: '',
+      },
+      apiKeyCredentials: {
+        env: {
+          APPLE_API_KEY_PATH: '/tmp/AuthKey_ABC123DEFG.p8',
+        },
+      },
+    }),
+  ).toEqual({
+    APPLE_API_ISSUER: 'issuer-uuid',
+    APPLE_API_KEY: 'ABC123DEFG',
+    APPLE_API_KEY_PATH: '/tmp/AuthKey_ABC123DEFG.p8',
+    CI: 'true',
+  })
 })
 
 test('altool upload uses package upload with API key auth and optional processing wait', () => {
