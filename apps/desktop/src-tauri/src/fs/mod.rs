@@ -419,7 +419,9 @@ pub fn graph_delete(generation: u64, state: State<GraphState>) -> AppResult<()> 
     #[cfg(mobile)]
     {
         let _ = root;
-        Err(AppError::io("deleting a graph is not supported on this platform"))
+        Err(AppError::io(
+            "deleting a graph is not supported on this platform",
+        ))
     }
 }
 
