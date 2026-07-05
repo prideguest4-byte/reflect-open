@@ -170,6 +170,15 @@ describe('MobileSettings', () => {
     expect(await screen.findByText('connect-github-sheet')).toBeTruthy()
   })
 
+  it('hides the connect row once the local graph is connected', async () => {
+    graphState.mobileStorageKind = 'local'
+    mount()
+
+    expect(await screen.findByText('alex/notes')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Disconnect GitHub' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull()
+  })
+
   it('never offers connect for iCloud graphs — they sync through the container', () => {
     sync.value = {
       backup: { phase: 'disconnected' },
