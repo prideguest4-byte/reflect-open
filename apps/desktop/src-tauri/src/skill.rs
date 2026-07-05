@@ -136,6 +136,24 @@ fn managed_hash(content: &str) -> Option<&str> {
     })
 }
 
+/// `content` with the marker's whole line removed — the inverse of
+/// [`insert_marker`], so a clean install restores the exact rendered text.
+fn without_marker_line(content: &str) -> Option<String> {
+    let start = content.find(MANAGED_PREFIX)?;
+    let line_start = content[..start].rfind('\n').map_or(0, |index| index + 1);
+    let line_end = content[start..]
+        .find('\n')
+        .map_or(content.len(), |index| start + index + 1);
+    let mut rest = String::with_capacity(content.len());
+    rest.push_str(&content[..line_start]);
+    rest.push_str(&content[line_end..]);
+    Some(rest)
+}
+
+/// The marker is self-validating: it records the sha256 of the content it was
+/// inserted into, so an edit anywhere in the file breaks the match and the
+/// file classifies as [`SkillInstallState::Conflict`] — even when the app's
+/// current inputs have also changed. Only a clean old install may be `Stale`.
 fn classify(
     installed: Option<&str>,
     rendered_hash: &str,
@@ -144,17 +162,23 @@ fn classify(
     let Some(installed) = installed else {
         return SkillInstallState::Missing;
     };
-    let Some(hash) = managed_hash(installed) else {
+    if installed == managed_content {
+        return SkillInstallState::Current;
+    }
+    let (Some(hash), Some(body)) = (managed_hash(installed), without_marker_line(installed)) else {
         return SkillInstallState::Conflict;
     };
+    if content_hash(&body) != hash {
+        // Edited since we wrote it — the recorded hash no longer matches the
+        // file's own body. Never overwrite, regardless of staleness.
+        return SkillInstallState::Conflict;
+    }
     if hash != rendered_hash {
         return SkillInstallState::Stale;
     }
-    if installed == managed_content {
-        SkillInstallState::Current
-    } else {
-        SkillInstallState::Conflict
-    }
+    // Self-consistent and current by hash, yet not byte-identical (e.g. a
+    // moved marker line): treat any deviation we can't explain as not ours.
+    SkillInstallState::Conflict
 }
 
 /// The staged CLI sidecar, next to the running executable in both dev
@@ -239,11 +263,33 @@ pub fn skill_install(generation: u64, state: State<GraphState>) -> AppResult<Ski
             context.target.display()
         ))),
         SkillInstallState::Current => Ok(status),
-        SkillInstallState::Missing | SkillInstallState::Stale => {
+        SkillInstallState::Missing => {
+            // No-clobber create: a file appearing between the classify above
+            // and this write fails loudly instead of being replaced.
+            atomic_create_new(&context.target, &context.managed_content)?;
+            status_of(&context)
+        }
+        SkillInstallState::Stale => {
             atomic_write_to(&context.target, &context.managed_content)?;
             status_of(&context)
         }
     }
+}
+
+/// Atomic create that refuses to replace an existing file (the missing-state
+/// counterpart of `capture::atomic_write_to`).
+fn atomic_create_new(path: &Path, contents: &str) -> AppResult<()> {
+    use std::io::Write;
+    let dir = path
+        .parent()
+        .ok_or_else(|| AppError::io(format!("no parent directory for {}", path.display())))?;
+    fs::create_dir_all(dir)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+    tmp.write_all(contents.as_bytes())?;
+    tmp.flush()?;
+    tmp.persist_noclobber(path)
+        .map_err(|err| AppError::io(err.to_string()))?;
+    Ok(())
 }
 
 /// Command: remove the graph's skill file (and its directory when that leaves
@@ -346,12 +392,29 @@ mod tests {
             classify(Some(&edited), hash, managed),
             SkillInstallState::Conflict
         );
-        // Rendered from other inputs (graph moved, template changed) → stale.
+        // Rendered from other inputs (graph moved, template changed) → stale,
+        // but only while the old install is untouched.
         let moved = test_context(Path::new("/skills"), Path::new("/elsewhere/Personal"));
         assert_eq!(
             classify(Some(&moved.managed_content), hash, managed),
             SkillInstallState::Stale
         );
+        // A user-edited old install must stay a conflict — staleness never
+        // downgrades edit protection (the marker validates its own body).
+        let stale_edited = format!("{}\nuser addition\n", moved.managed_content);
+        assert_eq!(
+            classify(Some(&stale_edited), hash, managed),
+            SkillInstallState::Conflict
+        );
+    }
+
+    #[test]
+    fn create_new_refuses_to_replace_an_existing_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let target = temp.path().join("SKILL.md");
+        atomic_create_new(&target, "first").expect("create");
+        assert!(atomic_create_new(&target, "second").is_err());
+        assert_eq!(std::fs::read_to_string(&target).expect("read"), "first");
     }
 
     #[test]
