@@ -1,7 +1,9 @@
 import type { ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { PaletteProvider } from '@/components/command-palette/palette-provider'
+import { NoteWindowContent } from '@/components/note-window-content'
 import { WorkspaceContent } from '@/components/workspace-content'
+import { isMainWindow } from '@/lib/window-role'
 import { AssetDescribeProvider } from '@/providers/asset-describe-provider'
 import { AudioMemoProvider } from '@/providers/audio-memo-provider'
 import { FocusedDailyProvider } from '@/providers/focused-daily-provider'
@@ -45,7 +47,13 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
                           {/* Tracks the focused day in the daily stream so the right
                               sidebar describes it, not just the routed day. */}
                           <FocusedDailyProvider>
-                            <WorkspaceContent graph={graph} />
+                            {/* A ⌘-clicked note window is chrome-free: the
+                                routed view only, no sidebar/palette shell. */}
+                            {isMainWindow() ? (
+                              <WorkspaceContent graph={graph} />
+                            ) : (
+                              <NoteWindowContent />
+                            )}
                           </FocusedDailyProvider>
                         </ChatProvider>
                       </AssetDescribeProvider>

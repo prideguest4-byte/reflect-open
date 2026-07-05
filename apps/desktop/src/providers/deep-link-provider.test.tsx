@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GraphInfo } from '@reflect/core'
@@ -57,14 +58,46 @@ describe('DeepLinkProvider', () => {
     expect(io.generation).toBe(7)
   })
 
-  it('reports the session stale after unmount — an in-flight resolve must not navigate', () => {
+  it('reports stale when the graph session changes — an in-flight resolve must not navigate', () => {
     const view = mount()
     attachedHandler()('reflect://note/x')
     const io = handleDeepLink.mock.calls[0]![1]
 
     expect(io.isStale?.()).toBe(false)
-    view.unmount()
+    view.rerender(
+      <DeepLinkProvider graph={{ ...GRAPH, generation: 8 }}>{null}</DeepLinkProvider>,
+    )
     expect(io.isStale?.()).toBe(true)
+  })
+
+  it('a StrictMode probe cycle does not stale a link the probe attach drained', () => {
+    // The note window's initial deep link buffers in the intake and is drained
+    // by the FIRST attach — which in dev is StrictMode's probe run. Its async
+    // note resolution must survive the probe's detach/reattach (same session),
+    // or ⌘-clicked windows open on Today instead of the note.
+    render(
+      <StrictMode>
+        <DeepLinkProvider graph={GRAPH}>{null}</DeepLinkProvider>
+      </StrictMode>,
+    )
+    const probeHandler = setDeepLinkHandler.mock.calls[0]?.[0]
+    expect(probeHandler).toEqual(expect.any(Function))
+    probeHandler?.('reflect://note/x')
+
+    const io = handleDeepLink.mock.calls[0]![1]
+    expect(io.isStale?.()).toBe(false)
+  })
+
+  it('stays fresh after a plain unmount — the keyed remount makes the old router inert', () => {
+    // Unmount alone is not a session change: on a graph switch the whole
+    // keyed workspace remounts, so a late navigate hits a torn-down router
+    // and no-ops. Staleness tracks the generation, nothing else.
+    const view = mount()
+    attachedHandler()('reflect://note/x')
+    const io = handleDeepLink.mock.calls[0]![1]
+
+    view.unmount()
+    expect(io.isStale?.()).toBe(false)
   })
 
   it('logs a rejected handler instead of leaving an unhandled rejection', async () => {

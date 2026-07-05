@@ -1,4 +1,4 @@
-import { useEffect, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactElement, type ReactNode } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { handleDeepLink } from '@/lib/deep-links/handle'
 import { setDeepLinkHandler } from '@/lib/deep-links/intake'
@@ -19,21 +19,29 @@ interface DeepLinkProviderProps {
 export function DeepLinkProvider({ graph, children }: DeepLinkProviderProps): ReactElement {
   const { navigate } = useRouter()
 
+  // The graph session this provider instance currently serves. Staleness must
+  // mean "the session changed", NOT "the effect re-ran": StrictMode's probe
+  // cycle detaches and reattaches the handler around an in-flight note
+  // resolution, and an effect-scoped flag would silently drop a link the
+  // probe attach drained from the intake buffer — exactly a ⌘-clicked note
+  // window's initial link. A resolution that outlives this whole instance
+  // (graph switch remounts the keyed workspace) navigates a torn-down router,
+  // which is a no-op — the wrong-graph homonym can never surface.
+  const sessionRef = useRef(graph.generation)
+
   useEffect(() => {
-    // Flips on teardown (graph switch): a note resolution still in flight then
-    // answers against the wrong graph's index and must not navigate.
-    let stale = false
+    sessionRef.current = graph.generation
+    const issued = graph.generation
     setDeepLinkHandler((url) => {
       handleDeepLink(url, {
         navigate,
-        generation: graph.generation,
-        isStale: () => stale,
+        generation: issued,
+        isStale: () => sessionRef.current !== issued,
       }).catch((cause: unknown) => {
         console.error('deep link failed:', url, cause)
       })
     })
     return () => {
-      stale = true
       setDeepLinkHandler(null)
     }
   }, [navigate, graph.generation])
