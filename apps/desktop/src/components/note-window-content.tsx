@@ -2,6 +2,8 @@ import type { ReactElement } from 'react'
 import { dailyPath } from '@reflect/core'
 import { NotePane } from '@/components/note-pane'
 import { RouteContent } from '@/components/route-content'
+import { useNoteRow } from '@/hooks/use-note-row'
+import { useNoteWindowTitle } from '@/hooks/use-note-window-title'
 import { formatDayLabel, todayIso } from '@/lib/dates'
 import { useSettings } from '@/providers/settings-provider'
 import { useRouter } from '@/routing/router'
@@ -23,6 +25,18 @@ export function NoteWindowContent(): ReactElement {
   const { settings } = useSettings()
   const dailyDate =
     route.kind === 'daily' ? route.date : route.kind === 'today' ? todayIso() : null
+
+  // The OS window title follows the shown note — the day label for dailies,
+  // the indexed title otherwise (it tracks renames because the row rides the
+  // same query cache the pane invalidates on index writes).
+  const noteRow = useNoteRow(route.kind === 'note' ? route.path : '')
+  useNoteWindowTitle(
+    dailyDate !== null
+      ? formatDayLabel(dailyDate, settings.dateFormat)
+      : route.kind === 'note'
+        ? noteRow?.title ?? null
+        : null,
+  )
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-surface text-text">

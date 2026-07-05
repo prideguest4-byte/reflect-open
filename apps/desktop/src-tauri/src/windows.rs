@@ -12,7 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Mutex, MutexGuard};
 
 use serde::Serialize;
-use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 use crate::db::{self, IndexState};
 use crate::error::{AppError, AppResult};
@@ -30,6 +30,12 @@ pub const MAIN_WINDOW_LABEL: &str = "main";
 /// and the window-state plugin filters it out (geometry is cascaded fresh,
 /// and hash labels would otherwise accrete in the state file forever).
 pub const NOTE_WINDOW_PREFIX: &str = "note-";
+
+/// Event delivered to an existing note window when its target is ⌘-clicked
+/// again: the window may have navigated elsewhere since it opened, so a
+/// focus alone could surface the wrong note — the payload (the deep link)
+/// re-navigates it to the clicked target.
+const WINDOW_NAVIGATE_EVENT: &str = "window:navigate";
 
 fn lock_init<'a>(
     state: &'a State<'_, WindowInit>,
@@ -74,8 +80,21 @@ pub async fn open_note_window(
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.show();
         let _ = existing.set_focus();
+        // The window may have navigated away from its original target —
+        // deliver the link so it comes back to the note that was clicked.
+        let _ = app.emit_to(label.as_str(), WINDOW_NAVIGATE_EVENT, &deep_link);
         return Ok(());
     }
+
+    // Cascade step: successive opens from the same window must not stack at
+    // one offset, covering each other exactly. Wraps so a pile of windows
+    // never marches off-screen.
+    let open_note_windows = app
+        .webview_windows()
+        .keys()
+        .filter(|existing| existing.starts_with(NOTE_WINDOW_PREFIX))
+        .count();
+    let cascade = 48.0 * ((open_note_windows % 10) + 1) as f64;
 
     lock_init(&init)?.insert(label.clone(), deep_link);
 
@@ -91,12 +110,11 @@ pub async fn open_note_window(
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true);
     }
-    // Cascade from the invoking window so stacked opens don't cover each
-    // other exactly. Best-effort: a position we can't read just means the OS
-    // default placement.
+    // Cascade from the invoking window. Best-effort: a position we can't
+    // read just means the OS default placement.
     if let (Ok(position), Ok(scale)) = (window.outer_position(), window.scale_factor()) {
         let position = position.to_logical::<f64>(scale);
-        builder = builder.position(position.x + 48.0, position.y + 48.0);
+        builder = builder.position(position.x + cascade, position.y + cascade);
     }
 
     if let Err(err) = builder.build() {

@@ -158,6 +158,11 @@ mod schema {
         let dir = root.join(super::REFLECT_DIR);
         std::fs::create_dir_all(&dir)?;
         let mut conn = Connection::open(dir.join(super::INDEX_FILE))?;
+        // Another PROCESS can hold this database too — a second app flavor on
+        // the same graph, or the `reflect` CLI (which sets its own timeout).
+        // Wait briefly for a cross-process lock to clear instead of failing
+        // writes instantly with SQLITE_BUSY ("database is locked").
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         migrate(&mut conn)?;
         Ok(conn)

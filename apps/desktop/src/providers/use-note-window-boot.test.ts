@@ -9,6 +9,9 @@ const subscribeIndexWritten = vi.hoisted(() =>
 const subscribeNoteMoved = vi.hoisted(() =>
   vi.fn<(handler: (from: string, to: string) => void) => Promise<() => void>>(),
 )
+const subscribeWindowNavigate = vi.hoisted(() =>
+  vi.fn<(handler: (url: string) => void) => Promise<() => void>>(),
+)
 const followHealedMove = vi.hoisted(() => vi.fn())
 const isMainWindow = vi.hoisted(() => vi.fn(() => false))
 const dispatchDeepLink = vi.hoisted(() => vi.fn())
@@ -19,6 +22,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   windowBootstrap,
   subscribeIndexWritten,
   subscribeNoteMoved,
+  subscribeWindowNavigate,
 }))
 vi.mock('@/editor/move-note', () => ({ followHealedMove }))
 vi.mock('@/lib/window-role', () => ({ isMainWindow }))
@@ -48,6 +52,7 @@ beforeEach(() => {
   windowBootstrap.mockResolvedValue(BOOT)
   subscribeIndexWritten.mockResolvedValue(() => {})
   subscribeNoteMoved.mockResolvedValue(() => {})
+  subscribeWindowNavigate.mockResolvedValue(() => {})
 })
 
 describe('useNoteWindowBoot', () => {
@@ -57,9 +62,11 @@ describe('useNoteWindowBoot', () => {
     expect(dispatchDeepLink).toHaveBeenCalledWith(BOOT.initialDeepLink)
     expect(onFailed).not.toHaveBeenCalled()
     // The adopted window refetches on committed index writes — never its own
-    // indexer — and follows renames driven elsewhere.
+    // indexer — follows renames driven elsewhere, and honors focus-renavigate
+    // requests from a repeat ⌘-click on its target.
     expect(subscribeIndexWritten).toHaveBeenCalledWith(throttledInvalidateIndexQueries)
     expect(subscribeNoteMoved).toHaveBeenCalledWith(followHealedMove)
+    expect(subscribeWindowNavigate).toHaveBeenCalledWith(dispatchDeepLink)
   })
 
   it('skips the deep-link dispatch when none is pending (a reload)', async () => {

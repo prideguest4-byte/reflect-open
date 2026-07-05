@@ -4,6 +4,7 @@ import {
   isMobilePlatform,
   subscribeIndexWritten,
   subscribeNoteMoved,
+  subscribeWindowNavigate,
   windowBootstrap,
   type AppPlatform,
   type WindowBootstrap,
@@ -62,6 +63,9 @@ export function useNoteWindowBoot({ platform, onAdopted, onFailed }: NoteWindowB
         // Renames land in whichever window drove them; this window's open
         // sessions must follow or their next save resurrects the old path.
         await subscribe(subscribeNoteMoved(followHealedMove))
+        // Re-⌘-clicking this window's target focuses it AND re-navigates it
+        // there (it may have navigated elsewhere since it opened).
+        await subscribe(subscribeWindowNavigate(dispatchDeepLink))
         if (!active) {
           return
         }

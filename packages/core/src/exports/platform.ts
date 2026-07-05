@@ -22,6 +22,7 @@ export {
   type MobileStorageKind,
 } from '../ipc/commands'
 export { confirmQuit, subscribeQuitRequested } from '../app/quit'
+export { WINDOW_NAVIGATE_EVENT, subscribeWindowNavigate } from '../app/window-events'
 export { toggleDevtools } from '../app/devtools'
 export {
   agentSkillStatus,
