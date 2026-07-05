@@ -185,19 +185,33 @@ describe('useTaskSheetFinalizer', () => {
     expect(edit.mock.calls[0]?.[1]).toBe('alpha edited')
   })
 
-  it('ignores readDraft during the unmount flush — a torn-down surface can misreport empty', () => {
+  it('trusts readDraft during the unmount flush — a change-stream mirror has no teardown window', () => {
+    // readDraft is contractually fed by the surface's own onChange stream
+    // (never an imperative editor read), so its value — including a genuine
+    // clear — is authoritative even while the tree unmounts.
     const { result, unmount } = renderHook(() =>
-      useTaskSheetFinalizer(deps({ readDraft: () => '' })),
+      useTaskSheetFinalizer(deps({ readDraft: () => 'alpha typed live' })),
     )
 
     act(() => result.current.setDraft('alpha edited'))
     unmount()
 
-    // Trusting the misreported '' would delete a real task; the flush must
-    // resolve from the mirrored state instead.
-    expect(remove).not.toHaveBeenCalled()
     expect(edit).toHaveBeenCalledTimes(1)
-    expect(edit.mock.calls[0]?.[1]).toBe('alpha edited')
+    expect(edit.mock.calls[0]?.[1]).toBe('alpha typed live')
+  })
+
+  it('treats an empty readDraft as a genuine clear', () => {
+    // Under the change-stream contract '' can only mean the user emptied the
+    // draft, so an abandoning dismissal deletes rather than resurrecting text.
+    const { result } = renderHook(() =>
+      useTaskSheetFinalizer(deps({ readDraft: () => '' })),
+    )
+
+    act(() => result.current.setDraft('alpha edited'))
+    act(() => result.current.handleOpenChange(false))
+
+    expect(remove).toHaveBeenCalledTimes(1)
+    expect(edit).not.toHaveBeenCalled()
   })
 
   it('flushes like a dismissal when unmounted under an open sheet', () => {

@@ -89,19 +89,21 @@ export function MobileTaskEditSheet({
   // been rewritten by an action), so remount it via this seed to re-read it.
   const [editorSeed, setEditorSeed] = useState(0)
   const editorRef = useRef<NoteEditorHandle | null>(null)
-  // The editor's live markdown, or null when it can't be trusted:
-  // getMarkdown() coalesces "surface not ready" to '', indistinguishable from
-  // a genuine clear — and trusting it would delete the task (or feed the
-  // schedule rewrite an empty base). A real clear reaches the mirrored draft
-  // through onChange, so empty reads defer to the state.
-  const readLiveDraft = (): string | null => {
-    const markdown = editorRef.current?.getMarkdown()
-    return markdown === undefined || markdown === '' ? null : markdown
-  }
+  // The editor's live markdown, mirrored from its own onChange stream (the
+  // desktop task editor's currentRef pattern) so an edit the state hasn't
+  // re-rendered yet is never dropped or clobbered. Tagged with the editor
+  // instance: after a reseed remount the previous instance's leftovers read
+  // as null. Never an imperative getMarkdown() — that coalesces "not ready"
+  // and "torn down" into '', indistinguishable from a genuine clear, and an
+  // empty draft means delete.
+  const liveDraftRef = useRef<{ seed: number; markdown: string } | null>(null)
+  const readLiveDraft = (): string | null =>
+    liveDraftRef.current !== null && liveDraftRef.current.seed === editorSeed
+      ? liveDraftRef.current.markdown
+      : null
   // The commit/cancel/delete rules — baseline frozen at open, reseed on
   // reopen, dismissal vs navigate vs unmount — live in the finalizer. It
-  // resolves against the editor's live markdown (readDraft) so a change whose
-  // onChange hasn't re-rendered yet is never dropped by a commit.
+  // resolves against the live mirror (readDraft) with the state as fallback.
   const { draft, setDraft, resolve, handleOpenChange, closeHandled, closeNavigate } =
     useTaskSheetFinalizer({
       task,
@@ -115,6 +117,11 @@ export function MobileTaskEditSheet({
       },
     })
   const dueDate = draftDueDate(draft)
+
+  const handleChange = (markdown: string): void => {
+    liveDraftRef.current = { seed: editorSeed, markdown }
+    setDraft(markdown)
+  }
   // Stable while the editor is mounted: the flag only changes between visits
   // (the screen sets it before opening), never mid-edit, so the ref callback
   // can depend on it without re-attach churn.
@@ -188,13 +195,12 @@ export function MobileTaskEditSheet({
   }
 
   const schedule = (isoDate: string | null): void => {
-    // Derive from the editor's live markdown, not the mirrored state: a change
-    // whose onChange hasn't re-rendered yet must not be clobbered by the
-    // silent rewrite below.
+    // Base the rewrite on the freshest draft, then keep every mirror in step
+    // by hand: setMarkdown is silent (no onChange echo), so neither the live
+    // mirror nor the state (chip highlights) updates on its own.
     const next = withDraftDueDate(readLiveDraft() ?? draft, isoDate)
+    liveDraftRef.current = { seed: editorSeed, markdown: next }
     setDraft(next)
-    // setMarkdown is silent (no onChange echo), so the state write above keeps
-    // the mirrored draft (chip highlights) in step.
     editorRef.current?.setMarkdown(next)
     setShowCalendar(false)
   }
@@ -222,7 +228,7 @@ export function MobileTaskEditSheet({
           <NoteEditor
             key={editorSeed}
             initialContent={draft}
-            onChange={setDraft}
+            onChange={handleChange}
             markMode={markModeFromSyntax(settings.editorMarkdownSyntax)}
             spellCheck={settings.editorSpellCheck}
             // A one-line editor has nothing to reorder, so keep the gutter grip off.
