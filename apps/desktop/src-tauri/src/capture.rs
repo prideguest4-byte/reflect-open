@@ -316,11 +316,17 @@ const SHARED_GROUP_ID: &str = "group.app.reflect";
 
 /// The envelope spool directory inside the App Group container. The extension
 /// creates it lazily; a missing directory relays as zero.
+#[cfg(any(target_os = "ios", test))]
 const SHARED_INBOX_DIR: &str = "inbox";
 
 /// Where oversized shared spools are quarantined, beside the shared inbox —
 /// moved, never deleted, mirroring the drain's `.reflect/inbox-rejected/`.
 const SHARED_REJECTED_DIR: &str = "inbox-rejected";
+
+/// A `.json.tmp` older than this is debris from an extension crash between
+/// its write and its commit rename — swept so the container can't accrete
+/// junk (the drain applies the same rule to orphan screenshots).
+const SHARED_TMP_MAX_AGE: Duration = Duration::from_secs(60 * 60);
 
 /// Move every spooled `.json` envelope from the shared inbox into the graph's
 /// capture inbox. Copy + atomic write + delete-source, because the App Group
@@ -339,15 +345,28 @@ fn relay_shared_spools(shared_inbox: &Path, root: &Path) -> AppResult<u32> {
     for entry in entries {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
+        let metadata = entry.metadata()?;
         // Extension tmp files (`<id>.json.tmp`) and hidden files are not
-        // spool entries; only committed `.json` envelopes relay.
-        if !entry.metadata()?.is_file() || name.starts_with('.') || !name.ends_with(".json") {
+        // spool entries; only committed `.json` envelopes relay. Old tmp
+        // files are crash debris (write happened, commit rename didn't) —
+        // swept; the age guard covers an extension writing right now.
+        if !metadata.is_file() || name.starts_with('.') || !name.ends_with(".json") {
+            if metadata.is_file()
+                && name.ends_with(".json.tmp")
+                && metadata
+                    .modified()
+                    .ok()
+                    .and_then(|at| at.elapsed().ok())
+                    .is_some_and(|age| age > SHARED_TMP_MAX_AGE)
+            {
+                fs::remove_file(entry.path())?;
+            }
             continue;
         }
         let Ok(target) = inbox_file(root, &name) else {
             continue; // not a spool filename this app would ever address
         };
-        if entry.metadata()?.len() > INBOX_SPOOL_MAX_BYTES as u64 {
+        if metadata.len() > INBOX_SPOOL_MAX_BYTES as u64 {
             // Anything near the cap is not a capture. Quarantined beside the
             // shared inbox so it can't wedge the relay forever.
             let rejected = shared_inbox
@@ -634,7 +653,7 @@ mod tests {
         fs::create_dir_all(&shared_inbox).unwrap();
         fs::write(shared_inbox.join("7c9e6679.json"), r#"{"version":1}"#).unwrap();
         fs::write(shared_inbox.join("aabbccdd.json"), r#"{"version":1}"#).unwrap();
-        // Not spool entries: a mid-write tmp file and a hidden file.
+        // Not spool entries: a fresh mid-write tmp file and a hidden file.
         fs::write(shared_inbox.join("eeff0011.json.tmp"), "partial").unwrap();
         fs::write(shared_inbox.join(".DS_Store"), "junk").unwrap();
 
@@ -651,6 +670,28 @@ mod tests {
         assert!(!shared_inbox.join("aabbccdd.json").exists());
         assert!(shared_inbox.join("eeff0011.json.tmp").exists());
         assert!(shared_inbox.join(".DS_Store").exists());
+    }
+
+    #[test]
+    fn relay_sweeps_old_tmp_debris_but_never_young_tmp_files() {
+        let shared = tempfile::tempdir().unwrap();
+        let graph = tempfile::tempdir().unwrap();
+        let shared_inbox = shared.path().join(SHARED_INBOX_DIR);
+        fs::create_dir_all(&shared_inbox).unwrap();
+        let old = shared_inbox.join("dead.json.tmp");
+        let young = shared_inbox.join("live.json.tmp");
+        fs::write(&old, "crash debris").unwrap();
+        fs::write(&young, "being written").unwrap();
+        let file = fs::File::options().write(true).open(&old).unwrap();
+        let stale = std::time::SystemTime::now() - (SHARED_TMP_MAX_AGE + Duration::from_secs(60));
+        file.set_times(fs::FileTimes::new().set_modified(stale))
+            .unwrap();
+
+        let relayed = relay_shared_spools(&shared_inbox, graph.path()).unwrap();
+
+        assert_eq!(relayed, 0);
+        assert!(!old.exists());
+        assert!(young.exists());
     }
 
     #[test]

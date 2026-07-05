@@ -21,10 +21,14 @@ ExtensionClass.prototype = {
       pick('meta[name="og:description"]') ||
       pick('meta[name="description"]')
 
+    // getSelection() can be null (e.g. in some frame contexts); a throw here
+    // would skip completionFunction and fail the whole share.
+    var selection = window.getSelection()
+
     var content = {
       title: document.title,
       url: window.location.href,
-      selection: window.getSelection().toString(),
+      selection: (selection && selection.toString()) || '',
     }
     if (description) {
       content.description = description

@@ -37,7 +37,9 @@ enum CaptureInboxError: Error {
     case containerUnavailable
 }
 
-/// Field caps, applied at the producer so an envelope can never exceed the
+/// Field caps in UTF-16 code units — the unit zod's `.max()` counts on the
+/// drain side, so a capped value here can never be quarantined over length
+/// there. Applied at the producer so an envelope also stays inside the
 /// relay's 64 KiB spool cap. `textMax` mirrors `TEXT_CAPTURE_MAX_LENGTH`.
 private enum FieldCap {
     static let title = 1_000
@@ -143,9 +145,20 @@ enum CaptureInbox {
         return formatter.string(from: Date())
     }
 
+    /// Trim, then cap by UTF-16 code units (what the drain's zod `.max()`
+    /// counts — `String.count` counts grapheme clusters, and an emoji-heavy
+    /// share could pass a character cap yet fail the drain's). Backing off by
+    /// whole `Character`s keeps the cut on a grapheme boundary.
     private static func capped(_ value: String, at limit: Int) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.count > limit ? String(trimmed.prefix(limit)) : trimmed
+        guard trimmed.utf16.count > limit else {
+            return trimmed
+        }
+        var prefix = String(trimmed.prefix(limit))
+        while prefix.utf16.count > limit {
+            prefix.removeLast()
+        }
+        return prefix
     }
 
     private static func nonEmpty(_ value: String?) -> String? {

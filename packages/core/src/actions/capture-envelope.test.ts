@@ -143,4 +143,26 @@ describe('inboxEnvelopeSchema', () => {
   it('rejects a hybrid that satisfies neither shape fully', () => {
     expect(inboxEnvelopeSchema.safeParse({ ...VALID_TEXT, kind: undefined }).success).toBe(false)
   })
+
+  // Literal producer output from the iOS share extension's Swift structs
+  // (`gen/apple/ShareExtension/CaptureInbox.swift` — JSONEncoder, lowercased
+  // UUID, ISO-8601 with fractional seconds). The Swift side has no test
+  // harness, so this is what pins the third producer to the zod contract;
+  // update BOTH sides together.
+  it('accepts the Swift producer shapes verbatim', () => {
+    const swiftLink = JSON.parse(
+      '{"capturedAt":"2026-07-05T07:12:30.123Z","id":"7c9e6679-7425-40de-944b-e07fc1f90ae7",' +
+        '"metaDescription":"A page about examples.","selection":"quoted text",' +
+        '"source":"ios-share","title":"An article","url":"https://example.com/article","version":1}',
+    ) as unknown
+    const swiftText = JSON.parse(
+      '{"capturedAt":"2026-07-05T07:12:30.123Z","id":"7c9e6679-7425-40de-944b-e07fc1f90ae7",' +
+        '"kind":"append","source":"ios-share","text":"call the bank","version":1}',
+    ) as unknown
+
+    const link = inboxEnvelopeSchema.parse(swiftLink)
+    expect('kind' in link).toBe(false)
+    const text = inboxEnvelopeSchema.parse(swiftText)
+    expect('kind' in text && text.kind).toBe('append')
+  })
 })

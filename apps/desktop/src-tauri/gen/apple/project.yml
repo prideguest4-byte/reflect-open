@@ -82,6 +82,9 @@ targets:
         # version lives in one place and never drifts. Do not hardcode a literal.
         CFBundleShortVersionString: 0.4.0
         CFBundleVersion: 0.4.0.17
+    # CAUTION: `tauri ios init` rewrites BOTH committed .entitlements files
+    # to empty dicts — after a regen, restore the iCloud + App Group entries
+    # before committing (see docs/porting/reflect-mobile/share-extension.md).
     entitlements:
       path: reflect-open_iOS/reflect-open_iOS.entitlements
     scheme:

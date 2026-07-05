@@ -99,11 +99,25 @@ final class ShareState: ObservableObject {
         if let provider = first(of: attachments, conformingTo: UTType.propertyList.identifier) {
             provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier, options: nil) {
                 item, _ in
-                completion(pageCapture(from: item))
+                if let capture = pageCapture(from: item) {
+                    completion(capture)
+                } else {
+                    // Malformed preprocessing results must not fail a share
+                    // that also carries a plain URL or text attachment.
+                    extractPlain(from: attachments, completion: completion)
+                }
             }
             return
         }
+        extractPlain(from: attachments, completion: completion)
+    }
 
+    /// The non-Safari extraction paths: a URL attachment (title best-effort
+    /// from a plain-text sibling), else plain text.
+    private static func extractPlain(
+        from attachments: [NSItemProvider],
+        completion: @escaping (SharedCapture?) -> Void
+    ) {
         // A URL item; Chrome and friends share the page title as a separate
         // plain-text attachment (why the activation rule needs dictionary
         // version 2), so read it best-effort.
@@ -171,10 +185,9 @@ final class ShareState: ObservableObject {
         return nil
     }
 
-    /// Decode the JS preprocessor's results. A malformed dictionary (or a
-    /// non-web page the preprocessor couldn't run on) is a failed capture —
-    /// the URL fallback path never reaches here because property-list items
-    /// are checked first.
+    /// Decode the JS preprocessor's results. `nil` for a malformed dictionary
+    /// (or a page the preprocessor couldn't run on) — the caller then falls
+    /// back to the plain URL/text attachments instead of failing the share.
     private static func pageCapture(from item: NSSecureCoding?) -> SharedCapture? {
         guard
             let dict = item as? NSDictionary,
