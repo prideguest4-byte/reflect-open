@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { type OpenTask } from '@reflect/core'
 import { withCheckedMarker } from '@/lib/tasks/task-cache'
 import { taskKey } from '@/lib/tasks/task-identity'
@@ -82,25 +82,46 @@ export function hasRecentlyCompleted(root: string | null, key: string): boolean 
 }
 
 /**
- * Reconcile the struck set against a fresh open-tasks read. A struck task the
+ * The struck rows not superseded by a live open row — the pure core of the
+ * reconciliation, shared by the store prune ({@link reconcileRecentlyCompleted})
+ * and the render-time view in {@link useRecentlyCompleted}. A struck task the
  * index reports open again with a **newer** `updatedAt` was reopened at the
  * source note — its file was rewritten and reindexed since we completed it — so
  * the struck copy is dropped and the live open row shows instead of a stale
  * `[x]` shadow (whose reopen write-back would fail: the `[x]` line is no longer
  * in the note). An open row with an *unchanged* `updatedAt` is the
  * pre-completion index state — a refetch racing the completion's reindex — and
- * keeps its shadow, so a just-checked row can't flicker back to open.
+ * keeps its shadow, so a just-checked row can't flicker back to open. Returns
+ * the input array itself when nothing is dropped, so callers can compare by
+ * reference.
  */
-export function reconcileRecentlyCompleted(root: string | null, open: readonly OpenTask[]): void {
-  if (root !== graphRoot || tasks.length === 0 || open.length === 0) {
-    return
+function withoutReopened(
+  struck: readonly OpenTask[],
+  open: readonly OpenTask[],
+): readonly OpenTask[] {
+  if (struck.length === 0 || open.length === 0) {
+    return struck
   }
   const liveByKey = new Map(open.map((row) => [taskKey(row), row]))
-  const next = tasks.filter((struck) => {
-    const live = liveByKey.get(taskKey(struck))
-    return live === undefined || live.updatedAt <= struck.updatedAt
+  const next = struck.filter((task) => {
+    const live = liveByKey.get(taskKey(task))
+    return live === undefined || live.updatedAt <= task.updatedAt
   })
-  if (next.length !== tasks.length) {
+  return next.length === struck.length ? struck : next
+}
+
+/**
+ * Reconcile the struck set against a fresh open-tasks read, dropping every
+ * struck copy whose task was reopened at its source note ({@link
+ * withoutReopened}) — so `hasRecentlyCompleted` and the Archive count agree
+ * with what the surfaces render.
+ */
+export function reconcileRecentlyCompleted(root: string | null, open: readonly OpenTask[]): void {
+  if (root !== graphRoot) {
+    return
+  }
+  const next = withoutReopened(tasks, open)
+  if (next !== tasks) {
     tasks = next
     emit()
   }
@@ -123,9 +144,14 @@ function subscribe(listener: () => void): () => void {
 /**
  * The session's recently-completed tasks for `root` (empty for any other graph),
  * reconciled against the live open-tasks read: passing the open query's data in
- * is what lets a task reopened at its source note shed its struck shadow here
- * ({@link reconcileRecentlyCompleted}), so every surface that renders the set
- * gets that reconciliation for free.
+ * is what lets a task reopened at its source note shed its struck shadow, so
+ * every surface that renders the set gets that reconciliation for free.
+ *
+ * The returned view filters superseded rows **during render** — the very first
+ * render with the fresh open data already shows the live row, leaving no frame
+ * where the stale `[x]` shadow could still offer a doomed Reopen. The store
+ * itself is pruned in an effect ({@link reconcileRecentlyCompleted}) so
+ * `hasRecentlyCompleted` and the Archive count catch up right after.
  */
 export function useRecentlyCompleted(
   root: string | null,
@@ -137,7 +163,8 @@ export function useRecentlyCompleted(
     }
   }, [root, open])
   const getSnapshot = useCallback(() => (root === graphRoot ? tasks : EMPTY), [root])
-  return useSyncExternalStore(subscribe, getSnapshot)
+  const struck = useSyncExternalStore(subscribe, getSnapshot)
+  return useMemo(() => (open === undefined ? struck : withoutReopened(struck, open)), [struck, open])
 }
 
 /** Test-only: clear the singleton between cases. */

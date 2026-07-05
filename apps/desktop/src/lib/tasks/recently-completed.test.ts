@@ -4,6 +4,7 @@ import { type OpenTask } from '@reflect/core'
 import {
   archiveRecentlyCompleted,
   forgetRecentlyCompleted,
+  hasRecentlyCompleted,
   markRecentlyCompleted,
   reconcileRecentlyCompleted,
   resetRecentlyCompleted,
@@ -130,9 +131,33 @@ describe('recently-completed', () => {
     act(() => markRecentlyCompleted('/g', [task({ notePath: 'a.md', markerOffset: 2, updatedAt: 100 })]))
     expect(result.current).toHaveLength(1)
 
-    // A fresh open read carrying the reopened row (newer updatedAt) sheds the shadow.
+    // A fresh open read carrying the reopened row (newer updatedAt) sheds the
+    // shadow from the view AND prunes the store, so the Archive count and
+    // hasRecentlyCompleted agree with what renders.
     rerender({ open: [task({ notePath: 'a.md', markerOffset: 2, updatedAt: 200 })] })
     expect(result.current).toEqual([])
+    expect(hasRecentlyCompleted('/g', 'a.md:2')).toBe(false)
+  })
+
+  it('excludes a reopened task during the render that sees it, before the store prune', () => {
+    // Render-phase capture: each entry is what a render (not an effect) returned,
+    // so a superseded shadow surviving into the first fresh-data render would
+    // record a 1 here even though a later effect prunes it.
+    const lengths: number[] = []
+    const { rerender } = renderHook(
+      ({ open }: { open: readonly OpenTask[] | undefined }) => {
+        const rows = useRecentlyCompleted('/g', open)
+        lengths.push(rows.length)
+        return rows
+      },
+      { initialProps: { open: undefined as readonly OpenTask[] | undefined } },
+    )
+    act(() => markRecentlyCompleted('/g', [task({ notePath: 'a.md', markerOffset: 2, updatedAt: 100 })]))
+    const renders = lengths.length
+
+    rerender({ open: [task({ notePath: 'a.md', markerOffset: 2, updatedAt: 200 })] })
+    expect(lengths.slice(renders)).not.toContain(1)
+    expect(lengths.at(-1)).toBe(0)
   })
 
   it('is scoped to a graph root — switching graphs yields an empty set', () => {
