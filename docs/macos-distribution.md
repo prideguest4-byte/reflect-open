@@ -289,6 +289,9 @@ on the runner keychain setup.
   entitlements with `codesign -d --entitlements :- Reflect.app/Contents/MacOS/reflect`.
   Sidecars must not carry the app's restricted iCloud entitlements; the release verifier
   launches both sidecars to catch this.
+- **Intel sidecar launch fails on Apple Silicon with `Bad CPU type in executable`** —
+  install Rosetta (`softwareupdate --install-rosetta`) or verify the Intel target on an
+  Intel runner.
 - **`rejected, source=Unnotarized Developer ID`** — signing worked but the artifact has no
   notarization ticket; rerun without `--no-notarize`.
 - **Notarization hangs** — Apple's service occasionally queues submissions for a long

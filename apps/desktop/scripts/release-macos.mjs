@@ -640,9 +640,9 @@ function expectCheck(description, command, args, expected) {
   log(`${description}: ok`)
 }
 
-function canLaunchTarget(target) {
-  if (target === APPLE_SILICON_MAC_TARGET) return process.arch === 'arm64'
-  if (target === INTEL_MAC_TARGET) return process.arch === 'x64'
+export function canLaunchTarget(target, processArch = process.arch) {
+  if (target === APPLE_SILICON_MAC_TARGET) return processArch === 'arm64'
+  if (target === INTEL_MAC_TARGET) return processArch === 'x64' || processArch === 'arm64'
   return true
 }
 

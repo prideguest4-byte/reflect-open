@@ -5,6 +5,7 @@ import { expect, test } from 'vitest'
 
 import {
   appendMacDownloadNotice,
+  canLaunchTarget,
   createBetaFeedReleaseArgs,
   createDmgArgs,
   createGenerateReleaseNotesArgs,
@@ -209,6 +210,13 @@ test('macOS entitlements resolve through platform and flavor overlays', () => {
   expect(macosEntitlementsPath('stable')).toBe(join(srcTauri, 'Entitlements.plist'))
   expect(macosEntitlementsPath('beta')).toBe(join(srcTauri, 'Entitlements.plist'))
   expect(macosEntitlementsPath('dev')).toBe(join(srcTauri, 'Entitlements.dev.plist'))
+})
+
+test('sidecar launch checks cover native targets and Intel under Rosetta', () => {
+  expect(canLaunchTarget('aarch64-apple-darwin', 'arm64')).toBe(true)
+  expect(canLaunchTarget('aarch64-apple-darwin', 'x64')).toBe(false)
+  expect(canLaunchTarget('x86_64-apple-darwin', 'x64')).toBe(true)
+  expect(canLaunchTarget('x86_64-apple-darwin', 'arm64')).toBe(true)
 })
 
 test('updater archive is created from the finalized app bundle', () => {
