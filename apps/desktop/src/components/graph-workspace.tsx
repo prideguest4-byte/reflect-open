@@ -3,6 +3,7 @@ import type { GraphInfo } from '@reflect/core'
 import { PaletteProvider } from '@/components/command-palette/palette-provider'
 import { NoteWindowContent } from '@/components/note-window-content'
 import { WorkspaceContent } from '@/components/workspace-content'
+import { getInitialWindowRoute } from '@/lib/windows/initial-window-route'
 import { isMainWindow } from '@/lib/windows/window-role'
 import { AssetDescribeProvider } from '@/providers/asset-describe-provider'
 import { AudioMemoProvider } from '@/providers/audio-memo-provider'
@@ -28,8 +29,12 @@ interface GraphWorkspaceProps {
  * fresh history.
  */
 export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
+  // A note window's first route is its ⌘-clicked target (seeded by the boot
+  // hook) — starting on the default today route would flash the daily note
+  // until the deep link navigated.
+  const initialRoute = isMainWindow() ? null : getInitialWindowRoute()
   return (
-    <RouterProvider key={graph.root}>
+    <RouterProvider key={graph.root} {...(initialRoute !== null ? { initialRoute } : {})}>
       <SyncProvider graph={graph}>
         <PaletteProvider>
           <ShortcutsProvider>

@@ -67,10 +67,14 @@ under every window at once.
    non-main label and takes the adoption leg (`useNoteWindowBoot`):
    `window_bootstrap` returns the graph info + index generation (unbumped —
    pinned by the `session_adoption_reads_never_bump_generations` test) and
-   drains the pending deep link, which is fed through the normal deep-link
-   intake. It buffers until the workspace's `DeepLinkProvider` attaches,
-   then navigates — the same path an OS-delivered `reflect://` URL takes,
-   including `openNote` resolution and error surfacing.
+   drains the pending deep link. Because ⌘-click builds **path-shaped**
+   links, the route usually derives synchronously
+   (`initialRouteForDeepLink`) and seeds the router directly — the window's
+   first workspace render is already the clicked note, no flash of today's
+   daily note. Only a target that needs the index (an id/title-shaped link)
+   rides the normal deep-link intake, buffering until the workspace's
+   `DeepLinkProvider` attaches — the same path an OS-delivered `reflect://`
+   URL takes, including `openNote` resolution and error surfacing.
 4. The window renders `NoteWindowContent`: the routed view only, with daily
    targets shown as a single lazy `NotePane` (a daily is treated like any
    other note here, day label standing in for the title). The OS window

@@ -23,6 +23,10 @@ vi.mock('@/lib/windows/window-role', () => ({ isMainWindow }))
 vi.mock('@/lib/deep-links/intake', () => ({ dispatchDeepLink }))
 vi.mock('@/lib/query-client', () => ({ throttledInvalidateIndexQueries }))
 
+import {
+  getInitialWindowRoute,
+  resetInitialWindowRouteForTests,
+} from '@/lib/windows/initial-window-route'
 import { useNoteWindowBoot } from './use-note-window-boot'
 
 const BOOT: WindowBootstrap = {
@@ -42,6 +46,7 @@ function mount() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetInitialWindowRouteForTests()
   isMainWindow.mockReturnValue(false)
   windowBootstrap.mockResolvedValue(BOOT)
   subscribeIndexWritten.mockResolvedValue(() => {})
@@ -49,16 +54,27 @@ beforeEach(() => {
 })
 
 describe('useNoteWindowBoot', () => {
-  it('adopts the open sessions and dispatches the initial deep link', async () => {
+  it('adopts the open sessions and seeds the router from a path-shaped link', async () => {
     const { onAdopted, onFailed } = mount()
     await waitFor(() => expect(onAdopted).toHaveBeenCalledWith(BOOT))
-    expect(dispatchDeepLink).toHaveBeenCalledWith(BOOT.initialDeepLink)
+    // ⌘-click links resolve synchronously — the route slot is seeded and the
+    // intake is bypassed, so the window never flashes today's daily note.
+    expect(getInitialWindowRoute()).toEqual({ kind: 'note', path: 'notes/foo.md' })
+    expect(dispatchDeepLink).not.toHaveBeenCalled()
     expect(onFailed).not.toHaveBeenCalled()
     // The adopted window refetches on committed index writes — never its own
     // indexer — and honors focus-renavigate requests from a repeat ⌘-click
     // on its target. (Rename follow-through is desktop-root's, all windows.)
     expect(subscribeIndexWritten).toHaveBeenCalledWith(throttledInvalidateIndexQueries)
     expect(subscribeWindowNavigate).toHaveBeenCalledWith(dispatchDeepLink)
+  })
+
+  it('falls back to the intake for a target only the index can answer', async () => {
+    windowBootstrap.mockResolvedValue({ ...BOOT, initialDeepLink: 'reflect://note/Meeting%20Notes' })
+    const { onAdopted } = mount()
+    await waitFor(() => expect(onAdopted).toHaveBeenCalled())
+    expect(getInitialWindowRoute()).toBeNull()
+    expect(dispatchDeepLink).toHaveBeenCalledWith('reflect://note/Meeting%20Notes')
   })
 
   it('skips the deep-link dispatch when none is pending (a reload)', async () => {

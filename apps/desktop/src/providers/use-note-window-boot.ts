@@ -11,6 +11,10 @@ import {
 import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { throttledInvalidateIndexQueries } from '@/lib/query-client'
 import { trackSubscriptions } from '@/lib/subscriptions'
+import {
+  initialRouteForDeepLink,
+  setInitialWindowRoute,
+} from '@/lib/windows/initial-window-route'
 import { isMainWindow } from '@/lib/windows/window-role'
 
 /** The graph provider's channels for the note-window boot leg. */
@@ -28,9 +32,13 @@ export interface NoteWindowBootOptions {
  * whose generation bumps would strand every command the main window has
  * pinned — and runs no index lifecycle of its own. The Rust `index:written`
  * broadcast (fired after the main window's applies commit) keeps this
- * window's index-backed queries fresh, and the window's initial deep link
- * rides the ordinary intake, buffering until the workspace's
- * DeepLinkProvider attaches.
+ * window's index-backed queries fresh.
+ *
+ * The initial deep link seeds the router directly whenever it resolves
+ * synchronously (⌘-click builds path-shaped links), so the window's first
+ * workspace render is already the clicked note — no flash of today's daily
+ * note. Only a target that needs the index (an id/title-shaped link) rides
+ * the ordinary intake, buffering until DeepLinkProvider attaches.
  *
  * A no-op everywhere else (main window, mobile, browser dev).
  */
@@ -45,9 +53,13 @@ export function useNoteWindowBoot({ platform, onAdopted, onFailed }: NoteWindowB
       try {
         const boot = await windowBootstrap()
         // The pending deep link is drained server-side by the bootstrap, so
-        // dispatch it even if this effect was superseded (StrictMode's probe
-        // mount) — the intake buffers it for whichever mount survives.
-        if (boot.initialDeepLink !== null) {
+        // act on it even if this effect was superseded (StrictMode's probe
+        // mount) — the route slot and the intake both outlive the effect,
+        // serving whichever mount survives.
+        const seeded = initialRouteForDeepLink(boot.initialDeepLink)
+        if (seeded !== null) {
+          setInitialWindowRoute(seeded)
+        } else if (boot.initialDeepLink !== null) {
           dispatchDeepLink(boot.initialDeepLink)
         }
         await subscriptions.add(subscribeIndexWritten(throttledInvalidateIndexQueries))
