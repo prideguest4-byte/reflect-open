@@ -89,6 +89,15 @@ export function MobileTaskEditSheet({
   // been rewritten by an action), so remount it via this seed to re-read it.
   const [editorSeed, setEditorSeed] = useState(0)
   const editorRef = useRef<NoteEditorHandle | null>(null)
+  // The editor's live markdown, or null when it can't be trusted:
+  // getMarkdown() coalesces "surface not ready" to '', indistinguishable from
+  // a genuine clear — and trusting it would delete the task (or feed the
+  // schedule rewrite an empty base). A real clear reaches the mirrored draft
+  // through onChange, so empty reads defer to the state.
+  const readLiveDraft = (): string | null => {
+    const markdown = editorRef.current?.getMarkdown()
+    return markdown === undefined || markdown === '' ? null : markdown
+  }
   // The commit/cancel/delete rules — baseline frozen at open, reseed on
   // reopen, dismissal vs navigate vs unmount — live in the finalizer. It
   // resolves against the editor's live markdown (readDraft) so a change whose
@@ -99,7 +108,7 @@ export function MobileTaskEditSheet({
       open,
       onOpenChange,
       actions,
-      readDraft: () => editorRef.current?.getMarkdown() ?? null,
+      readDraft: readLiveDraft,
       onReseed: () => {
         setShowCalendar(false)
         setEditorSeed((seed) => seed + 1)
@@ -182,7 +191,7 @@ export function MobileTaskEditSheet({
     // Derive from the editor's live markdown, not the mirrored state: a change
     // whose onChange hasn't re-rendered yet must not be clobbered by the
     // silent rewrite below.
-    const next = withDraftDueDate(editorRef.current?.getMarkdown() ?? draft, isoDate)
+    const next = withDraftDueDate(readLiveDraft() ?? draft, isoDate)
     setDraft(next)
     // setMarkdown is silent (no onChange echo), so the state write above keeps
     // the mirrored draft (chip highlights) in step.
