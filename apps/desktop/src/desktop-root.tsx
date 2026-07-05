@@ -1,6 +1,7 @@
 import { useEffect, type ReactElement } from 'react'
-import { hasBridge } from '@reflect/core'
+import { hasBridge, subscribeNoteMoved } from '@reflect/core'
 import { App } from '@/app'
+import { followHealedMove } from '@/editor/move-note'
 import { OperationsStatus } from '@/components/operations-status'
 import { UpdateToast } from '@/components/update-toast'
 import { Toaster } from '@/components/ui/sonner'
@@ -31,6 +32,30 @@ export function DesktopRoot(): ReactElement {
     startDeepLinkListener().catch((cause: unknown) => {
       console.error('deep link listener failed to start:', cause)
     })
+  }, [])
+
+  // Renames commit in whichever window drove them (a title edit works in
+  // note windows too) and broadcast on `note:moved` — EVERY window follows,
+  // or its open sessions and router history keep the dead path. The origin
+  // window also followed in-process; the echo is idempotent (the session no
+  // longer matches `from`, and re-routing an absent entry is a no-op).
+  useEffect(() => {
+    if (!hasBridge()) {
+      return
+    }
+    let disposed = false
+    let unlisten: (() => void) | null = null
+    void subscribeNoteMoved(followHealedMove).then((dispose) => {
+      if (disposed) {
+        dispose()
+      } else {
+        unlisten = dispose
+      }
+    })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
   }, [])
 
   return (

@@ -3,13 +3,11 @@ import {
   errorMessage,
   isMobilePlatform,
   subscribeIndexWritten,
-  subscribeNoteMoved,
   subscribeWindowNavigate,
   windowBootstrap,
   type AppPlatform,
   type WindowBootstrap,
 } from '@reflect/core'
-import { followHealedMove } from '@/editor/move-note'
 import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { throttledInvalidateIndexQueries } from '@/lib/query-client'
 import { isMainWindow } from '@/lib/window-role'
@@ -60,9 +58,8 @@ export function useNoteWindowBoot({ platform, onAdopted, onFailed }: NoteWindowB
           dispatchDeepLink(boot.initialDeepLink)
         }
         await subscribe(subscribeIndexWritten(throttledInvalidateIndexQueries))
-        // Renames land in whichever window drove them; this window's open
-        // sessions must follow or their next save resurrects the old path.
-        await subscribe(subscribeNoteMoved(followHealedMove))
+        // (Rename follow-through lives in desktop-root — every window needs
+        // it, not just this one.)
         // Re-⌘-clicking this window's target focuses it AND re-navigates it
         // there (it may have navigated elsewhere since it opened).
         await subscribe(subscribeWindowNavigate(dispatchDeepLink))

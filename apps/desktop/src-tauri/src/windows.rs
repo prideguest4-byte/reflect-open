@@ -17,6 +17,7 @@ use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use crate::db::{self, IndexState};
 use crate::error::{AppError, AppResult};
 use crate::fs::{self, GraphInfo, GraphState};
+use crate::quit::QuitState;
 
 /// Deep links waiting for their window's first `window_bootstrap` call,
 /// keyed by window label. Entries are one-shot: bootstrapping drains them.
@@ -68,11 +69,18 @@ pub async fn open_note_window(
     app: tauri::AppHandle,
     graph: State<'_, GraphState>,
     init: State<'_, WindowInit>,
+    quit: State<'_, QuitState>,
 ) -> AppResult<()> {
     if !deep_link.starts_with("reflect://") {
         return Err(AppError::parse(format!(
             "not a reflect:// link: {deep_link}"
         )));
+    }
+    // Mid-quit, a new webview would never join the flush handshake's pending
+    // set — the armed windows' confirms would exit underneath it. Refuse
+    // (best-effort: the ⌘-click site degrades to in-window navigation).
+    if quit.armed() {
+        return Err(AppError::io("the app is quitting"));
     }
     fs::current_graph_info(&graph)?;
 

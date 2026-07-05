@@ -39,6 +39,13 @@ impl QuitState {
         pending.extend(windows);
     }
 
+    /// Whether a deferred quit is waiting on confirmations. Window creation
+    /// checks this: a webview born mid-handshake would never join the
+    /// pending set, and the armed windows' confirms would exit underneath it.
+    pub fn armed(&self) -> bool {
+        !self.lock().is_empty()
+    }
+
     /// Settle one window's obligation — its flush confirmed, or the window
     /// was destroyed and can no longer confirm. True when it was the last
     /// one owed; idempotent per label, so a confirm followed by a destroy
