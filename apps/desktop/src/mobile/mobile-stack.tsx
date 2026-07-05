@@ -27,11 +27,12 @@ interface StackLayer {
 }
 
 /**
- * Whether a route renders as a card pushed over a tab root. Only note
- * screens stack; everything else (daily, All, search-as-All) is a root.
+ * Whether a route renders as a card pushed over a tab root. Note screens and
+ * the settings screens (Settings, its Graphs sub-screen) stack; everything
+ * else (daily, All, search-as-All) is a root.
  */
 function isStacked(route: Route): boolean {
-  return route.kind === 'note'
+  return route.kind === 'note' || route.kind === 'settings' || route.kind === 'graphs'
 }
 
 /**
@@ -44,6 +45,10 @@ function layerKey(route: Route): string {
   switch (route.kind) {
     case 'note':
       return `note:${route.path}`
+    case 'settings':
+      return 'settings'
+    case 'graphs':
+      return 'graphs'
     case 'allNotes':
     case 'search':
       return 'all'

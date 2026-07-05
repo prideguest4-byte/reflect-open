@@ -64,6 +64,9 @@ export function RouteContent(): ReactElement {
       // Owns its scroll container (the message list pins to the bottom while
       // streaming), so no ScrollRestored wrapper — same shape as All Notes.
       return <ChatScreen />
+    case 'graphs':
+    // The graph-switcher route is a mobile settings sub-screen; on desktop
+    // graph switching lives in the sidebar footer, so it renders as settings.
     case 'settings':
       // The section navigator floats in the left gutter — absolutely
       // positioned off the centered column so the column never shifts — and

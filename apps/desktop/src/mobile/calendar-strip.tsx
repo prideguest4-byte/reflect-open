@@ -1,11 +1,12 @@
 import { useEffect, useRef, type ReactElement } from 'react'
+import { Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { addDaysIso } from '@/lib/dates'
 import { monthLabel, weekAtIndex, weekStartOf } from '@/mobile/calendar'
-import { SettingsSheet } from '@/mobile/settings-sheet'
 import { useWeekStrip } from '@/mobile/use-week-strip'
 import { WeekRow } from '@/mobile/week-row'
 import { useSettings } from '@/providers/settings-provider'
+import { useRouter } from '@/routing/router'
 
 interface CalendarStripProps {
   /** The selected day (the centered carousel slide). */
@@ -35,6 +36,7 @@ interface CalendarStripProps {
  */
 export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStripProps): ReactElement {
   const { settings } = useSettings()
+  const { navigate } = useRouter()
   const { emblaRef, weekWindow, displayedWeekStart, showWeekOf } = useWeekStrip(
     date,
     settings.weekStartDay,
@@ -73,7 +75,15 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
           regardless of the gear (left) and the conditional Today button (right). */}
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 px-1 py-1">
         <div className="justify-self-start">
-          <SettingsSheet />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9"
+            aria-label="Settings"
+            onClick={() => navigate({ kind: 'settings' })}
+          >
+            <Settings />
+          </Button>
         </div>
         <h1 className="min-w-0 truncate text-center text-base font-semibold">
           <button type="button" aria-label="Jump to today" onClick={jumpToToday}>

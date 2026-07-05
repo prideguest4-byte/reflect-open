@@ -19,6 +19,9 @@ export type Route =
   | { kind: 'tasks' }
   | { kind: 'chat' }
   | { kind: 'settings' }
+  // The graph-switcher screen — a mobile settings sub-screen; desktop renders
+  // it as the settings screen (its switcher lives in the sidebar footer).
+  | { kind: 'graphs' }
 
 /** Structural route equality (used to avoid pushing no-op history entries). */
 export function routesEqual(a: Route, b: Route): boolean {
@@ -30,6 +33,7 @@ export function routesEqual(a: Route, b: Route): boolean {
     case 'tasks':
     case 'chat':
     case 'settings':
+    case 'graphs':
       return true
     case 'daily':
       return a.date === (b as Extract<Route, { kind: 'daily' }>).date

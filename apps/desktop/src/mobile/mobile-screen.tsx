@@ -2,7 +2,9 @@ import { type ReactElement } from 'react'
 import { useToday } from '@/lib/use-today'
 import { MobileAllNotes } from '@/mobile/screens/all-notes'
 import { MobileDaily } from '@/mobile/screens/daily'
+import { MobileGraphs } from '@/mobile/screens/graphs'
 import { MobileNote } from '@/mobile/screens/note'
+import { MobileSettings } from '@/mobile/screens/settings'
 import { MobileTasks } from '@/mobile/screens/tasks'
 import type { AllNotesFilters } from '@/mobile/search-filters/filter-state'
 import type { Route } from '@/routing/route'
@@ -25,8 +27,9 @@ interface MobileScreenProps {
 /**
  * The mobile route switch (Plan 19): the same typed `Route` history desktop
  * uses, one screen per route — the daily spine, notes, the All
- * tab (which also hosts `search` entries), and the Tasks tab. Kinds without
- * a mobile surface yet (chat, settings) fall back to today. Today is `useToday()`'s **live** date, so an app left open
+ * tab (which also hosts `search` entries), the Tasks tab, and the pushed
+ * Settings / Graphs cards. Kinds without a mobile surface yet (chat) fall
+ * back to today. Today is `useToday()`'s **live** date, so an app left open
  * overnight rolls to the new day's note at midnight instead of editing
  * yesterday's.
  */
@@ -71,6 +74,10 @@ export function MobileScreen({
       )
     case 'tasks':
       return <MobileTasks key="tasks" />
+    case 'settings':
+      return <MobileSettings key="settings" />
+    case 'graphs':
+      return <MobileGraphs key="graphs" />
     default:
       return <MobileDaily key="daily" date={today} />
   }
