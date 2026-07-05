@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import {
   ArrowRight,
   CalendarDays,
@@ -60,11 +60,25 @@ export function MobileTaskEditSheet({
   const [showCalendar, setShowCalendar] = useState(false)
   // Set once an action button has already written/closed, so the dismissal
   // commit doesn't double-write on the close that follows.
-  const handledRef = useRef(false)
+  const [handled, setHandled] = useState(false)
+  // The sheet stays mounted after closing (the exit animation needs content),
+  // so re-opening it for the same task must reseed everything: the draft from
+  // the row's current raw (an action may have rewritten it), the calendar
+  // collapsed, and the handled flag cleared — else a visit after Complete/
+  // Convert/Open note would silently drop its edits on dismiss.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) {
+      setHandled(false)
+      setDraft(initial)
+      setShowCalendar(false)
+    }
+  }
   const dueDate = draftDueDate(draft)
 
   const close = (): void => {
-    handledRef.current = true
+    setHandled(true)
     onOpenChange(false)
   }
 
@@ -82,7 +96,7 @@ export function MobileTaskEditSheet({
   }
 
   const handleOpenChange = (nextOpen: boolean): void => {
-    if (!nextOpen && !handledRef.current) {
+    if (!nextOpen && !handled) {
       commitDraft()
     }
     onOpenChange(nextOpen)

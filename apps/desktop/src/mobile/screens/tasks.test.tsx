@@ -279,6 +279,29 @@ describe('MobileTasks', () => {
     view.unmount()
   })
 
+  it('commits edits from a sheet re-opened after an action closed it', async () => {
+    getOpenTasks.mockResolvedValue([task({ text: 'buy milk' })])
+    const user = userEvent.setup()
+    const view = renderScreen()
+
+    // First visit ends through an action button (Complete), which skips the
+    // dismissal commit. The sheet stays mounted for the same task afterwards.
+    await user.click(await view.findByRole('button', { name: 'Edit: buy milk' }))
+    await user.click(view.getByRole('button', { name: 'Complete' }))
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(1))
+
+    // Second visit (the struck row): its edits must still commit on dismiss.
+    await user.click(view.getByRole('button', { name: 'Edit: buy milk' }))
+    const input = asTextArea(view.getByRole('textbox', { name: 'Task text' }))
+    await user.clear(input)
+    await user.type(input, 'buy oat milk')
+    await user.click(view.getByRole('button', { name: 'dismiss-drawer' }))
+
+    expect(editTask).toHaveBeenCalledTimes(1)
+    expect(editTask.mock.calls[0]?.[1]).toBe('buy oat milk')
+    view.unmount()
+  })
+
   it('converts to a bullet from the sheet', async () => {
     getOpenTasks.mockResolvedValue([task({ text: 'buy milk' })])
     const user = userEvent.setup()

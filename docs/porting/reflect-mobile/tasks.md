@@ -58,12 +58,13 @@ those were desktop-only or nonexistent in V1.
   screen over search getters.
 - **Reuse desktop's grouping and semantics verbatim** (V1-parity there
   was already litigated on desktop). The mobile-specific work is
-  interaction: touch checkboxes with haptics, the quick-edit modal, and
-  drag-between-groups as the touch equivalent of desktop's scheduling
-  calendar.
-- **Drag activation distance matters.** V1's 8 pt PointerSensor threshold
-  is the difference between "drag to schedule" and "every tap flickers a
-  drag" — port the constraint, whatever the DnD implementation.
+  interaction: touch checkboxes with haptics, the quick-edit sheet, and
+  scheduling — shipped as a date picker in the sheet rather than
+  drag-between-groups (see the status note above).
+- **If drag-to-schedule is ever added: activation distance matters.**
+  V1's 8 pt PointerSensor threshold is the difference between "drag to
+  schedule" and "every tap flickers a drag" — port the constraint,
+  whatever the DnD implementation.
 - Editing a task from the list writes through the same note-session write
   path as any edit (no second write path), which also keeps the
   in-process file-change seam and sync dirty-marking working for free.
@@ -74,7 +75,7 @@ those were desktop-only or nonexistent in V1.
 | ------------------------------------------- | -------------------------------------------------------------- |
 | Task nodes in ProseMirror docs              | `- [ ]` markdown lines, indexed (desktop Plan 18, shipped)     |
 | Overdue / Today / Upcoming / Done groups    | Desktop v2 buckets, reused verbatim                            |
-| Drag between groups = reschedule            | Touch scheduling over `setTaskDueDate`                         |
+| Drag between groups = reschedule            | Sheet date picker over `setTaskDueDate` (drag not ported)      |
 | Quick-edit modal (edit without opening)     | Port: bottom sheet over the task's note session                |
 | Square checkbox + haptic + strikethrough    | Port as-is                                                     |
 | Filters modal                               | Follow desktop's filter set                                    |

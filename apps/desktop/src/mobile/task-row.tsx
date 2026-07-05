@@ -53,11 +53,22 @@ export function MobileTaskRow({ task, showSource, onEdit }: MobileTaskRowProps):
           <Circle aria-hidden className="size-5" strokeWidth={2} />
         )}
       </button>
-      <button
-        type="button"
+      {/* A div with the button role, not a real <button>: the markdown inside
+          can contain links, and interactive content can't nest in a button
+          (desktop's row body makes the same trade). TaskText itself is
+          pointer-events-none, so taps land here. */}
+      <div
+        role="button"
+        tabIndex={0}
         aria-label={`Edit: ${label}`}
         onClick={() => onEdit(task)}
-        className="flex min-w-0 flex-1 items-start gap-3 py-3 pr-4 text-left"
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onEdit(task)
+          }
+        }}
+        className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 py-3 pr-4 text-left focus-visible:outline-none"
       >
         <span
           className={cn(
@@ -74,7 +85,7 @@ export function MobileTaskRow({ task, showSource, onEdit }: MobileTaskRowProps):
             {formatShortDate(task.dailyDate, settings.dateFormat)}
           </span>
         ) : null}
-      </button>
+      </div>
     </li>
   )
 }

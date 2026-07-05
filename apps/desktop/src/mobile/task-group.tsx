@@ -72,6 +72,10 @@ export function MobileTaskGroup({
       <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface-sunken px-4 py-1.5">
         <h2 className={cn('flex min-w-0 items-center gap-2 text-sm font-medium', colorClass)}>
           {icon}
+          {/* The pin icon alone is invisible to screen readers (aria-hidden). */}
+          {group.kind === 'note' && group.tasks[0]?.isPinned ? (
+            <span className="sr-only">Pinned:</span>
+          ) : null}
           {group.kind === 'note' && notePath !== null ? (
             <button type="button" onClick={() => onOpen(notePath)} className="truncate">
               {group.label}
