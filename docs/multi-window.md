@@ -158,3 +158,11 @@ can contend; the writer connection carries a 5s `busy_timeout`
   external-change reconciliation, the same path an iCloud edit takes.
 - A note window's settings screen shows sync as loading (its controller is
   deliberately inert).
+- **Settings are effectively main-window-owned.** Note windows mount no
+  settings-writing surface (no sidebar/palette/shortcuts/settings route),
+  so their quit-time `flushSettings` is a comparison no-op — the provider
+  only writes when the window's own doc diverged from its confirmed
+  baseline. Constraint for future work: settings saves are full-document,
+  so before any surface lets a note window call `updateSettings`, add a
+  `settings:changed` broadcast (à la `index:written`) or a stale-base save
+  would revert other windows' changes.
