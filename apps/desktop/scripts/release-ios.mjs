@@ -83,8 +83,7 @@ export function createTauriIosBuildArgs({
 
 /** Build the environment Tauri's iOS signing layer needs for API-key auth. */
 export function createTauriIosBuildEnv({ apiKeyCredentials = null, baseEnv = process.env } = {}) {
-  if (!apiKeyCredentials?.env) return baseEnv
-  return { ...baseEnv, ...apiKeyCredentials.env }
+  return { ...baseEnv, CI: 'true', ...(apiKeyCredentials?.env ?? {}) }
 }
 
 /** Build the altool command that uploads an IPA to App Store Connect/TestFlight. */

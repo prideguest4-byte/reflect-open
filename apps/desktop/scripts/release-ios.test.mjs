@@ -64,6 +64,7 @@ test('iOS release builds expose the staged API key path to Tauri signing', () =>
       baseEnv: {
         APPLE_API_ISSUER: 'issuer-uuid',
         APPLE_API_KEY: 'ABC123DEFG',
+        CI: '',
       },
       apiKeyCredentials: {
         env: {
@@ -75,6 +76,7 @@ test('iOS release builds expose the staged API key path to Tauri signing', () =>
     APPLE_API_ISSUER: 'issuer-uuid',
     APPLE_API_KEY: 'ABC123DEFG',
     APPLE_API_KEY_PATH: '/tmp/AuthKey_ABC123DEFG.p8',
+    CI: 'true',
   })
 })
 
