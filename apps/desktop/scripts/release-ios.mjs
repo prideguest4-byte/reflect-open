@@ -81,6 +81,12 @@ export function createTauriIosBuildArgs({
   return args
 }
 
+/** Build the environment Tauri's iOS signing layer needs for API-key auth. */
+export function createTauriIosBuildEnv({ apiKeyCredentials = null, baseEnv = process.env } = {}) {
+  if (!apiKeyCredentials?.env) return baseEnv
+  return { ...baseEnv, ...apiKeyCredentials.env }
+}
+
 /** Build the altool command that uploads an IPA to App Store Connect/TestFlight. */
 export function createAltoolUploadArgs({ authArgs, ipa, wait }) {
   const args = ['altool', '--upload-package', ipa, ...authArgs, '--output-format', 'json', '--show-progress']
@@ -216,6 +222,7 @@ function resolveApiKeyCredentials({ requirePrivateKey }) {
   return {
     altoolArgs: createApiKeyAltoolArgs({ issuerId: APPLE_API_ISSUER, keyId: APPLE_API_KEY, keyPath }),
     cleanup,
+    env: keyPath ? { APPLE_API_KEY_PATH: keyPath } : {},
     source: keyPath
       ? `App Store Connect API key ${APPLE_API_KEY} (${keyPath})`
       : `App Store Connect API key ${APPLE_API_KEY} (altool standard key search path)`,
@@ -374,7 +381,11 @@ function runTauriIosBuild({ apiKeyCredentials, buildNumber, exportMethod, verbos
   } else {
     log('xcodebuild provisioning auth: local Xcode account/profiles')
   }
-  const result = spawnSync('pnpm', args, { cwd: appDir, stdio: 'inherit', env: process.env })
+  const result = spawnSync('pnpm', args, {
+    cwd: appDir,
+    stdio: 'inherit',
+    env: createTauriIosBuildEnv({ apiKeyCredentials }),
+  })
   if (result.status !== 0) {
     fail(
       'tauri ios build failed.\n' +

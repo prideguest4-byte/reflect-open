@@ -7,6 +7,7 @@ import {
   createAltoolUploadArgs,
   createAltoolValidateArgs,
   createApiKeyAltoolArgs,
+  createTauriIosBuildEnv,
   createTauriIosBuildArgs,
   createXcodeAuthenticationArgs,
   findIpaInfoPlistPath,
@@ -55,6 +56,26 @@ test('iOS release builds can rely on local Xcode accounts when no API key is sup
     'release-testing',
     '--ci',
   ])
+})
+
+test('iOS release builds expose the staged API key path to Tauri signing', () => {
+  expect(
+    createTauriIosBuildEnv({
+      baseEnv: {
+        APPLE_API_ISSUER: 'issuer-uuid',
+        APPLE_API_KEY: 'ABC123DEFG',
+      },
+      apiKeyCredentials: {
+        env: {
+          APPLE_API_KEY_PATH: '/tmp/AuthKey_ABC123DEFG.p8',
+        },
+      },
+    }),
+  ).toEqual({
+    APPLE_API_ISSUER: 'issuer-uuid',
+    APPLE_API_KEY: 'ABC123DEFG',
+    APPLE_API_KEY_PATH: '/tmp/AuthKey_ABC123DEFG.p8',
+  })
 })
 
 test('altool upload uses package upload with API key auth and optional processing wait', () => {
