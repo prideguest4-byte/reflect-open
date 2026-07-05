@@ -33,6 +33,13 @@ export {
 } from './ipc/commands'
 export { confirmQuit, subscribeQuitRequested } from './app/quit'
 export { toggleDevtools } from './app/devtools'
+export {
+  agentSkillStatus,
+  agentSkillInstall,
+  agentSkillUninstall,
+  type AgentSkillInstallState,
+  type AgentSkillStatus,
+} from './app/agent-skill'
 
 // Embeddings & retrieval (Plan 09)
 export { chunkNote, type NoteChunk } from './embeddings/chunk'
