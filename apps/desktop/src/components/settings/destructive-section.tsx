@@ -55,9 +55,10 @@ export function DestructiveSection(): ReactElement {
       <Dialog open={confirming} onOpenChange={(open) => !forgetting && setConfirming(open)}>
         <DialogContent>
           <DialogTitle>Forget graph?</DialogTitle>
-          <DialogDescription>
-            Remove <span className="font-mono text-text">{graphId}</span> from saved graphs. Files
-            stay on disk.
+          <DialogDescription className="min-w-0">
+            Remove{' '}
+            <span className="font-mono text-text [overflow-wrap:anywhere]">{graphId}</span> from
+            saved graphs. Files stay on disk.
           </DialogDescription>
           <DialogFooter>
             <DialogClose asChild>
