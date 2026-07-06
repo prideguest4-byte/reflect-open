@@ -1,4 +1,4 @@
-import type { SyntaxNode } from '@lezer/common'
+import type { SyntaxNode, Tree } from '@lezer/common'
 import { splitFrontmatter } from '../markdown/frontmatter'
 import { parseBody } from '../markdown/grammar'
 import { unescapeMarkdownText } from '../markdown/plain-text'
@@ -14,6 +14,10 @@ import { lineAt } from './snippet'
  * - **Paragraph** — the whole paragraph (which may wrap across lines).
  * - **Heading** — the heading plus every following sibling block up to the
  *   next heading (of any level) or the end of the section's parent.
+ * - **Title heading** — just the heading line. A deliberate divergence from
+ *   old Reflect, where titles lived outside the document: in V2 the note's
+ *   title *is* its first H1, so the section rule would inline the entire note
+ *   into the panel for a mention that just says "this note is about you".
  * - **Top-level list item** — the entire item including all of its nested
  *   children (sub-bullets, task lists), mentioning or not.
  * - **Nested list item** — the parent item's own text line for context, plus
@@ -28,6 +32,7 @@ import { lineAt } from './snippet'
  */
 
 const HEADING_NODE_RE = /^(?:ATXHeading|SetextHeading)[1-6]$/
+const H1_NODE_RE = /^(?:ATXHeading|SetextHeading)1$/
 
 function isHeadingName(name: string): boolean {
   return HEADING_NODE_RE.test(name)
@@ -107,22 +112,26 @@ function lineEndAt(body: string, pos: number): number {
 }
 
 /**
- * The full lines covering `[from, to)`, with the first line's prefix (the text
- * before `from` — indentation, or `> ` inside a blockquote) stripped from every
- * line it also leads. Keeps deeper indentation relative, so a sliced list still
- * renders nested.
+ * The full lines covering `[from, to)`, with `prefix` stripped from every line
+ * it leads. Deeper indentation stays relative, so a sliced list still renders
+ * nested.
  */
-function sliceLines(body: string, from: number, to: number): string {
-  const prefix = body.slice(lineStartAt(body, from), from)
+function dedentedSlice(body: string, from: number, to: number, prefix: string): string {
+  const start = lineStartAt(body, from)
   const end = to > from && body[to - 1] === '\n' ? to - 1 : to
-  const lines = body.slice(from, lineEndAt(body, end)).split('\n')
-  const dedented = lines.map((line, index) => {
-    if (index === 0) {
-      return line // starts at `from`, already past the prefix
-    }
-    return prefix !== '' && line.startsWith(prefix) ? line.slice(prefix.length) : line
-  })
+  const lines = body.slice(start, lineEndAt(body, end)).split('\n')
+  const dedented = lines.map((line) =>
+    prefix !== '' && line.startsWith(prefix) ? line.slice(prefix.length) : line,
+  )
   return dedented.join('\n').trimEnd()
+}
+
+/**
+ * A block's full lines dedented by its own first-line prefix — the text before
+ * `from` on its line: indentation, or `> ` inside a blockquote.
+ */
+function dedentedBlockAt(body: string, from: number, to: number): string {
+  return dedentedSlice(body, from, to, body.slice(lineStartAt(body, from), from))
 }
 
 /** The heading's section: itself plus siblings until the next heading of any level. */
@@ -135,6 +144,33 @@ function headingSectionEnd(heading: SyntaxNode): number {
     end = sibling.to
   }
   return end
+}
+
+/** Does the heading's text line carry anything beyond ATX `#` marks? */
+function headingHasText(body: string, heading: SyntaxNode): boolean {
+  const firstLine = body.slice(heading.from, lineEndAt(body, heading.from))
+  return (
+    firstLine
+      .replace(/^#{1,6}[ \t]*/, '')
+      .replace(/[ \t]*#*[ \t]*$/, '')
+      .trim() !== ''
+  )
+}
+
+/**
+ * Is this heading the note's title — the document's first non-empty top-level
+ * H1, the same heading {@link parseNote}'s title derivation picks?
+ */
+function isTitleHeading(body: string, heading: SyntaxNode): boolean {
+  if (!H1_NODE_RE.test(heading.name) || heading.parent?.name !== 'Document') {
+    return false
+  }
+  for (let child = heading.parent.firstChild; child; child = child.nextSibling) {
+    if (H1_NODE_RE.test(child.name) && headingHasText(body, child)) {
+      return child.from === heading.from
+    }
+  }
+  return false
 }
 
 /** The item's first block child when it is a text block (its own bullet line). */
@@ -167,44 +203,57 @@ function listItemContext(
   const parentItem = selfOrAncestor(item.parent, (node) => node.name === 'ListItem')
   const lead = parentItem ? leadTextblock(parentItem) : null
   if (!parentItem || !lead) {
-    return sliceLines(body, item.from, item.to)
+    return dedentedBlockAt(body, item.from, item.to)
   }
 
   const indent = body.slice(lineStartAt(body, parentItem.from), parentItem.from)
-  const pieces: string[] = [sliceLines(body, parentItem.from, lead.to)]
+  const pieces: string[] = [dedentedBlockAt(body, parentItem.from, lead.to)]
   for (let child = lead.nextSibling; child; child = child.nextSibling) {
     const branches = isListName(child.name) ? child.getChildren('ListItem') : [child]
     for (const branch of branches) {
       if (branchMentions(body, branch, targetKey) || containsPos(branch, bodyPos)) {
-        pieces.push(dedentBranch(body, branch, indent))
+        pieces.push(dedentedSlice(body, branch.from, branch.to, indent))
       }
     }
   }
   return pieces.join('\n')
 }
 
-/** A branch's full lines with the *parent* item's indentation stripped, keeping one nesting level. */
-function dedentBranch(body: string, branch: SyntaxNode, indent: string): string {
-  const from = lineStartAt(body, branch.from)
-  const end = branch.to > branch.from && body[branch.to - 1] === '\n' ? branch.to - 1 : branch.to
-  const lines = body.slice(from, lineEndAt(body, end)).split('\n')
-  const dedented = lines.map((line) =>
-    indent !== '' && line.startsWith(indent) ? line.slice(indent.length) : line,
-  )
-  return dedented.join('\n').trimEnd()
+/**
+ * A note's source prepared for repeated {@link blockContextAt} calls: the
+ * frontmatter carved off once and the body parsed once. The backlinks query
+ * extracts a context per *mention*, and a well-linked source contributes many
+ * mentions — re-parsing per mention would make the panel's cost scale with
+ * link count instead of source count.
+ */
+export interface BlockContextSource {
+  /** Markdown body with the frontmatter carved off. */
+  readonly body: string
+  /** Character offset of `body` within the original file. */
+  readonly bodyOffset: number
+  /** `body` parsed with the canonical Reflect grammar. */
+  readonly tree: Tree
+}
+
+/** Parse a note's full source once for repeated {@link blockContextAt} calls. */
+export function prepareBlockContext(content: string): BlockContextSource {
+  const { body, bodyOffset } = splitFrontmatter(content)
+  return { body, bodyOffset, tree: parseBody(body) }
 }
 
 /**
  * The Markdown block context around the link at whole-file offset `pos` (the
  * index's `pos_from`, frontmatter offset included) — see the module doc for
- * the shape per mention location. Falls back to the physical line when the
- * offset has drifted out of any block (the source changed between the index
- * write and this read).
+ * the shape per mention location. Accepts either raw source (parsed on the
+ * spot) or a {@link prepareBlockContext} handle when extracting several
+ * contexts from one note. Falls back to the physical line when the offset has
+ * drifted out of any block (the source changed between the index write and
+ * this read).
  */
-export function blockContextAt(content: string, pos: number): string {
-  const { body, bodyOffset } = splitFrontmatter(content)
+export function blockContextAt(source: string | BlockContextSource, pos: number): string {
+  const { body, bodyOffset, tree } =
+    typeof source === 'string' ? prepareBlockContext(source) : source
   const bodyPos = Math.max(0, Math.min(pos - bodyOffset, body.length))
-  const tree = parseBody(body)
   const leaf: SyntaxNode = tree.resolveInner(bodyPos, 1)
 
   const link = selfOrAncestor(leaf, (node) => node.name === 'WikiLink')
@@ -212,7 +261,8 @@ export function blockContextAt(content: string, pos: number): string {
 
   const heading = selfOrAncestor(leaf, (node) => isHeadingName(node.name))
   if (heading) {
-    return sliceLines(body, heading.from, headingSectionEnd(heading))
+    const end = isTitleHeading(body, heading) ? heading.to : headingSectionEnd(heading)
+    return dedentedBlockAt(body, heading.from, end)
   }
 
   const item = selfOrAncestor(leaf, (node) => node.name === 'ListItem')
@@ -222,14 +272,14 @@ export function blockContextAt(content: string, pos: number): string {
 
   const block = selfOrAncestor(leaf, (node) => isTextblockName(node.name))
   if (block) {
-    return sliceLines(body, block.from, block.to)
+    return dedentedBlockAt(body, block.from, block.to)
   }
 
   // Not inside a text block: a table cell, or an offset drifted into the gap
   // between blocks. Use the nearest top-level block, else the bare line.
   const top = selfOrAncestor(leaf, (node) => node.parent?.name === 'Document')
   if (top) {
-    return sliceLines(body, top.from, top.to)
+    return dedentedBlockAt(body, top.from, top.to)
   }
-  return lineAt(content, pos)
+  return lineAt(body, bodyPos)
 }

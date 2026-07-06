@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blockContextAt } from './block-context'
+import { blockContextAt, prepareBlockContext } from './block-context'
 
 /** Offset of the first `[[target]]` occurrence — the index's `pos_from`. */
 function posOf(content: string, link: string): number {
@@ -52,6 +52,27 @@ describe('blockContextAt', () => {
     expect(blockContextAt(content, posOf(content, '[[Target]]'))).toBe(
       '## Heading [[Target]]\n\nlast paragraph',
     )
+  })
+
+  it('shows only the heading line for a mention in the note title H1', () => {
+    // Divergence from old Reflect, where titles lived outside the document: the
+    // section rule would inline the entire note for a title mention.
+    const content = '# Meeting with [[Target]]\n\nagenda item one\n\nagenda item two\n'
+    expect(blockContextAt(content, posOf(content, '[[Target]]'))).toBe(
+      '# Meeting with [[Target]]',
+    )
+  })
+
+  it('keeps the section rule for a non-title H1', () => {
+    const content = '# Title\n\nintro\n\n# Second [[Target]]\n\nsection body\n'
+    expect(blockContextAt(content, posOf(content, '[[Target]]'))).toBe(
+      '# Second [[Target]]\n\nsection body',
+    )
+  })
+
+  it('treats a setext H1 title the same as an ATX title', () => {
+    const content = 'With [[Target]]\n====\n\nbody paragraph\n'
+    expect(blockContextAt(content, posOf(content, '[[Target]]'))).toBe('With [[Target]]\n====')
   })
 
   it('returns a top-level list item with all its children, mentioning or not', () => {
@@ -107,6 +128,27 @@ describe('blockContextAt', () => {
     )
   })
 
+  it('handles ordered lists, keeping source numbering', () => {
+    const content = '1. parent line\n   2. mention of [[Target]]\n   3. unrelated\n'
+    expect(blockContextAt(content, posOf(content, '[[Target]]'))).toBe(
+      '1. parent line\n   2. mention of [[Target]]',
+    )
+  })
+
+  it('keeps both paragraphs of a loose list item', () => {
+    const content = '- first paragraph\n\n  second [[Target]] paragraph\n'
+    expect(blockContextAt(content, posOf(content, '[[Target]]'))).toBe(
+      '- first paragraph\n\n  second [[Target]] paragraph',
+    )
+  })
+
+  it('dedents tab-indented nesting by the parent indent only', () => {
+    const content = '- top\n\t- middle\n\t\t- deep [[Target]]\n'
+    expect(blockContextAt(content, posOf(content, '[[Target]]'))).toBe(
+      '- middle\n\t- deep [[Target]]',
+    )
+  })
+
   it('climbs exactly one ancestor level for a deeply nested mention', () => {
     const content = [
       '- top item',
@@ -137,5 +179,12 @@ describe('blockContextAt', () => {
   it('falls back to the bare line when the offset drifted between blocks', () => {
     const content = 'first paragraph\n\nsecond paragraph\n'
     expect(blockContextAt(content, content.indexOf('\n\n') + 1)).toBe('')
+  })
+
+  it('extracts several contexts from one prepared source', () => {
+    const content = '---\ntitle: Note\n---\n\nfirst [[Target]] mention\n\n- second [[Target]]\n'
+    const source = prepareBlockContext(content)
+    expect(blockContextAt(source, posOf(content, '[[Target]]'))).toBe('first [[Target]] mention')
+    expect(blockContextAt(source, content.lastIndexOf('[[Target]]'))).toBe('- second [[Target]]')
   })
 })

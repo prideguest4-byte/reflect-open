@@ -1,7 +1,7 @@
 import type { Database } from '@reflect/db'
 import { sql, type Selectable } from 'kysely'
 import { readNote } from '../graph/commands'
-import { blockContextAt } from './block-context'
+import { blockContextAt, prepareBlockContext, type BlockContextSource } from './block-context'
 import { db } from './db'
 
 export type Backlink = Pick<
@@ -56,13 +56,15 @@ export async function getBacklinksWithContext(path: string): Promise<BacklinkCon
     .orderBy('backlinks.posFrom')
     .execute()
 
-  const contents = new Map<string, string | null>()
+  // One read *and one parse* per distinct source: a well-linked source
+  // contributes many rows, and context extraction walks the parsed body.
+  const sources = new Map<string, BlockContextSource | null>()
   await Promise.all(
     [...new Set(rows.map((row) => row.sourcePath))].map(async (sourcePath) => {
       try {
-        contents.set(sourcePath, await readNote(sourcePath))
+        sources.set(sourcePath, prepareBlockContext(await readNote(sourcePath)))
       } catch {
-        contents.set(sourcePath, null)
+        sources.set(sourcePath, null)
       }
     }),
   )
@@ -70,8 +72,8 @@ export async function getBacklinksWithContext(path: string): Promise<BacklinkCon
   const seen = new Set<string>()
   const results: BacklinkContext[] = []
   for (const row of rows) {
-    const content = contents.get(row.sourcePath)
-    const snippet = content == null ? '' : blockContextAt(content, row.posFrom)
+    const source = sources.get(row.sourcePath)
+    const snippet = source == null ? '' : blockContextAt(source, row.posFrom)
     if (snippet !== '') {
       const key = `${row.sourcePath}\u0000${snippet}`
       if (seen.has(key)) {
