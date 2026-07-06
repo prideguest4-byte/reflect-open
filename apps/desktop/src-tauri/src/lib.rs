@@ -24,6 +24,8 @@ mod fs;
 mod git;
 mod graph_gitignore;
 mod icloud;
+#[cfg(target_os = "macos")]
+mod mac_window_menu;
 mod quit;
 mod recents;
 mod secrets;
@@ -164,6 +166,12 @@ pub fn run() {
             window.show()?;
         }
         spike_mobile::run_self_check(app.handle());
+        Ok(())
+    });
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.setup(|_app| {
+        mac_window_menu::install();
         Ok(())
     });
 

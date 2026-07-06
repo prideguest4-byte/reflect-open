@@ -100,8 +100,15 @@ objc2-event-kit = { version = "0.3.2", default-features = false, features = [
 ] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
   "std",
+  "NSApplication",
   "NSColor",
   "NSColorSpace",
+  "NSEvent",
+  "NSMenu",
+  "NSMenuItem",
+  "NSResponder",
+  "NSScreen",
+  "NSWindow",
 ] }
 
 # Apple Contacts integration (`contacts.rs`): live CNContactStore lookups on
