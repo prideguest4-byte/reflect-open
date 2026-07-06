@@ -302,8 +302,14 @@ mod tests {
             vec!["Charlotte MacCaw", "Mum"]
         );
         assert_eq!(subject_aliases("Charlotte//Mum"), vec!["Charlotte", "Mum"]);
-        assert_eq!(subject_aliases("Charlotte MacCaw // "), vec!["Charlotte MacCaw"]);
-        assert_eq!(subject_aliases("Mum //  // MUM // Mother"), vec!["Mum", "Mother"]);
+        assert_eq!(
+            subject_aliases("Charlotte MacCaw // "),
+            vec!["Charlotte MacCaw"]
+        );
+        assert_eq!(
+            subject_aliases("Mum //  // MUM // Mother"),
+            vec!["Mum", "Mother"]
+        );
         assert_eq!(subject_aliases("Charlotte MacCaw"), Vec::<String>::new());
         assert_eq!(subject_aliases("https://reflect.app"), Vec::<String>::new());
         assert_eq!(subject_aliases("a///b"), Vec::<String>::new());
