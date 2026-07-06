@@ -22,8 +22,11 @@ use serde::Serialize;
 use crate::error::{AppError, AppResult};
 
 use super::import_assets::{self, DownloadOutcome};
-use super::io::{atomic_write_bytes, file_occupied};
+use super::io::{atomic_write_bytes, eviction_placeholder, file_occupied};
 use super::resolve::resolve;
+
+/// Collision probes before giving up, matching the note-path probe cap.
+const MAX_IMPORT_PATH_PROBES: u32 = 1000;
 
 /// Summary returned to the settings UI after an import completes.
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -147,7 +150,7 @@ pub(super) fn finalize_import(
         mut entries,
         urls,
         prefix,
-        ..
+        staging,
     } = prepared;
 
     let assets_dir = root.join("assets");
@@ -194,6 +197,8 @@ pub(super) fn finalize_import(
             }
         }
     }
+
+    plan_import_paths(root, &staging, &mut entries)?;
 
     let collisions = entries
         .iter()
@@ -247,6 +252,145 @@ pub(super) fn finalize_import(
         failed_asset_downloads,
         changed_paths,
     })
+}
+
+fn plan_import_paths(root: &Path, staging: &Path, entries: &mut [ImportEntry]) -> AppResult<()> {
+    let scratch = tempfile::TempDir::new_in(staging)?;
+    for entry in entries {
+        plan_import_path(root, scratch.path(), entry)?;
+    }
+    Ok(())
+}
+
+fn plan_import_path(root: &Path, scratch: &Path, entry: &mut ImportEntry) -> AppResult<()> {
+    match exact_collision(root, &entry.relative, &entry.bytes)? {
+        ExactCollision::SameBytes => return Ok(()),
+        ExactCollision::DifferentBytes => {
+            return Err(AppError::io(format!(
+                "import would overwrite existing files: {}",
+                entry.relative
+            )))
+        }
+        ExactCollision::Free => {}
+    }
+
+    if !is_suffixable_note_markdown(&entry.relative) {
+        if filesystem_occupied(root, &entry.relative)?
+            || planned_path_occupied(scratch, &entry.relative)
+        {
+            return Err(AppError::io(format!(
+                "import would overwrite existing files: {}",
+                entry.relative
+            )));
+        }
+        mark_planned_path(scratch, &entry.relative)?;
+        return Ok(());
+    }
+
+    let original = entry.relative.clone();
+    for attempt in 1..=MAX_IMPORT_PATH_PROBES {
+        let candidate = suffixed_relative_path(&original, attempt);
+        match exact_collision(root, &candidate, &entry.bytes)? {
+            ExactCollision::SameBytes => {
+                entry.relative = candidate;
+                return Ok(());
+            }
+            ExactCollision::DifferentBytes => continue,
+            ExactCollision::Free => {}
+        }
+        if filesystem_occupied(root, &candidate)? || planned_path_occupied(scratch, &candidate) {
+            continue;
+        }
+        mark_planned_path(scratch, &candidate)?;
+        entry.relative = candidate;
+        return Ok(());
+    }
+
+    Err(AppError::io(format!(
+        "no free import path after {MAX_IMPORT_PATH_PROBES} probes for {original}"
+    )))
+}
+
+enum ExactCollision {
+    Free,
+    SameBytes,
+    DifferentBytes,
+}
+
+fn exact_collision(root: &Path, relative: &str, bytes: &[u8]) -> AppResult<ExactCollision> {
+    let target = resolve(root, relative)?;
+    if !exact_path_occupied(&target)? {
+        return Ok(ExactCollision::Free);
+    }
+    if target.is_file() && fs::read(&target)? == bytes {
+        return Ok(ExactCollision::SameBytes);
+    }
+    Ok(ExactCollision::DifferentBytes)
+}
+
+fn exact_path_occupied(path: &Path) -> AppResult<bool> {
+    if exact_path_exists(path)? {
+        return Ok(true);
+    }
+    match eviction_placeholder(path) {
+        Some(placeholder) => exact_path_exists(&placeholder),
+        None => Ok(false),
+    }
+}
+
+fn exact_path_exists(path: &Path) -> AppResult<bool> {
+    let Some(parent) = path.parent() else {
+        return Ok(false);
+    };
+    if !parent.is_dir() {
+        return Ok(false);
+    }
+    let Some(name) = path.file_name() else {
+        return Ok(false);
+    };
+    for entry in fs::read_dir(parent)? {
+        if entry?.file_name() == name {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn filesystem_occupied(root: &Path, relative: &str) -> AppResult<bool> {
+    let target = resolve(root, relative)?;
+    Ok(target.exists() || file_occupied(&target))
+}
+
+fn planned_path_occupied(scratch: &Path, relative: &str) -> bool {
+    scratch.join(relative).exists()
+}
+
+fn mark_planned_path(scratch: &Path, relative: &str) -> AppResult<()> {
+    let path = scratch.join(relative);
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::io(format!("no parent directory for {relative}")))?;
+    fs::create_dir_all(parent)?;
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    Ok(())
+}
+
+fn suffixed_relative_path(relative: &str, attempt: u32) -> String {
+    if attempt == 1 {
+        return relative.to_string();
+    }
+    let slash = relative.rfind('/').map_or(0, |index| index + 1);
+    let dot = relative[slash..]
+        .rfind('.')
+        .map(|index| slash + index)
+        .filter(|index| *index > slash);
+    match dot {
+        Some(dot) => format!("{}-{}{}", &relative[..dot], attempt, &relative[dot..]),
+        None => format!("{relative}-{attempt}"),
+    }
 }
 
 fn dedupe_entries(entries: Vec<ImportEntry>) -> AppResult<Vec<ImportEntry>> {
@@ -415,6 +559,17 @@ fn is_note_markdown(relative: &str) -> bool {
             .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
 }
 
+fn is_suffixable_note_markdown(relative: &str) -> bool {
+    relative
+        .split('/')
+        .next()
+        .is_some_and(|first| first == "notes")
+        && Path::new(relative)
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,6 +621,15 @@ mod tests {
             writer.write_all(contents.as_bytes()).unwrap();
         }
         writer.finish().unwrap();
+    }
+
+    fn filesystem_aliases_sharp_s(root: &Path) -> bool {
+        let dir = root.join("casefold-probe");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("füsse.md"), "probe").unwrap();
+        let aliases = dir.join("füße.md").exists();
+        fs::remove_dir_all(&dir).unwrap();
+        aliases
     }
 
     /// Serve canned HTTP responses on a local port: each entry is
@@ -638,6 +802,65 @@ mod tests {
         assert_eq!(
             fs::read_to_string(root.path().join("notes/a.md")).unwrap(),
             "# Mine\n"
+        );
+    }
+
+    #[test]
+    fn suffixes_existing_filesystem_alias_for_regular_notes() {
+        let root = tempdir().unwrap();
+        if !filesystem_aliases_sharp_s(root.path()) {
+            return;
+        }
+        fs::create_dir_all(root.path().join("notes")).unwrap();
+        fs::write(root.path().join("notes/füsse.md"), "# Swiss spelling\n").unwrap();
+
+        let summary = import_entries_into_graph(
+            root.path(),
+            entries(&[("notes/füße.md", "# German spelling\n")]),
+        )
+        .unwrap();
+
+        assert_eq!(summary.imported_files, 1);
+        assert_eq!(summary.skipped_files, 0);
+        assert_eq!(summary.changed_paths, vec!["notes/füße-2.md"]);
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/füsse.md")).unwrap(),
+            "# Swiss spelling\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/füße-2.md")).unwrap(),
+            "# German spelling\n"
+        );
+    }
+
+    #[test]
+    fn suffixes_filesystem_aliases_within_the_import_batch() {
+        let root = tempdir().unwrap();
+        if !filesystem_aliases_sharp_s(root.path()) {
+            return;
+        }
+
+        let summary = import_entries_into_graph(
+            root.path(),
+            entries(&[
+                ("notes/füsse.md", "# Swiss spelling\n"),
+                ("notes/füße.md", "# German spelling\n"),
+            ]),
+        )
+        .unwrap();
+
+        assert_eq!(summary.imported_files, 2);
+        assert_eq!(
+            summary.changed_paths,
+            vec!["notes/füsse.md", "notes/füße-2.md"]
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/füsse.md")).unwrap(),
+            "# Swiss spelling\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/füße-2.md")).unwrap(),
+            "# German spelling\n"
         );
     }
 
