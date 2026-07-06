@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createWeekWindow,
-  monthLabel,
+  monthPickTarget,
   weekAtIndex,
   weekIndexOf,
   weekOf,
@@ -55,9 +55,18 @@ describe('weekOf', () => {
   })
 })
 
-describe('monthLabel', () => {
-  it('formats the month and year', () => {
-    expect(monthLabel('2026-06-12')).toBe('June 2026')
+describe('monthPickTarget', () => {
+  it('keeps the selection when its own month is picked', () => {
+    expect(monthPickTarget('2026-06', '2026-06-12', '2026-06-20')).toBe('2026-06-12')
+  })
+
+  it('lands on today when today’s month is picked', () => {
+    expect(monthPickTarget('2026-07', '2026-06-12', '2026-07-04')).toBe('2026-07-04')
+  })
+
+  it('opens any other month on its first day', () => {
+    expect(monthPickTarget('2026-09', '2026-06-12', '2026-07-04')).toBe('2026-09-01')
+    expect(monthPickTarget('2025-12', '2026-06-12', '2026-07-04')).toBe('2025-12-01')
   })
 })
 

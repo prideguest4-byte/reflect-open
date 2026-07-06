@@ -32,9 +32,9 @@ export function MobileDaily({ date }: { date: string }): ReactElement {
     [navigate, today],
   )
 
-  // An explicit re-arrival at the day already shown — the Daily tab or the
-  // month title tapped while on today (V1's double-tap-to-today lands here as
-  // two such arrivals) — re-anchors the surface: the selected slide scrolls
+  // An explicit re-arrival at the day already shown — the Daily tab tapped
+  // while on today (V1's double-tap-to-today lands here as two such
+  // arrivals) — re-anchors the surface: the selected slide scrolls
   // to the top and the strip re-centers. The router bumps `arrivalSeq` for
   // every navigate, but a swipe's own echo also changes `date`, so only
   // date-preserving arrivals count.

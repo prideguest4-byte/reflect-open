@@ -1,6 +1,7 @@
-import { differenceInCalendarDays, format, getDay } from 'date-fns'
+import { differenceInCalendarDays, getDay } from 'date-fns'
 import type { WeekStartDay } from '@reflect/core'
 import { addDaysIso, parseIsoDate } from '@/lib/dates'
+import { monthOf } from '@/lib/month-grid'
 
 /**
  * Date math for the V1-parity Daily surface's **calendar strip** — the month
@@ -24,9 +25,19 @@ export function weekOf(date: string, weekStart: WeekStartDay): string[] {
   return Array.from({ length: 7 }, (_, index) => addDaysIso(first, index))
 }
 
-/** The strip's month header, e.g. `June 2026`. */
-export function monthLabel(date: string): string {
-  return format(parseIsoDate(date), 'MMMM yyyy')
+/**
+ * Where the month picker lands when a `YYYY-MM` month is picked: the
+ * selection's own month keeps the selection, today's month goes to today,
+ * and any other month opens on its first day.
+ */
+export function monthPickTarget(month: string, selected: string, today: string): string {
+  if (monthOf(selected) === month) {
+    return selected
+  }
+  if (monthOf(today) === month) {
+    return today
+  }
+  return `${month}-01`
 }
 
 /**

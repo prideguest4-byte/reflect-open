@@ -59,6 +59,11 @@ export function monthLabel(month: string): string {
   return format(parseMonth(month), 'MMMM yyyy')
 }
 
+/** Short label for a `YYYY-MM` month, e.g. `Jun` — month-picker grid cells. */
+export function monthShortLabel(month: string): string {
+  return format(parseMonth(month), 'MMM')
+}
+
 /** The `YYYY-MM` month `delta` months after `month` (negative for before). */
 export function addMonths(month: string, delta: number): string {
   return format(addMonthsToDate(parseMonth(month), delta), MONTH_FORMAT)

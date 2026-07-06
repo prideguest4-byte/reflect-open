@@ -12,7 +12,8 @@ import {
 import { RouterProvider, useRouter } from '@/routing/router'
 import type { Route } from '@/routing/route'
 import { addDaysIso, formatDayLabel, parseIsoDate, todayIso } from '@/lib/dates'
-import { monthLabel, weekOf } from './calendar'
+import { monthLabel, monthOf } from '@/lib/month-grid'
+import { weekOf } from './calendar'
 import { MobileShell } from './mobile-shell'
 import { publishKeyboardHeight } from './use-keyboard'
 
@@ -110,6 +111,18 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   hasBridge: () => true,
   getBacklinksWithContext: indexFns.getBacklinksWithContext,
 }))
+// vaul needs browser APIs jsdom doesn't provide (matchMedia, pointer
+// capture); its drag/animation is verified on-device. This passthrough
+// honours `open`, so the month-picker sheet renders only once the title
+// opens it.
+vi.mock('@/components/ui/drawer', () => ({
+  Drawer: ({ open, children }: { open?: boolean; children?: import('react').ReactNode }) =>
+    open ? <div data-testid="drawer">{children}</div> : null,
+  DrawerContent: ({ children }: { children?: import('react').ReactNode }) => <div>{children}</div>,
+  DrawerTitle: ({ children }: { children?: import('react').ReactNode }) => <h2>{children}</h2>,
+  DrawerTrigger: ({ children }: { children?: import('react').ReactNode }) => <>{children}</>,
+}))
+
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({
     graph: { root: '/g', name: 'g', generation: 1 },
@@ -235,6 +248,18 @@ function dayCellLabel(date: string): string {
   return format(parseIsoDate(date), 'EEEE, MMMM do')
 }
 
+/**
+ * The strip header's settled month label — a month change rolls the old
+ * label out, so the heading's whole textContent briefly holds both.
+ */
+function shownMonth(view: ReturnType<typeof render>): string | null {
+  return (
+    view
+      .getByRole('heading', { level: 1 })
+      .querySelector('[data-slot="month-title"]')?.textContent ?? null
+  )
+}
+
 /** A day in `date`'s week that isn't `date` itself (always present). */
 function otherDayInWeek(date: string): string {
   const week = weekOf(date, 'monday')
@@ -249,7 +274,7 @@ describe('MobileShell', () => {
 
     // The header is the month; the carousel mounts today's slide (±1
     // neighbours), each carrying its formatted date as the note's subject.
-    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(today))
+    expect(shownMonth(view)).toBe(monthLabel(monthOf(today)))
     expect(view.getByText(formatDayLabel(today, 'mdy'))).toBeTruthy()
     await waitFor(() => {
       const editors = view.getAllByTestId('fake-editor')
@@ -289,24 +314,40 @@ describe('MobileShell', () => {
     expect(
       view.getByRole('button', { name: dayCellLabel(nextFortnight) }).getAttribute('aria-current'),
     ).toBe('date')
-    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(nextFortnight))
+    expect(shownMonth(view)).toBe(monthLabel(monthOf(nextFortnight)))
     expect(view.getByRole('button', { name: 'Today' })).toBeTruthy()
   })
 
-  it('jumps back to today from the tappable month title', async () => {
+  it('jumps to a picked month from the month title’s picker sheet', async () => {
     const user = userEvent.setup()
     const today = todayIso()
-    const other = otherDayInWeek(today)
     const view = mount({ kind: 'today' })
 
-    await user.click(view.getByRole('button', { name: dayCellLabel(other) }))
-    expect(view.getByRole('button', { name: dayCellLabel(other) }).getAttribute('aria-current')).toBe(
-      'date',
-    )
+    await user.click(view.getByRole('button', { name: 'Change month' }))
+    await user.click(view.getByRole('button', { name: 'Next year' }))
+    // January next year: always a different month, and (unlike a fixed
+    // offset) always the same distance shape from today — date-agnostic.
+    const pickedMonth = `${Number(monthOf(today).slice(0, 4)) + 1}-01`
+    await user.click(view.getByRole('button', { name: monthLabel(pickedMonth) }))
 
-    hapticImpactLight.mockClear()
-    await user.click(view.getByRole('button', { name: 'Jump to today' }))
-    expect(hapticImpactLight).toHaveBeenCalledTimes(1)
+    expect(view.queryByTestId('drawer')).toBeNull()
+    expect(shownMonth(view)).toBe(monthLabel(pickedMonth))
+    const firstDay = `${pickedMonth}-01`
+    expect(
+      view.getByRole('button', { name: dayCellLabel(firstDay) }).getAttribute('aria-current'),
+    ).toBe('date')
+    expect(view.getByRole('button', { name: 'Today' })).toBeTruthy()
+  })
+
+  it('keeps the selection when its own month is picked from the sheet', async () => {
+    const user = userEvent.setup()
+    const today = todayIso()
+    const view = mount({ kind: 'today' })
+
+    await user.click(view.getByRole('button', { name: 'Change month' }))
+    await user.click(view.getByRole('button', { name: monthLabel(monthOf(today)) }))
+
+    expect(view.queryByTestId('drawer')).toBeNull()
     expect(view.getByRole('button', { name: dayCellLabel(today) }).getAttribute('aria-current')).toBe(
       'date',
     )
@@ -339,7 +380,7 @@ describe('MobileShell', () => {
     const view = mount({ kind: 'today' }, { kind: 'daily', date: farDay })
 
     await user.click(view.getByRole('button', { name: 'probe-navigate' }))
-    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(farDay))
+    expect(shownMonth(view)).toBe(monthLabel(monthOf(farDay)))
     await waitFor(() => {
       const editors = view.getAllByTestId('fake-editor')
       expect(editors.some((editor) => editor.textContent?.includes('far future plans'))).toBe(true)
@@ -355,7 +396,7 @@ describe('MobileShell', () => {
     expect(view.getByRole('heading').textContent).toBe('Edit note')
 
     await user.click(view.getByRole('button', { name: 'Back' }))
-    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
+    expect(shownMonth(view)).toBe(monthLabel(monthOf(todayIso())))
   })
 
   it('never focuses the destination editor on navigation (keyboard stays down)', async () => {
@@ -559,7 +600,7 @@ describe('MobileShell', () => {
     })
 
     await user.click(view.getByRole('button', { name: 'Back' }))
-    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
+    expect(shownMonth(view)).toBe(monthLabel(monthOf(todayIso())))
   })
 })
 
@@ -591,8 +632,10 @@ describe('MobileStack transitions & back-swipe', () => {
     expect(entering!.className).toContain('mobile-stack-slide-in')
     expect(origin!.getAttribute('aria-hidden')).toBe('true')
     expect(
-      within(origin!).getByRole('heading', { level: 1, hidden: true }).textContent,
-    ).toBe(monthLabel(todayIso()))
+      within(origin!)
+        .getByRole('heading', { level: 1, hidden: true })
+        .querySelector('[data-slot="month-title"]')?.textContent,
+    ).toBe(monthLabel(monthOf(todayIso())))
     expect(view.container.querySelector('.mobile-stack-scrim')).toBeTruthy()
 
     fireEvent.animationEnd(entering!)
@@ -609,7 +652,7 @@ describe('MobileStack transitions & back-swipe', () => {
 
     await user.click(view.getByRole('button', { name: 'Back' }))
     // Daily is current again immediately; the note lingers only to animate out.
-    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
+    expect(shownMonth(view)).toBe(monthLabel(monthOf(todayIso())))
     const exiting = stackLayers(view).at(-1)!
     expect(exiting.className).toContain('mobile-stack-slide-out')
     expect(exiting.getAttribute('aria-hidden')).toBe('true')
@@ -712,7 +755,7 @@ describe('MobileStack transitions & back-swipe', () => {
 
     // ...and only then commits the pop.
     fireEvent.transitionEnd(card)
-    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
+    expect(shownMonth(view)).toBe(monthLabel(monthOf(todayIso())))
     expect(stackLayers(view)).toHaveLength(1)
   })
 

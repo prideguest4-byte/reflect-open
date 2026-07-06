@@ -1,9 +1,12 @@
-import { useEffect, useRef, type ReactElement } from 'react'
-import { Settings } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { ChevronDown, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { addDaysIso } from '@/lib/dates'
-import { monthLabel, weekAtIndex, weekStartOf } from '@/mobile/calendar'
+import { monthOf } from '@/lib/month-grid'
+import { monthPickTarget, weekAtIndex, weekStartOf } from '@/mobile/calendar'
 import { hapticImpactLight } from '@/mobile/haptics'
+import { MonthPickerDrawer } from '@/mobile/month-picker-drawer'
+import { MonthTitle } from '@/mobile/month-title'
 import { useWeekStrip } from '@/mobile/use-week-strip'
 import { WeekRow } from '@/mobile/week-row'
 import { useSettings } from '@/providers/settings-provider'
@@ -16,7 +19,7 @@ interface CalendarStripProps {
    *  parent's select logic share one value (no midnight-rollover skew). */
   today: string
   /**
-   * Bumped on an explicit re-arrival at the shown day (Daily tab / title tap
+   * Bumped on an explicit re-arrival at the shown day (Daily tab tapped
    * while already there): re-center the strip on the selection even though
    * `date` didn't change.
    */
@@ -31,9 +34,10 @@ interface CalendarStripProps {
  * weeks, tap a cell to select that day. Browsing moves the header month with
  * the visible week; the strip snaps back to the selection's week whenever the
  * selection itself changes, so strip and carousel stay in lockstep through
- * the parent's `date`. The tappable month title jumps back to today (V1), and
- * a **Today** affordance appears in the header when the selection has
- * wandered off today.
+ * the parent's `date`. Month changes roll through {@link MonthTitle} rather
+ * than swapping. The tappable month title opens {@link MonthPickerDrawer} to
+ * jump across months, and a **Today** affordance appears in the header when
+ * the selection has wandered off today.
  */
 export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStripProps): ReactElement {
   const { settings } = useSettings()
@@ -60,6 +64,20 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
   const openSettings = (): void => {
     hapticImpactLight()
     navigate({ kind: 'settings' })
+  }
+
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false)
+  const openMonthPicker = (): void => {
+    hapticImpactLight()
+    setMonthPickerOpen(true)
+  }
+  const pickMonth = (picked: string): void => {
+    setMonthPickerOpen(false)
+    const target = monthPickTarget(picked, date, today)
+    onSelect(target)
+    // Selecting the target only moves the strip when `date` changes — picking
+    // the selection's own month must still snap a browsed-away strip back.
+    showWeekOf(target)
   }
 
   // An explicit re-arrival doesn't change `date`, so the follow effect won't
@@ -92,9 +110,15 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
             <Settings />
           </Button>
         </div>
-        <h1 className="min-w-0 truncate text-center text-base font-semibold">
-          <button type="button" aria-label="Jump to today" onClick={jumpToToday}>
-            {monthLabel(headerDate)}
+        <h1 className="min-w-0 text-center text-base font-semibold">
+          <button
+            type="button"
+            aria-label="Change month"
+            className="flex min-w-0 items-center gap-1"
+            onClick={openMonthPicker}
+          >
+            <MonthTitle month={monthOf(headerDate)} />
+            <ChevronDown aria-hidden className="size-4 shrink-0 text-text-muted" />
           </button>
         </h1>
         <div className="justify-self-end">
@@ -123,6 +147,14 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
           })}
         </div>
       </div>
+      <MonthPickerDrawer
+        open={monthPickerOpen}
+        onOpenChange={setMonthPickerOpen}
+        month={monthOf(headerDate)}
+        selected={monthOf(date)}
+        today={monthOf(today)}
+        onPick={pickMonth}
+      />
     </header>
   )
 }
