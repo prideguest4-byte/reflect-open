@@ -11,7 +11,8 @@ import { useRouter } from '@/routing/router'
  * The mobile spine (Plan 19, V1 parity): a month header + week calendar strip
  * over a swipeable day carousel of daily notes. The strip and the carousel
  * stay in lockstep through `date` — tapping a strip day or swiping the
- * carousel both navigate a daily route, which flows back as `date`. The
+ * carousel both navigate a daily route, which flows back as `date` (though
+ * mid-swipe the strip briefly leads, following the gesture's target day). The
  * new-note button floats above it all (V1: the daily note is the capture
  * surface; `+` opens a fresh untitled note via desktop's ⌘N seed flow).
  *
@@ -26,9 +27,25 @@ export function MobileDaily({ date }: { date: string }): ReactElement {
   // tap on the highlighted today cell to a frozen `daily` date). Selecting
   // today routes to the live `today` route, keeping the spine rolling over.
   const today = useToday()
+  // The day a swipe is heading toward, announced at pointer-up — the strip
+  // (and its rolling month title) follows it while the carousel's snap
+  // animation plays, instead of waiting for the settle-time route change.
+  const [targetDate, setTargetDate] = useState<string | null>(null)
+  // Any route move — the swipe's own settle, a strip tap, a date link, back —
+  // supersedes the override: the route is the truth again. Cleared on the
+  // `date` change itself (the render-phase previous-value pattern) rather
+  // than in `select`, because navigations from elsewhere (a daily backlink,
+  // history) never pass through `select`.
+  const [lastDate, setLastDate] = useState(date)
+  if (date !== lastDate) {
+    setLastDate(date)
+    setTargetDate(null)
+  }
   const select = useCallback(
-    (day: string): void =>
-      navigate(day === today ? { kind: 'today' } : { kind: 'daily', date: day }),
+    (day: string): void => {
+      setTargetDate(null)
+      navigate(day === today ? { kind: 'today' } : { kind: 'daily', date: day })
+    },
     [navigate, today],
   )
 
@@ -60,7 +77,7 @@ export function MobileDaily({ date }: { date: string }): ReactElement {
 
   return (
     <div className="flex h-full w-screen flex-col">
-      <CalendarStrip date={date} today={today} resetSeq={resetSeq} onSelect={select} />
+      <CalendarStrip date={targetDate ?? date} today={today} resetSeq={resetSeq} onSelect={select} />
       <DayCarousel
         date={date}
         today={today}
@@ -68,6 +85,7 @@ export function MobileDaily({ date }: { date: string }): ReactElement {
         focusDate={focusDate}
         onFocusConsumed={consumeFocus}
         onSelect={select}
+        onTarget={setTargetDate}
       />
       <Button
         size="icon"
