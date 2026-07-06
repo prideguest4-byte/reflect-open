@@ -188,6 +188,7 @@ export {
   type IndexedAlias,
   type Backlink,
   type BacklinkContext,
+  type SnippetTask,
   type ConflictedNote,
   type DailyNoteRow,
   type DailyNotesRange,
