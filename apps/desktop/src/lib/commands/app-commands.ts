@@ -54,7 +54,12 @@ const APP_COMMANDS: AppCommand[] = [
     title: 'Go to today',
     keywords: ['daily', 'now'],
     keybinding: 'Mod-d',
-    run: (context) => context.navigate({ kind: 'today' }),
+    // ⌘D is a capture gesture, not just navigation: the arrival asks the
+    // stream to focus today's editor with the caret at the end of its
+    // content, ready to append — the same one-shot `focusEditor` intent as
+    // the mobile Daily-tab double-tap. Ordinary daily links and history
+    // moves stay on the calm default (focus at the note start, or none).
+    run: (context) => context.navigate({ kind: 'today' }, { focusEditor: true }),
   },
   {
     id: 'nav.allNotes',

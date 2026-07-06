@@ -20,8 +20,9 @@ toolbar — and the hard-won keyboard/focus lessons.
 > the stack push/pop animation. Wiki-link taps, backlink rows, plain
 > arrivals, and back/forward all land with the keyboard down. Only explicit
 > write gestures focus: the `+` new-note flow (untitled autofocus) and the
-> Daily-tab double-tap (the router's one-shot `focusEditor` intent, now
-> consumed only by the daily surface); no V1-style 500 ms timer (focus
+> Daily-tab double-tap (the router's one-shot `focusEditor` intent,
+> consumed by the daily surfaces — desktop's ⌘D / Daily-notes-row capture
+> shares it, appending at the note's end); no V1-style 500 ms timer (focus
 > fires on editor mount, after the async document load). Keyboard avoidance is by
 > **layout, in one place**: the mobile shell root is
 > `calc(100dvh - var(--keyboard-height))`, so scroll containers, the

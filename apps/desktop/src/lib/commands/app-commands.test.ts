@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { EmbedStatus, NoteRow, PinnedNote } from '@reflect/core'
 import { notePathForRoute, type Route } from '@/routing/route'
+import type { NavigateOptions } from '@/routing/router'
 import { resetOperations } from '@/lib/operations'
 import type { CommandContext } from './types'
 
@@ -58,9 +59,13 @@ function command(id: string) {
 
 function fakeContext(overrides?: Partial<CommandContext>) {
   const navigated: Route[] = []
+  const navigateOptions: (NavigateOptions | undefined)[] = []
   const route: () => Route = overrides?.route ?? (() => ({ kind: 'today' }))
   const context: CommandContext = {
-    navigate: (target) => void navigated.push(target),
+    navigate: (target, options) => {
+      navigated.push(target)
+      navigateOptions.push(options)
+    },
     route,
     // Mirror the real context: note-scoped commands resolve their target from
     // the route (the focused-day branch is exercised in app-shortcuts).
@@ -80,7 +85,7 @@ function fakeContext(overrides?: Partial<CommandContext>) {
     enableSemanticSearch: vi.fn(),
     ...overrides,
   }
-  return { context, navigated }
+  return { context, navigated, navigateOptions }
 }
 
 function noteRow(isPrivate: boolean): NoteRow {
@@ -122,9 +127,12 @@ describe('keybindingFor', () => {
 
 describe('app commands', () => {
   it('nav.today, history, palette, theme, and sidebar commands hit their capabilities', async () => {
-    const { context, navigated } = fakeContext()
+    const { context, navigated, navigateOptions } = fakeContext()
     await command('nav.today').run(context)
     expect(navigated).toEqual([{ kind: 'today' }])
+    // ⌘D is a capture gesture: the arrival asks the stream to focus today's
+    // editor at the end of its content, ready to append.
+    expect(navigateOptions).toEqual([{ focusEditor: true }])
     await command('history.back').run(context)
     expect(context.back).toHaveBeenCalled()
     await command('history.forward').run(context)

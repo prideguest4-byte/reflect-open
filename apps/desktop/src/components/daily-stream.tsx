@@ -44,7 +44,7 @@ export const ESTIMATED_DAY_HEIGHT = 220
  * bookkeeping; index↔date is pure offset math.
  */
 export function DailyStream({ target }: DailyStreamProps): ReactElement {
-  const { arrivalSeq, entryId, saveScrollState, savedScroll } = useRouter()
+  const { arrivalSeq, arrivalFocusEditor, entryId, saveScrollState, savedScroll } = useRouter()
   const virtualizerRef = useRef<VirtualizerHandle>(null)
   // The window anchors at today-on-mount and stays stable for the view's life.
   // (`dayWindow`, not `window` — shadowing the DOM global here was a footgun.)
@@ -65,12 +65,24 @@ export function DailyStream({ target }: DailyStreamProps): ReactElement {
     targetDateRef.current = targetDate
   }, [targetDate])
 
+  // Mirrored like targetDate: the focus request belongs to the arrival that
+  // bumped `arrivalSeq`, so the anchor effect reads it through a ref instead
+  // of depending on it — a later flag clear without an arrival (a no-op ⌘[
+  // at the bottom of the stack) must not re-anchor a stream nobody navigated.
+  const arrivalFocusEditorRef = useRef(arrivalFocusEditor)
+  useLayoutEffect(() => {
+    arrivalFocusEditorRef.current = arrivalFocusEditor
+  }, [arrivalFocusEditor])
+
   // Only the day navigated to receives focus, once per navigation — a row that
   // scrolls offscreen and back must not steal focus from wherever the user is.
-  // The flag is consumed when the editor actually mounts and focuses (not at
+  // The entry also carries where the caret lands: capture arrivals (⌘D, the
+  // sidebar's Daily notes row — the router's `arrivalFocusEditor`) append at
+  // the end of the day's content, every other arrival keeps the note start.
+  // The slot is consumed when the editor actually mounts and focuses (not at
   // render time), so a virtualizer re-render before the lazy load completes
   // can't drop the focus.
-  const focusPending = useRef<string | null>(null)
+  const focusPending = useRef<{ date: string; selection: 'start' | 'end' } | null>(null)
   const consumeFocus = useCallback(() => {
     focusPending.current = null
   }, [])
@@ -159,7 +171,10 @@ export function DailyStream({ target }: DailyStreamProps): ReactElement {
     }
     const target = targetDateRef.current
     pendingFocusRef.current = null
-    focusPending.current = target
+    focusPending.current = {
+      date: target,
+      selection: arrivalFocusEditorRef.current ? 'end' : 'start',
+    }
     virtualizerRef.current?.scrollToIndex(indexOfDate(dayWindow, target), { align: 'start' })
   }, [arrivalSeq, entryId, dayWindow, savedScroll])
 
@@ -191,7 +206,10 @@ export function DailyStream({ target }: DailyStreamProps): ReactElement {
           // collapses to a short row), while today and future days reserve
           // most of a viewport of writing room. ISO dates compare lexically.
           const isPast = date < today
-          const autoFocus = focusPending.current === date
+          const pendingFocus = focusPending.current
+          const focusSelection =
+            pendingFocus !== null && pendingFocus.date === date ? pendingFocus.selection : null
+          const autoFocus = focusSelection !== null
           return (
             <section
               key={date}
@@ -215,6 +233,7 @@ export function DailyStream({ target }: DailyStreamProps): ReactElement {
                 onExitBoundary={handleExitBoundary}
                 lazy
                 autoFocus={autoFocus}
+                autoFocusSelection={focusSelection ?? 'start'}
                 onAutoFocused={consumeFocus}
                 gutterClassName={CONTENT_GUTTER}
                 editorClassName={isPast ? 'min-h-[100px]' : 'min-h-[60vh]'}

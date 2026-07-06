@@ -41,12 +41,12 @@ interface RouterValue {
   arrivalSeq: number
   /**
    * True when the latest arrival asked the destination to focus its editor
-   * (`navigate(route, { focusEditor: true })`). Only explicit write gestures
-   * request it — today just the mobile Daily-tab double-tap — while note
-   * navigations (wiki links, backlinks, back/forward) stay calm so the
-   * keyboard never rises mid-arrival. One-shot by construction: the next
-   * navigate overwrites it and history moves clear it, so it can never leak
-   * onto a later, unrelated arrival.
+   * (`navigate(route, { focusEditor: true })`). Only explicit capture
+   * gestures request it — the mobile Daily-tab double-tap, desktop's ⌘D and
+   * sidebar Daily notes row — while note navigations (wiki links, backlinks,
+   * back/forward) stay calm so the keyboard never rises mid-arrival.
+   * One-shot by construction: the next navigate overwrites it and history
+   * moves clear it, so it can never leak onto a later, unrelated arrival.
    */
   arrivalFocusEditor: boolean
   navigate: (route: Route, options?: NavigateOptions) => void
@@ -87,9 +87,11 @@ export interface NavigateOptions {
   restoreSurfaceScroll?: boolean
   /**
    * Ask the destination to focus its editor on arrival — see
-   * {@link RouterValue.arrivalFocusEditor}. Consumed by the mobile daily
-   * surface (Daily-tab double-tap); desktop's note route autofocuses every
-   * arrival and ignores it.
+   * {@link RouterValue.arrivalFocusEditor}. Consumed by the daily surfaces —
+   * the mobile Daily-tab double-tap and desktop's stream (⌘D, the sidebar's
+   * Daily notes row), which land the caret at the end of the day's content
+   * (append-style capture); desktop's note route autofocuses every arrival
+   * and ignores it.
    */
   focusEditor?: boolean
 }

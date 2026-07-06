@@ -163,11 +163,14 @@ describe('Sidebar', () => {
   it('nav rows navigate, with Daily notes restoring its surface scroll', async () => {
     const { view, navigate } = renderSidebar()
 
+    // The Daily row is a capture gesture: it asks for editor focus (the
+    // stream appends at today's end), while a genuine off-surface return
+    // still restores the stream's saved position instead.
     await userEvent.click(view.getByRole('button', { name: /daily notes/i }))
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith(
         { kind: 'today' },
-        { restoreSurfaceScroll: true },
+        { restoreSurfaceScroll: true, focusEditor: true },
       ),
     )
 
