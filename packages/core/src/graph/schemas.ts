@@ -58,10 +58,14 @@ export type WindowBootstrap = z.infer<typeof windowBootstrapSchema>
 
 /** Result of importing a Reflect V1 graph-shaped zip into the open graph. */
 export const graphImportSummarySchema = z.object({
-  /** Files newly written to the open graph. */
+  /** Zip files newly written to the open graph. */
   importedFiles: z.number(),
-  /** Files already present with identical bytes, left untouched. */
+  /** Zip files already present with identical bytes, left untouched. */
   skippedFiles: z.number(),
+  /** Remote attachments now stored locally under `assets/`. */
+  downloadedAssets: z.number(),
+  /** Attachments that are permanently gone; their notes keep the remote link. */
+  failedAssetDownloads: z.number(),
   /** Graph-relative paths newly written to the open graph. */
   changedPaths: z.array(z.string()),
 })

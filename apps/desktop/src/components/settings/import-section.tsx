@@ -12,20 +12,34 @@ import { Button } from '@/components/ui/button'
 import { useAsyncAction } from '@/hooks/use-async-action'
 import { useGraph } from '@/providers/graph-provider'
 
+function count(quantity: number, singular: string, plural: string): string {
+  return `${quantity} ${quantity === 1 ? singular : plural}`
+}
+
 function summaryText(summary: GraphImportSummary): string {
-  const imported = `${summary.importedFiles} ${
-    summary.importedFiles === 1 ? 'file' : 'files'
-  } imported`
-  if (summary.skippedFiles === 0) {
-    return `${imported}.`
+  const parts = [`${count(summary.importedFiles, 'file', 'files')} imported`]
+  if (summary.skippedFiles > 0) {
+    parts.push(`${summary.skippedFiles} already present`)
   }
-  return `${imported}, ${summary.skippedFiles} already present.`
+  if (summary.downloadedAssets > 0) {
+    parts.push(`${count(summary.downloadedAssets, 'attachment', 'attachments')} downloaded`)
+  }
+  const text = `${parts.join(', ')}.`
+  if (summary.failedAssetDownloads === 0) {
+    return text
+  }
+  if (summary.failedAssetDownloads === 1) {
+    return `${text} 1 attachment couldn't be downloaded and still links to Reflect V1.`
+  }
+  return `${text} ${summary.failedAssetDownloads} attachments couldn't be downloaded and still link to Reflect V1.`
 }
 
 /**
  * Settings -> Import: copy a Reflect V1 export zip into the currently open
  * graph. V1 exports are graph-shaped now, which makes this a native unzip into
- * `daily/`, `notes/`, and `assets/` rather than a migration transform.
+ * `daily/`, `notes/`, and `assets/` rather than a migration transform — plus
+ * downloading the attachments V1 notes link straight to Firebase Storage, so
+ * the imported graph is self-contained.
  */
 export function ImportSection(): ReactElement {
   const { graph, refreshIndex } = useGraph()
@@ -74,7 +88,7 @@ export function ImportSection(): ReactElement {
     <SettingsSection id="import">
       <SettingsField
         legend="Reflect V1"
-        description="Choose the .zip export from Reflect V1. Its markdown files are copied into this graph without replacing different existing files."
+        description="Choose the .zip export from Reflect V1. Its markdown files are copied into this graph without replacing different existing files, and attachments are downloaded into the graph."
       >
         <div className="mt-2">
           <Button

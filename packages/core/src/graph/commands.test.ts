@@ -24,6 +24,8 @@ describe('graph commands', () => {
     const invoke = vi.fn(async () => ({
       importedFiles: 2,
       skippedFiles: 0,
+      downloadedAssets: 0,
+      failedAssetDownloads: 0,
       changedPaths: ['notes/a.md', 'daily/2026-07-04.md'],
     }))
     setBridge({ invoke, listen: async () => () => {} })
@@ -36,6 +38,8 @@ describe('graph commands', () => {
     expect(summary).toEqual({
       importedFiles: 2,
       skippedFiles: 0,
+      downloadedAssets: 0,
+      failedAssetDownloads: 0,
       changedPaths: ['notes/a.md', 'daily/2026-07-04.md'],
     })
   })
@@ -49,6 +53,8 @@ describe('graph commands', () => {
       markReflectV1ImportOwnWrites({
         importedFiles: 2,
         skippedFiles: 0,
+        downloadedAssets: 0,
+        failedAssetDownloads: 0,
         changedPaths: ['notes/a.md', 'daily/2026-07-04.md'],
       })
 

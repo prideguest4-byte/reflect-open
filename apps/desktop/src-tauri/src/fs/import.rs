@@ -3,17 +3,25 @@
 //! Reflect V1 now exports the same markdown graph layout Reflect Open reads:
 //! `daily/`, `notes/`, optional `assets/`, plus ignorable local metadata. The
 //! import path is therefore a bounded archive extraction into the active graph,
-//! not a content migration.
+//! not a content migration — with one addition: attachments the notes link
+//! straight to Firebase Storage are downloaded into `assets/` and the links
+//! rewritten (see [`super::import_assets`]).
+//!
+//! The flow is three phases so nothing lands in the graph until everything is
+//! in hand: [`prepare_zip_import`] (read + validate, no writes), the async
+//! [`PreparedImport::download_assets`] (network, staging writes only), then
+//! [`finalize_import`] (rewrite, collision-check, atomic writes).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
 use crate::error::{AppError, AppResult};
 
+use super::import_assets::{self, DownloadOutcome};
 use super::io::{atomic_write_bytes, file_occupied};
 use super::resolve::resolve;
 
@@ -21,10 +29,16 @@ use super::resolve::resolve;
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportSummary {
-    /// Files newly written to the open graph.
+    /// Zip files newly written to the open graph.
     pub imported_files: usize,
-    /// Files already present with identical bytes, left untouched.
+    /// Zip files already present with identical bytes, left untouched.
     pub skipped_files: usize,
+    /// Remote attachments now stored locally under `assets/` (whether newly
+    /// written or already present from an earlier import).
+    pub downloaded_assets: usize,
+    /// Remote attachments that are permanently gone (4xx); their notes keep
+    /// the remote link.
+    pub failed_asset_downloads: usize,
     /// Graph-relative paths newly written to the open graph.
     pub changed_paths: Vec<String>,
 }
@@ -34,14 +48,64 @@ struct ImportEntry {
     bytes: Vec<u8>,
 }
 
-/// Import a user-selected Reflect V1 export zip into `root`.
-pub(super) fn import_zip_into_graph(root: &Path, zip_path: &Path) -> AppResult<ImportSummary> {
-    let entries = read_zip_entries(zip_path)?;
-    import_entries_into_graph(root, entries)
+/// A validated export, read out of the zip but not yet written anywhere.
+pub struct PreparedImport {
+    entries: Vec<ImportEntry>,
+    staging: PathBuf,
+    /// Unique remote-asset URLs across all notes, in first-seen order (which
+    /// also fixes collision-suffix assignment).
+    urls: Vec<String>,
+    prefix: String,
 }
 
-fn import_entries_into_graph(root: &Path, entries: Vec<ImportEntry>) -> AppResult<ImportSummary> {
-    let entries = dedupe_entries(entries)?;
+impl PreparedImport {
+    /// Download every remote attachment into the graph's staging directory.
+    /// Transient failures abort (nothing has been written to the graph yet);
+    /// permanent 4xx failures come back as [`DownloadOutcome::Gone`].
+    pub async fn download_assets(&self) -> AppResult<HashMap<String, DownloadOutcome>> {
+        import_assets::download_remote_assets(&self.staging, self.urls.clone()).await
+    }
+}
+
+/// Read and validate a user-selected Reflect V1 export zip against `root`,
+/// without writing anything.
+pub(super) fn prepare_zip_import(root: &Path, zip_path: &Path) -> AppResult<PreparedImport> {
+    prepare_zip_import_from(root, zip_path, import_assets::V1_ASSET_URL_PREFIX)
+}
+
+/// [`prepare_zip_import`] with the remote-asset URL prefix injectable, so
+/// tests can point it at a local server.
+fn prepare_zip_import_from(
+    root: &Path,
+    zip_path: &Path,
+    prefix: &str,
+) -> AppResult<PreparedImport> {
+    let entries = dedupe_entries(read_zip_entries(zip_path)?)?;
+    ensure_has_notes(&entries)?;
+    let mut seen = HashSet::new();
+    let mut urls = Vec::new();
+    for entry in &entries {
+        if !is_note_markdown(&entry.relative) {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(&entry.bytes) else {
+            continue;
+        };
+        for span in import_assets::scan_remote_spans(text, prefix) {
+            if seen.insert(span.url.clone()) {
+                urls.push(span.url);
+            }
+        }
+    }
+    Ok(PreparedImport {
+        entries,
+        staging: super::assets::staging_dir(root)?,
+        urls,
+        prefix: prefix.to_string(),
+    })
+}
+
+fn ensure_has_notes(entries: &[ImportEntry]) -> AppResult<()> {
     if !entries
         .iter()
         .any(|entry| is_note_markdown(&entry.relative))
@@ -49,6 +113,63 @@ fn import_entries_into_graph(root: &Path, entries: Vec<ImportEntry>) -> AppResul
         return Err(AppError::not_found(
             "that doesn't look like a Reflect V1 export — no notes found under daily/ or notes/",
         ));
+    }
+    Ok(())
+}
+
+/// Localize the downloaded attachments, rewrite the notes' remote links to
+/// `assets/…` paths, then write everything into the graph with the same
+/// collision policy as before: never overwrite a differing existing file,
+/// skip identical ones.
+pub(super) fn finalize_import(
+    root: &Path,
+    prepared: PreparedImport,
+    mut outcomes: HashMap<String, DownloadOutcome>,
+) -> AppResult<ImportSummary> {
+    let PreparedImport {
+        mut entries,
+        urls,
+        prefix,
+        ..
+    } = prepared;
+
+    let assets_dir = root.join("assets");
+    let mut replacements = HashMap::new();
+    let mut planned = Vec::new();
+    let mut taken = HashSet::new();
+    let mut failed_asset_downloads = 0;
+    for url in &urls {
+        match outcomes.remove(url) {
+            Some(DownloadOutcome::Fetched(fetched)) => {
+                let plan = import_assets::plan_asset_name(
+                    &assets_dir,
+                    &fetched.desired_name,
+                    fetched.file.path(),
+                    &taken,
+                )?;
+                taken.insert(plan.name.clone());
+                replacements.insert(url.clone(), format!("assets/{}", plan.name));
+                planned.push((fetched, plan));
+            }
+            Some(DownloadOutcome::Gone) => failed_asset_downloads += 1,
+            None => {}
+        }
+    }
+    let downloaded_assets = planned.len();
+
+    if !replacements.is_empty() {
+        for entry in &mut entries {
+            if !is_note_markdown(&entry.relative) {
+                continue;
+            }
+            let Ok(text) = std::str::from_utf8(&entry.bytes) else {
+                continue;
+            };
+            let rewritten = import_assets::rewrite_markdown(text, &prefix, &replacements);
+            if rewritten != text {
+                entry.bytes = rewritten.into_bytes();
+            }
+        }
     }
 
     let collisions = entries
@@ -73,6 +194,13 @@ fn import_entries_into_graph(root: &Path, entries: Vec<ImportEntry>) -> AppResul
     let mut imported_files = 0;
     let mut skipped_files = 0;
     let mut changed_paths = Vec::new();
+    for (fetched, plan) in planned {
+        if plan.reuse {
+            continue;
+        }
+        import_assets::persist_planned(fetched, &assets_dir, &plan.name)?;
+        changed_paths.push(format!("assets/{}", plan.name));
+    }
     for entry in entries {
         let target = resolve(root, &entry.relative)?;
         if let Some(path) = collision(root, &entry)? {
@@ -92,6 +220,8 @@ fn import_entries_into_graph(root: &Path, entries: Vec<ImportEntry>) -> AppResul
     Ok(ImportSummary {
         imported_files,
         skipped_files,
+        downloaded_assets,
+        failed_asset_downloads,
         changed_paths,
     })
 }
@@ -265,7 +395,8 @@ fn is_note_markdown(relative: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
     use tempfile::tempdir;
     use zip::write::SimpleFileOptions;
 
@@ -281,6 +412,28 @@ mod tests {
             .collect()
     }
 
+    /// The old single-call import shape, for tests that exercise extraction
+    /// and collision policy without remote assets.
+    fn import_entries_into_graph(
+        root: &Path,
+        entries: Vec<ImportEntry>,
+    ) -> AppResult<ImportSummary> {
+        let entries = dedupe_entries(entries)?;
+        ensure_has_notes(&entries)?;
+        let prepared = PreparedImport {
+            entries,
+            staging: super::super::assets::staging_dir(root)?,
+            urls: Vec::new(),
+            prefix: import_assets::V1_ASSET_URL_PREFIX.to_string(),
+        };
+        finalize_import(root, prepared, HashMap::new())
+    }
+
+    fn import_zip_into_graph(root: &Path, zip_path: &Path) -> AppResult<ImportSummary> {
+        let prepared = prepare_zip_import(root, zip_path)?;
+        finalize_import(root, prepared, HashMap::new())
+    }
+
     fn write_zip(path: &Path, pairs: &[(&str, &str)]) {
         let file = fs::File::create(path).unwrap();
         let mut writer = zip::ZipWriter::new(file);
@@ -290,6 +443,54 @@ mod tests {
             writer.write_all(contents.as_bytes()).unwrap();
         }
         writer.finish().unwrap();
+    }
+
+    /// Serve canned HTTP responses on a local port: each entry is
+    /// `(path, status line, extra headers, body)`. Handles connections until
+    /// the expected request count is reached.
+    fn serve(
+        responses: Vec<(&'static str, &'static str, &'static str, &'static [u8])>,
+        expected_requests: usize,
+    ) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}/", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for _ in 0..expected_requests {
+                let Ok((stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut reader = BufReader::new(stream);
+                let mut request_line = String::new();
+                if reader.read_line(&mut request_line).is_err() {
+                    continue;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).is_err() || header.trim().is_empty() {
+                        break;
+                    }
+                }
+                let requested = request_line.split_whitespace().nth(1).unwrap_or("");
+                let mut stream = reader.into_inner();
+                match responses.iter().find(|(path, ..)| *path == requested) {
+                    Some((_, status, headers, body)) => {
+                        let _ = write!(
+                            stream,
+                            "HTTP/1.1 {status}\r\nConnection: close\r\nContent-Length: {}\r\n{headers}\r\n",
+                            body.len()
+                        );
+                        let _ = stream.write_all(body);
+                    }
+                    None => {
+                        let _ = write!(
+                            stream,
+                            "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
+                        );
+                    }
+                }
+            }
+        });
+        base
     }
 
     #[test]
@@ -312,6 +513,8 @@ mod tests {
             ImportSummary {
                 imported_files: 3,
                 skipped_files: 0,
+                downloaded_assets: 0,
+                failed_asset_downloads: 0,
                 changed_paths: vec![
                     "notes/a.md".to_string(),
                     "daily/2026-07-04.md".to_string(),
@@ -389,6 +592,8 @@ mod tests {
             ImportSummary {
                 imported_files: 0,
                 skipped_files: 1,
+                downloaded_assets: 0,
+                failed_asset_downloads: 0,
                 changed_paths: Vec::new(),
             }
         );
@@ -409,6 +614,8 @@ mod tests {
             ImportSummary {
                 imported_files: 1,
                 skipped_files: 0,
+                downloaded_assets: 0,
+                failed_asset_downloads: 0,
                 changed_paths: vec!["notes/a.md".to_string()],
             }
         );
@@ -458,6 +665,139 @@ mod tests {
 
         assert!(result.is_err());
         assert!(!root.path().join("assets/pic.bin").exists());
+    }
+
+    fn import_zip_downloading_from(
+        root: &Path,
+        zip_path: &Path,
+        prefix: &str,
+    ) -> AppResult<ImportSummary> {
+        let prepared = prepare_zip_import_from(root, zip_path, prefix)?;
+        let downloads = tauri::async_runtime::block_on(prepared.download_assets())?;
+        finalize_import(root, prepared, downloads)
+    }
+
+    #[test]
+    fn downloads_remote_assets_and_rewrites_links() {
+        let root = tempdir().unwrap();
+        let base = serve(
+            vec![
+                (
+                    "/photo?alt=media&token=t",
+                    "200 OK",
+                    "Content-Type: image/webp\r\nContent-Disposition: inline; filename=\"Trip Photo.webp\"\r\n",
+                    b"webp bytes",
+                ),
+                (
+                    "/memo?alt=media&token=u",
+                    "200 OK",
+                    "Content-Type: audio/mp4\r\n",
+                    b"audio bytes",
+                ),
+                (
+                    "/users%2Fabc%2F9c2c28?alt=media&token=v",
+                    "200 OK",
+                    "Content-Type: image/png\r\nContent-Disposition: inline; filename*=utf-8''9c2c28\r\n",
+                    b"png bytes",
+                ),
+            ],
+            3,
+        );
+        let zip_path = root.path().join("export.zip");
+        let markdown = format!(
+            "![]({base}photo?alt=media\\&token=t)\n\n[memo.m4a]({base}memo?alt=media\\&token=u)\n\n![]({base}users%2Fabc%2F9c2c28?alt=media\\&token=v)\n"
+        );
+        write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
+
+        let summary = import_zip_downloading_from(root.path(), &zip_path, &base).unwrap();
+
+        assert_eq!(summary.imported_files, 1);
+        assert_eq!(summary.downloaded_assets, 3);
+        assert_eq!(summary.failed_asset_downloads, 0);
+        assert!(summary
+            .changed_paths
+            .contains(&"assets/trip-photo.webp".to_string()));
+        assert!(summary.changed_paths.contains(&"assets/memo.m4a".to_string()));
+        assert_eq!(
+            fs::read(root.path().join("assets/trip-photo.webp")).unwrap(),
+            b"webp bytes"
+        );
+        assert_eq!(
+            fs::read(root.path().join("assets/memo.m4a")).unwrap(),
+            b"audio bytes"
+        );
+        assert_eq!(
+            fs::read(root.path().join("assets/9c2c28.png")).unwrap(),
+            b"png bytes"
+        );
+        let note = fs::read_to_string(root.path().join("daily/2026-07-04.md")).unwrap();
+        assert_eq!(
+            note,
+            "![](assets/trip-photo.webp)\n\n[memo.m4a](assets/memo.m4a)\n\n![](assets/9c2c28.png)\n"
+        );
+    }
+
+    #[test]
+    fn gone_assets_keep_their_remote_links() {
+        let root = tempdir().unwrap();
+        let base = serve(vec![], 1);
+        let zip_path = root.path().join("export.zip");
+        let markdown = format!("![]({base}deleted?alt=media\\&token=t)\n");
+        write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
+
+        let summary = import_zip_downloading_from(root.path(), &zip_path, &base).unwrap();
+
+        assert_eq!(summary.imported_files, 1);
+        assert_eq!(summary.downloaded_assets, 0);
+        assert_eq!(summary.failed_asset_downloads, 1);
+        let note = fs::read_to_string(root.path().join("daily/2026-07-04.md")).unwrap();
+        assert_eq!(note, markdown);
+        assert!(!root.path().join("assets").join("deleted").exists());
+    }
+
+    #[test]
+    fn unreachable_asset_host_aborts_before_any_write() {
+        let root = tempdir().unwrap();
+        // Bind then drop, so the port refuses connections.
+        let dead = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}/", dead.local_addr().unwrap());
+        drop(dead);
+        let zip_path = root.path().join("export.zip");
+        let markdown = format!("![]({base}photo?alt=media\\&token=t)\n");
+        write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
+
+        let result = import_zip_downloading_from(root.path(), &zip_path, &base);
+
+        assert!(matches!(result.unwrap_err(), AppError::Network { .. }));
+        assert!(!root.path().join("daily/2026-07-04.md").exists());
+    }
+
+    #[test]
+    fn reimporting_the_same_export_reuses_downloaded_assets() {
+        let root = tempdir().unwrap();
+        let base = serve(
+            vec![(
+                "/photo?alt=media&token=t",
+                "200 OK",
+                "Content-Type: image/png\r\nContent-Disposition: inline; filename=\"pic.png\"\r\n",
+                b"png bytes",
+            )],
+            2,
+        );
+        let zip_path = root.path().join("export.zip");
+        let markdown = format!("![]({base}photo?alt=media\\&token=t)\n");
+        write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
+
+        let first = import_zip_downloading_from(root.path(), &zip_path, &base).unwrap();
+        assert_eq!(first.imported_files, 1);
+        assert_eq!(first.downloaded_assets, 1);
+
+        let second = import_zip_downloading_from(root.path(), &zip_path, &base).unwrap();
+        assert_eq!(second.imported_files, 0);
+        assert_eq!(second.skipped_files, 1);
+        assert_eq!(second.downloaded_assets, 1);
+        assert!(second.changed_paths.is_empty());
+        assert!(!root.path().join("assets/pic-2.png").exists());
     }
 
     #[test]

@@ -60,6 +60,9 @@ export async function createGraph(path: string): Promise<GraphInfo> {
  * Import a Reflect V1 export `.zip` into the open graph. V1 exports already use
  * Reflect Open's graph-folder layout; Rust extracts safe entries under the
  * active graph root and refuses to overwrite different existing files.
+ * Attachments the notes link to on Firebase Storage are downloaded into
+ * `assets/` and the links rewritten, so the call can take a while on
+ * attachment-heavy graphs.
  */
 export async function importReflectV1Zip(
   path: string,

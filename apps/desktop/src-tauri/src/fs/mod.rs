@@ -9,6 +9,7 @@
 pub mod asset_protocol;
 pub mod assets;
 mod import;
+mod import_assets;
 mod io;
 mod resolve;
 
@@ -213,14 +214,22 @@ pub fn graph_create(path: String, state: State<GraphState>) -> AppResult<GraphIn
 /// Import a user-selected Reflect V1 export `.zip` into the open graph. V1's
 /// export is already the graph folder shape, so this extracts safe entries
 /// directly under the current root and refuses to overwrite existing files.
+/// Attachments the notes link to on Firebase Storage are downloaded into
+/// `assets/` first and the links rewritten, so the imported graph doesn't
+/// depend on Reflect V1's infrastructure staying up.
 #[tauri::command]
-pub fn graph_import_reflect_v1_zip(
+pub async fn graph_import_reflect_v1_zip(
     path: String,
     generation: u64,
-    state: State<GraphState>,
+    state: State<'_, GraphState>,
 ) -> AppResult<import::ImportSummary> {
     let root = root_for_generation(&state, generation)?;
-    import::import_zip_into_graph(&root, Path::new(&path))
+    let prepared = import::prepare_zip_import(&root, Path::new(&path))?;
+    let downloads = prepared.download_assets().await?;
+    // The downloads can take a while; refuse to write into a graph the user
+    // has switched away from in the meantime.
+    root_for_generation(&state, generation)?;
+    import::finalize_import(&root, prepared, downloads)
 }
 
 /// Open an existing graph at `path`, ensuring the standard layout exists.

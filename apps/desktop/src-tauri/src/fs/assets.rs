@@ -114,10 +114,11 @@ fn persist_unique(
     )))
 }
 
-/// The staging directory for in-flight uploads: inside the graph (so the
-/// commit rename stays on one filesystem) but under `.reflect/` (so the
-/// watcher, indexer, and sync never see a partial file).
-fn staging_dir(root: &Path) -> AppResult<std::path::PathBuf> {
+/// The staging directory for in-flight uploads (and the V1 import's asset
+/// downloads): inside the graph (so the commit rename stays on one
+/// filesystem) but under `.reflect/` (so the watcher, indexer, and sync never
+/// see a partial file).
+pub(super) fn staging_dir(root: &Path) -> AppResult<std::path::PathBuf> {
     let dir = root.join(".reflect").join("tmp");
     fs::create_dir_all(&dir)?;
     Ok(dir)

@@ -2,9 +2,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const open = vi.hoisted(() => vi.fn<() => Promise<string | null>>())
-const importReflectV1Zip = vi.hoisted(() =>
-  vi.fn<() => Promise<{ importedFiles: number; skippedFiles: number; changedPaths: string[] }>>(),
-)
+interface SummaryFixture {
+  importedFiles: number
+  skippedFiles: number
+  downloadedAssets: number
+  failedAssetDownloads: number
+  changedPaths: string[]
+}
+
+const importReflectV1Zip = vi.hoisted(() => vi.fn<() => Promise<SummaryFixture>>())
 const markReflectV1ImportOwnWrites = vi.hoisted(() => vi.fn())
 const graphState = vi.hoisted(() => ({
   graph: { root: '/graphs/notes', name: 'Notes', generation: 42 } as {
@@ -32,6 +38,8 @@ beforeEach(() => {
   importReflectV1Zip.mockResolvedValue({
     importedFiles: 2,
     skippedFiles: 1,
+    downloadedAssets: 0,
+    failedAssetDownloads: 0,
     changedPaths: ['notes/a.md', 'daily/2026-07-04.md'],
   })
   graphState.graph = { root: '/graphs/notes', name: 'Notes', generation: 42 }
@@ -74,11 +82,30 @@ describe('ImportSection', () => {
     expect(markReflectV1ImportOwnWrites).toHaveBeenCalledWith({
       importedFiles: 2,
       skippedFiles: 1,
+      downloadedAssets: 0,
+      failedAssetDownloads: 0,
       changedPaths: ['notes/a.md', 'daily/2026-07-04.md'],
     })
     expect(graphState.refreshIndex).toHaveBeenCalledTimes(1)
     expect((await screen.findByRole('status')).textContent).toBe(
       '2 files imported, 1 already present.',
+    )
+  })
+
+  it('summarizes downloaded and failed attachments', async () => {
+    importReflectV1Zip.mockResolvedValueOnce({
+      importedFiles: 12,
+      skippedFiles: 0,
+      downloadedAssets: 140,
+      failedAssetDownloads: 1,
+      changedPaths: ['notes/a.md'],
+    })
+    render(<ImportSection />)
+
+    fireEvent.click(importButton())
+
+    expect((await screen.findByRole('status')).textContent).toBe(
+      "12 files imported, 140 attachments downloaded. 1 attachment couldn't be downloaded and still links to Reflect V1.",
     )
   })
 
@@ -105,11 +132,7 @@ describe('ImportSection', () => {
   })
 
   it('does not show success after the user switches graphs mid-import', async () => {
-    let finishImport: (summary: {
-      importedFiles: number
-      skippedFiles: number
-      changedPaths: string[]
-    }) => void = () => {}
+    let finishImport: (summary: SummaryFixture) => void = () => {}
     importReflectV1Zip.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -123,7 +146,13 @@ describe('ImportSection', () => {
 
     graphState.graph = { root: '/graphs/other', name: 'Other', generation: 43 }
     view.rerender(<ImportSection />)
-    finishImport({ importedFiles: 7, skippedFiles: 0, changedPaths: ['notes/a.md'] })
+    finishImport({
+      importedFiles: 7,
+      skippedFiles: 0,
+      downloadedAssets: 0,
+      failedAssetDownloads: 0,
+      changedPaths: ['notes/a.md'],
+    })
 
     await screen.findByRole('button', { name: /import zip/i })
     expect(markReflectV1ImportOwnWrites).not.toHaveBeenCalled()
