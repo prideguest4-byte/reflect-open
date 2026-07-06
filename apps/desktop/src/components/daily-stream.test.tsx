@@ -7,7 +7,8 @@ import {
   FocusedDailyProvider,
   useFocusedDailyDate,
 } from '@/providers/focused-daily-provider'
-import { RouterProvider, useRouter } from '@/routing/router'
+import type { Route } from '@/routing/route'
+import { RouterProvider, useRouter, type NavigateOptions } from '@/routing/router'
 import { todayIso } from '@/lib/dates'
 import { createDayWindow, dateAtIndex, indexOfDate } from '@/lib/day-window'
 import { installVirtuaTestEnv } from '@/test-utils/virtua-jsdom'
@@ -23,9 +24,45 @@ import { DailyStream, ESTIMATED_DAY_HEIGHT } from './daily-stream'
  * loading-placeholder contract (reserved editor space, delayed hint).
  */
 
-vi.mock('@/editor/note-editor', () => ({
-  NoteEditor: () => <div data-testid="fake-editor" />,
+const editorProbe = vi.hoisted(() => ({
+  focusCalls: 0,
+  selectionCalls: [] as Array<'start' | 'end'>,
 }))
+
+vi.mock('@/editor/note-editor', async () => {
+  const { useEffect } = await import('react')
+  return {
+    NoteEditor: ({
+      initialContent,
+      handleRef,
+    }: {
+      initialContent: string
+      handleRef?: (handle: import('@/editor/note-editor').NoteEditorHandle | null) => void
+    }) => {
+      useEffect(() => {
+        handleRef?.({
+          setMarkdown: () => {},
+          getMarkdown: () => '',
+          insertMarkdown: () => {},
+          focus: () => {
+            editorProbe.focusCalls += 1
+          },
+          setSelection: (position: 'start' | 'end') => {
+            editorProbe.selectionCalls.push(position)
+          },
+          getSelectedText: () => '',
+          openSelectionMenu: () => {},
+          startPendingReplacement: () => false,
+          appendPendingReplacementText: () => {},
+          acceptPendingReplacement: () => {},
+          discardPendingReplacement: () => {},
+        })
+        return () => handleRef?.(null)
+      }, [handleRef])
+      return <div data-testid="fake-editor">{initialContent}</div>
+    },
+  }
+})
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({
     graph: { root: '/g', name: 'g', generation: 1 },
@@ -70,14 +107,20 @@ Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
   },
 })
 
+const mockInvoke = vi.fn<(command: string, args: Record<string, unknown>) => Promise<unknown>>()
+
 setBridge({
-  // Reads never resolve: every day stays a loading placeholder.
-  invoke: () => new Promise(() => {}),
+  invoke: mockInvoke,
   listen: async () => () => {},
 })
 
 beforeEach(() => {
   scrollTops.length = 0
+  editorProbe.focusCalls = 0
+  editorProbe.selectionCalls = []
+  mockInvoke.mockReset()
+  // Reads never resolve by default: every day stays a loading placeholder.
+  mockInvoke.mockImplementation(() => new Promise(() => {}))
 })
 
 afterEach(() => {
@@ -107,13 +150,49 @@ function SaveScrollProbe({ offset }: { offset: number }): ReactElement | null {
 function NavigateTodayProbe({
   onReady,
 }: {
-  onReady: (navigateToday: () => void) => void
+  onReady: (navigateToday: (options?: NavigateOptions) => void) => void
 }): null {
   const { navigate } = useRouter()
   useEffect(() => {
-    onReady(() => navigate({ kind: 'today' }))
+    onReady((options) => navigate({ kind: 'today' }, options))
   }, [navigate, onReady])
   return null
+}
+
+function NavigateRouteProbe({
+  onReady,
+}: {
+  onReady: (navigateRoute: (route: Route, options?: NavigateOptions) => void) => void
+}): null {
+  const { navigate } = useRouter()
+  useEffect(() => {
+    onReady((route, options) => navigate(route, options))
+  }, [navigate, onReady])
+  return null
+}
+
+function installReadableNotes(files: Record<string, string>): void {
+  mockInvoke.mockImplementation(async (command, args) => {
+    if (command === 'note_read') {
+      const content = files[(args as { path: string }).path]
+      if (content === undefined) {
+        throw { kind: 'notFound', message: 'missing' }
+      }
+      return content
+    }
+    if (command === 'note_write') {
+      const { path, contents } = args as { path: string; contents: string }
+      files[path] = contents
+      return null
+    }
+    if (command === 'note_exists') {
+      return (args as { path: string }).path in files
+    }
+    if (command === 'db_query') {
+      return []
+    }
+    return null
+  })
 }
 
 describe('DailyStream', () => {
@@ -214,6 +293,43 @@ describe('DailyStream', () => {
     fireEvent.focusIn(row)
 
     expect(focused).toBe(date)
+    view.unmount()
+  })
+
+  it('focuses a focused daily arrival at the end of the daily note', async () => {
+    const dayWindow = createDayWindow(todayIso())
+    const target = dateAtIndex(dayWindow, 2)
+    installReadableNotes({ [`daily/${target}.md`]: 'first thought\nsecond thought\n' })
+    let navigateRoute: (route: Route, options?: NavigateOptions) => void = () => {
+      throw new Error('navigate route not ready')
+    }
+    const view = render(
+      <StreamProviders>
+        <DailyStream target={{ kind: 'date', date: target }} />
+        <NavigateRouteProbe
+          onReady={(run) => {
+            navigateRoute = run
+          }}
+        />
+      </StreamProviders>,
+    )
+
+    await waitFor(() => {
+      expect(view.getAllByTestId('fake-editor').length).toBeGreaterThan(0)
+    })
+    editorProbe.focusCalls = 0
+    editorProbe.selectionCalls = []
+    scrollTops.length = 0
+
+    await act(async () => {
+      navigateRoute({ kind: 'daily', date: target }, { focusEditor: true })
+    })
+
+    const expected = indexOfDate(dayWindow, target) * ESTIMATED_DAY_HEIGHT
+    expect(scrollTops.length).toBeGreaterThan(0)
+    expect(scrollTops[0]).toBe(expected)
+    await waitFor(() => expect(editorProbe.focusCalls).toBeGreaterThan(0))
+    expect(editorProbe.selectionCalls).toContain('end')
     view.unmount()
   })
 

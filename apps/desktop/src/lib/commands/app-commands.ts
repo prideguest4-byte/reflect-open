@@ -54,7 +54,7 @@ const APP_COMMANDS: AppCommand[] = [
     title: 'Go to today',
     keywords: ['daily', 'now'],
     keybinding: 'Mod-d',
-    run: (context) => context.navigate({ kind: 'today' }),
+    run: (context) => context.navigate({ kind: 'today' }, { focusEditor: true }),
   },
   {
     id: 'nav.allNotes',

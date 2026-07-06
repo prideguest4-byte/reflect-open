@@ -29,10 +29,8 @@ interface SidebarProps {
  * The workspace sidebar, in the original app's shape: history arrows top
  * right, search, primary navigation with hover-revealed shortcut keycaps, the
  * Pinned shelf, and the graph switcher footer. Most nav rows run registered
- * commands so a binding and its behavior stay one definition; the Daily notes
- * row restores the stream's surface scroll when clicked from another surface
- * (the router re-anchors it, like `Mod-D`, when the stream is already
- * showing). (Sidebar collapse stays on `Mod-\` via the command registry.)
+ * commands so a binding and its behavior stay one definition. (Sidebar
+ * collapse stays on `Mod-\` via the command registry.)
  */
 export function Sidebar({ graph, context }: SidebarProps): ReactElement {
   const { route } = useRouter()
@@ -73,9 +71,7 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
             label="Daily notes"
             binding={keybindingFor('nav.today') ?? undefined}
             active={(route.kind === 'today' || route.kind === 'daily') && !hasActivePinnedNote}
-            onClick={() =>
-              context.navigate({ kind: 'today' }, { restoreSurfaceScroll: true })
-            }
+            onClick={() => void runCommand('nav.today', context)}
           />
           <SidebarItem
             icon={

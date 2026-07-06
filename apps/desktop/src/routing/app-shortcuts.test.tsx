@@ -102,9 +102,11 @@ describe('app shortcuts', () => {
 
     act(() => press('d'))
     expect(result.current.router.route).toEqual({ kind: 'today' })
+    expect(result.current.router.arrivalFocusEditor).toBe(true)
 
     act(() => press('['))
     expect(result.current.router.route.kind).toBe('note')
+    expect(result.current.router.arrivalFocusEditor).toBe(false)
 
     act(() => press(']'))
     expect(result.current.router.route).toEqual({ kind: 'today' })

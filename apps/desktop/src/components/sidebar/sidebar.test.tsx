@@ -160,14 +160,14 @@ function renderSidebar(overrides?: Partial<CommandContext>, initialRoute?: Route
 }
 
 describe('Sidebar', () => {
-  it('nav rows navigate, with Daily notes restoring its surface scroll', async () => {
+  it('nav rows navigate, with Daily notes focusing the editor for capture', async () => {
     const { view, navigate } = renderSidebar()
 
     await userEvent.click(view.getByRole('button', { name: /daily notes/i }))
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith(
         { kind: 'today' },
-        { restoreSurfaceScroll: true },
+        { focusEditor: true },
       ),
     )
 
