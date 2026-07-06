@@ -717,7 +717,9 @@ mod tests {
         assert!(summary
             .changed_paths
             .contains(&"assets/trip-photo.webp".to_string()));
-        assert!(summary.changed_paths.contains(&"assets/memo.m4a".to_string()));
+        assert!(summary
+            .changed_paths
+            .contains(&"assets/memo.m4a".to_string()));
         assert_eq!(
             fs::read(root.path().join("assets/trip-photo.webp")).unwrap(),
             b"webp bytes"

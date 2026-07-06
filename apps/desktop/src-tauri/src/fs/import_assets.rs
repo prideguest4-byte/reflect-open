@@ -230,7 +230,10 @@ async fn fetch_asset(
         file.as_file_mut().write_all(&chunk)?;
     }
     file.as_file().sync_all()?;
-    Ok(DownloadOutcome::Fetched(FetchedAsset { file, desired_name }))
+    Ok(DownloadOutcome::Fetched(FetchedAsset {
+        file,
+        desired_name,
+    }))
 }
 
 /// The best original filename available: the `Content-Disposition` filename
@@ -602,7 +605,10 @@ mod tests {
         assert_eq!(sanitize_asset_file_name(".env"), "env");
         assert_eq!(sanitize_asset_file_name("???"), "untitled");
         assert_eq!(sanitize_asset_file_name("con.pdf"), "con-note.pdf");
-        assert_eq!(sanitize_asset_file_name("日本語 メモ.png"), "日本語-メモ.png");
+        assert_eq!(
+            sanitize_asset_file_name("日本語 メモ.png"),
+            "日本語-メモ.png"
+        );
     }
 
     #[test]
