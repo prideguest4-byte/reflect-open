@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { addMonths, buildMonthGrid, monthLabel, monthOf, weekdayLabels } from './month-grid'
+import {
+  addMonths,
+  buildMonthGrid,
+  monthLabel,
+  monthOf,
+  monthShortLabel,
+  weekdayLabels,
+} from './month-grid'
 
 describe('monthOf', () => {
   it('extracts the YYYY-MM month of an ISO date', () => {
@@ -12,6 +19,13 @@ describe('monthLabel', () => {
   it('formats a human month label', () => {
     expect(monthLabel('2026-06')).toBe('June 2026')
     expect(monthLabel('2026-01')).toBe('January 2026')
+  })
+})
+
+describe('monthShortLabel', () => {
+  it('formats the abbreviated month name', () => {
+    expect(monthShortLabel('2026-06')).toBe('Jun')
+    expect(monthShortLabel('2026-01')).toBe('Jan')
   })
 })
 
