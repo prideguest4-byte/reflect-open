@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -113,6 +113,14 @@ function installViewTransitionMock(): ReturnType<typeof vi.fn> {
   return startViewTransition
 }
 
+function firePointer(element: Element, type: string, init: Record<string, unknown>): void {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.assign(event, init)
+  act(() => {
+    element.dispatchEvent(event)
+  })
+}
+
 beforeEach(() => {
   captured.props = null
   Object.defineProperty(window, 'matchMedia', {
@@ -139,6 +147,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  setPlatformSurface({ touchEditor: false, mobileApp: false })
   vi.clearAllMocks()
 })
 
@@ -270,6 +279,97 @@ describe('NoteEditor image lightbox', () => {
     expect(opener.parentElement?.className).toContain(
       'right-[max(env(safe-area-inset-right),1rem)]',
     )
+  })
+
+  it('shows mobile close chrome inside iOS safe-area bounds', async () => {
+    setPlatformSurface({ mobileApp: true })
+    renderEditor()
+
+    act(() => captured.props?.onImageClick?.(imageClick('assets/cat.png', 'Cat')))
+
+    const close = await screen.findByRole('button', { name: 'Close' })
+    expect(close.parentElement?.className).toContain(
+      'top-[max(env(safe-area-inset-top),1rem)]',
+    )
+    expect(close.parentElement?.className).toContain(
+      'left-[max(env(safe-area-inset-left),1rem)]',
+    )
+  })
+
+  it('dismisses the mobile image lightbox with a downward drag', async () => {
+    setPlatformSurface({ mobileApp: true })
+    renderEditor()
+
+    act(() => captured.props?.onImageClick?.(imageClick('assets/cat.png', 'Cat')))
+
+    const preview = await screen.findByRole('button', { name: 'Close image preview' })
+    const image = preview.querySelector('img')
+    expect(image).toBeInstanceOf(HTMLImageElement)
+
+    firePointer(preview, 'pointerdown', {
+      pointerId: 1,
+      isPrimary: true,
+      pointerType: 'touch',
+      clientX: 180,
+      clientY: 120,
+    })
+    firePointer(preview, 'pointermove', {
+      pointerId: 1,
+      clientX: 182,
+      clientY: 180,
+    })
+    expect(image?.style.transform).toContain('translate3d(0, 60px, 0)')
+
+    firePointer(preview, 'pointermove', {
+      pointerId: 1,
+      clientX: 184,
+      clientY: 360,
+    })
+    firePointer(preview, 'pointerup', {
+      pointerId: 1,
+      clientX: 184,
+      clientY: 360,
+    })
+
+    expect(image?.style.transform).toContain(`translate3d(0, ${window.innerHeight}px, 0)`)
+    fireEvent.transitionEnd(image!)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('snaps the mobile lightbox back after a short drag without tap-closing it', async () => {
+    setPlatformSurface({ mobileApp: true })
+    renderEditor()
+
+    act(() => captured.props?.onImageClick?.(imageClick('assets/cat.png', 'Cat')))
+
+    const preview = await screen.findByRole('button', { name: 'Close image preview' })
+    const image = preview.querySelector('img')
+    expect(image).toBeInstanceOf(HTMLImageElement)
+
+    firePointer(preview, 'pointerdown', {
+      pointerId: 1,
+      isPrimary: true,
+      pointerType: 'touch',
+      clientX: 180,
+      clientY: 120,
+    })
+    firePointer(preview, 'pointermove', {
+      pointerId: 1,
+      clientX: 182,
+      clientY: 150,
+    })
+    firePointer(preview, 'pointerup', {
+      pointerId: 1,
+      clientX: 182,
+      clientY: 150,
+    })
+
+    expect(image?.style.transform).toBe('translate3d(0, 0, 0) scale(1)')
+    fireEvent.click(preview)
+    expect(screen.getByRole('dialog', { name: 'Image preview' })).toBeInTheDocument()
+
+    fireEvent.transitionEnd(image!)
+    expect(screen.getByRole('dialog', { name: 'Image preview' })).toBeInTheDocument()
   })
 
   it('uses the opener captured when the lightbox opens', async () => {
