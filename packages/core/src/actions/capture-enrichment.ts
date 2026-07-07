@@ -243,11 +243,14 @@ export async function reconcileCaptureEnrichment(
         input.generation,
       )
       if (aiTitle !== null && aiTitle !== title) {
+        // Re-read the daily: the provider call above is slow, and the
+        // pre-call snapshot would silently drop anything written meanwhile.
+        const freshDaily = await noteSource(dailyPath(identity.date), input.generation)
         const entry = `[[${identity.base}|${title}]]`
-        if (dailySource.includes(entry)) {
+        if (freshDaily.includes(entry)) {
           await writeNote(
             dailyPath(identity.date),
-            dailySource.replace(entry, () => `[[${identity.base}|${aiTitle}]]`),
+            freshDaily.replace(entry, () => `[[${identity.base}|${aiTitle}]]`),
             input.generation,
           )
         }

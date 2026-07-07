@@ -355,6 +355,49 @@ describe('drainCaptureInbox', () => {
     expect(daily).not.toContain('capture-2026-06-11-153022-845')
   })
 
+  it('a dedup refresh re-syncs the daily link text with the fresh tab title', async () => {
+    addSpool(
+      envelope({
+        id: '00000000-0000-4000-8000-000000000001',
+        capturedAt: new Date(2026, 5, 11, 9, 30, 0, 0).toISOString(),
+      }),
+    )
+    await drain()
+    // Simulate a completed enrichment: H1 and daily link text carry the AI title.
+    const notePath = 'notes/capture-2026-06-11-093000-000-0000.md'
+    files.set(notePath, (files.get(notePath) ?? '').replace('# An article', '# AI Title'))
+    files.set(DAILY, (files.get(DAILY) ?? '').replace('|An article]]', '|AI Title]]'))
+
+    addSpool(envelope()) // same URL re-capture, 15:30
+    const outcome = await drain()
+
+    expect(outcome.deduped).toBe(1)
+    expect(files.get(notePath)).toContain('# An article')
+    const daily = files.get(DAILY) ?? ''
+    expect(daily).toContain('|An article]]')
+    expect(daily).not.toContain('|AI Title]]')
+  })
+
+  it('a dedup refresh leaves a user-edited daily link text alone', async () => {
+    addSpool(
+      envelope({
+        id: '00000000-0000-4000-8000-000000000001',
+        capturedAt: new Date(2026, 5, 11, 9, 30, 0, 0).toISOString(),
+      }),
+    )
+    await drain()
+    files.set(DAILY, (files.get(DAILY) ?? '').replace('|An article]]', '|my own link text]]'))
+
+    addSpool(envelope({ title: 'An article - Example News' }))
+    const outcome = await drain()
+
+    expect(outcome.deduped).toBe(1)
+    expect(files.get('notes/capture-2026-06-11-093000-000-0000.md')).toContain(
+      '# An article - Example News',
+    )
+    expect(files.get(DAILY)).toContain('|my own link text]]')
+  })
+
   it('a different selection creates a new entry instead of refreshing', async () => {
     addSpool(
       envelope({
@@ -860,6 +903,21 @@ describe('reconcileCaptureEnrichment', () => {
     expect(files.get(IDENTITY.notePath)).toContain('# An article')
     expect(files.get(DAILY)).toContain('|An article]]')
     expect(writeNoteMock.mock.calls.filter(([path]) => path === DAILY)).toHaveLength(0)
+  })
+
+  it('preserves daily edits made while the provider call was in flight', async () => {
+    await drainOne()
+    describeMock.mockImplementation(async () => {
+      files.set(DAILY, `${files.get(DAILY) ?? ''}\n- jotted down mid-enrichment\n`)
+      return { title: 'A Cleaned Up Article', description: 'An AI description of the page.' }
+    })
+
+    const outcome = await reconcile()
+
+    expect(outcome.enriched).toBe(1)
+    const daily = files.get(DAILY) ?? ''
+    expect(daily).toContain('- jotted down mid-enrichment')
+    expect(daily).toContain('|A Cleaned Up Article]]')
   })
 
   it('leaves a user-edited daily link text alone while still retitling the note', async () => {
