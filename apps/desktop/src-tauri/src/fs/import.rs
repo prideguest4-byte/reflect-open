@@ -40,10 +40,13 @@ pub struct ImportSummary {
     /// Remote attachments that are permanently gone (4xx); their notes keep
     /// the remote link.
     pub failed_asset_downloads: usize,
-    /// Zip files written under a `-2`-style suffixed name because their own
+    /// Zip notes written under a `-2`-style suffixed name because their own
     /// name is occupied by a differing file the filesystem treats as the same
     /// path (case-insensitive APFS folds `Füße.md`/`füsse.md`/`füße.md`
-    /// together; the V1 export keeps them distinct notes).
+    /// together; the V1 export keeps them distinct notes). Only note
+    /// markdown is renamed — a note's links resolve by title, so the
+    /// filename is free to move; asset links are literal paths, so an
+    /// aliased asset stays a fatal conflict.
     pub renamed_files: usize,
     /// Graph-relative paths newly written to the open graph.
     pub changed_paths: Vec<String>,
@@ -143,9 +146,9 @@ fn ensure_has_notes(entries: &[ImportEntry]) -> AppResult<()> {
 /// Localize the downloaded attachments, rewrite the notes' remote links to
 /// `assets/…` paths, then write everything into the graph with the same
 /// collision policy as before: never overwrite a differing existing file,
-/// skip identical ones. Entries whose name is only *aliased* to an existing
-/// file by the filesystem (case-insensitive APFS folds `füße.md` and
-/// `füsse.md` to the same path) are distinct notes and land under a
+/// skip identical ones. Note entries whose name is only *aliased* to an
+/// existing file by the filesystem (case-insensitive APFS folds `füße.md`
+/// and `füsse.md` to the same path) are distinct notes and land under a
 /// suffixed name instead of failing the import.
 pub(super) fn finalize_import(
     root: &Path,
@@ -375,6 +378,13 @@ fn plan_entry(
         return Ok(WritePlan::SkipIdentical);
     }
     if names.contains(&target)? {
+        return Ok(WritePlan::Conflict(entry.relative.clone()));
+    }
+    // Only note markdown is safe to land under another filename: note links
+    // resolve by title, so the file can move. Asset links are literal
+    // `assets/…` paths that are not rewritten, so a renamed aliased asset
+    // would leave its notes pointing at the aliasing file — fail instead.
+    if !is_note_markdown(&entry.relative) {
         return Ok(WritePlan::Conflict(entry.relative.clone()));
     }
     for suffix in 2..MAX_RENAME_PROBES {
@@ -925,6 +935,35 @@ mod tests {
         assert_eq!(
             fs::read_to_string(root.path().join("notes/api-2.md")).unwrap(),
             "# Mine\n"
+        );
+    }
+
+    /// Aliased assets are never renamed: unlike note links (which resolve
+    /// by title), asset links are literal paths that are not rewritten, so
+    /// a suffixed copy would leave its notes pointing at the aliasing file.
+    /// The never-overwrite refusal stands.
+    #[test]
+    fn aliased_assets_stay_fatal_conflicts() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("assets")).unwrap();
+        if !filesystem_folds(&root.path().join("assets"), "PIC.bin", "pic.bin") {
+            return;
+        }
+        fs::write(root.path().join("assets/PIC.bin"), b"theirs").unwrap();
+
+        let result = import_entries_into_graph(
+            root.path(),
+            entries(&[("notes/a.md", "# A\n"), ("assets/pic.bin", "mine")]),
+        );
+
+        match result.unwrap_err() {
+            AppError::Io { message } => assert!(message.contains("assets/pic.bin")),
+            other => panic!("expected an IO collision error, got {other:?}"),
+        }
+        assert!(!root.path().join("notes/a.md").exists());
+        assert_eq!(
+            fs::read(root.path().join("assets/PIC.bin")).unwrap(),
+            b"theirs"
         );
     }
 
