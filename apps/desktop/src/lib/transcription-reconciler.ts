@@ -106,11 +106,22 @@ export function createTranscriptionReconciler(
       return
     }
     loop.schedule() // the launch pass: memos left pending by earlier sessions
-    loop.retryOnWake() // the network's natural retry signals
+    loop.retryOnWake() // the network's natural retry signals (focus/online)
     loop.onDispose(() => listeners.clear())
     if (!hasBridge()) {
-      return // browser dev: no watcher to follow
+      return // browser dev: no watcher to follow, no native foreground
     }
+    // Foregrounding on iOS doesn't reliably fire `focus`/`online` on the
+    // webview — `visibilitychange` → visible does. A memo captured (or its
+    // transcription failed offline) while backgrounded gets its retry when
+    // the app comes back. Bridge-gated, so desktop keeps focus/online only.
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') {
+        loop.schedule()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    loop.onDispose(() => document.removeEventListener('visibilitychange', onVisible))
     void subscribeFileChanges((changes) => {
       const hasNewRecording = changes.some(
         (change) => change.kind === 'upsert' && audioMemoFromPath(change.path) !== null,

@@ -15,7 +15,13 @@ pub struct StartRequest {
 pub struct StopResponse {
     /// Absolute path of the staged `.m4a`.
     pub path: String,
+    /// Recorded length in milliseconds.
     pub duration_ms: f64,
+    /// The staged file's modification time in epoch milliseconds — its stop
+    /// time, used as the memo's identity timestamp so that re-ingesting the
+    /// same file (after a failed delete) resolves to the same memo basename.
+    /// Matches what `list_staged` reports for the same file.
+    pub modified_ms: f64,
 }
 
 /// A native action to queue for the webview (the V1 handshake). Sent by the
@@ -31,7 +37,9 @@ pub struct QueueActionRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingStatusResponse {
+    /// True while a recording is in progress.
     pub recording: bool,
+    /// Recorded length so far in milliseconds (0 when not recording).
     pub elapsed_ms: f64,
 }
 
@@ -46,12 +54,15 @@ pub struct StagedFile {
     pub modified_ms: f64,
 }
 
+/// `list_staged`'s response — every finished recording still in staging.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListStagedResponse {
+    /// Staged recordings, in no guaranteed order.
     pub files: Vec<StagedFile>,
 }
 
+/// `read_staged`'s response — a staged recording's bytes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadStagedResponse {
@@ -64,5 +75,6 @@ pub struct ReadStagedResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedPathRequest {
+    /// Absolute path of the staged file, as returned by a stop or `list_staged`.
     pub path: String,
 }

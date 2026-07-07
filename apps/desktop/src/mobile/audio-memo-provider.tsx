@@ -119,8 +119,14 @@ export function MobileAudioMemoProvider({
   const enqueueStaged = useCallback(
     (input: StagedRecordingInput): void => {
       const release = async (): Promise<void> => {
-        await deleteStagedRecording(input.stagedPath)
-        releaseStagedPath(input.stagedPath)
+        // Always drop the claim, even if the delete fails: a still-claimed
+        // path is skipped forever by the orphan scan, so a discarded memo
+        // whose delete threw would otherwise reappear on the next launch.
+        try {
+          await deleteStagedRecording(input.stagedPath)
+        } finally {
+          releaseStagedPath(input.stagedPath)
+        }
       }
       const capture: PendingAudioCapture = {
         audio: input.blob,
@@ -141,7 +147,7 @@ export function MobileAudioMemoProvider({
       if (result !== null) {
         enqueueStaged({
           blob: result.blob,
-          recordedAt: new Date(),
+          recordedAt: result.recordedAt,
           stagedPath: result.stagedPath,
         })
       }
@@ -189,7 +195,7 @@ export function MobileAudioMemoProvider({
       if (recording !== null) {
         enqueueStaged({
           blob: recording.blob,
-          recordedAt: new Date(),
+          recordedAt: recording.recordedAt,
           stagedPath: recording.stagedPath,
         })
       }

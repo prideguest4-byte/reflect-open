@@ -46,7 +46,9 @@ export interface PendingAudioCapture {
   onDiscarded?: () => Promise<void> | void
 }
 
+/** Configuration for {@link useAudioMemoPipeline}. */
 export interface UseAudioMemoPipelineOptions {
+  /** The open graph — pins captures/transcription and scopes the reconciler. */
   graph: GraphInfo
   /**
    * Whether the capture-error UI (popover, drawer) is on screen. When it is
@@ -56,6 +58,11 @@ export interface UseAudioMemoPipelineOptions {
   isErrorSurfaceVisible: () => boolean
 }
 
+/**
+ * The audio-memo surface's platform-neutral state and actions: capture-queue
+ * progress, the transcription flag, availability, the parked-error state, and
+ * the enqueue/retry/discard/report-error controls each provider drives.
+ */
 export interface UseAudioMemoPipelineValue {
   /** Recordings committed but not yet written to the graph. */
   pendingCount: number

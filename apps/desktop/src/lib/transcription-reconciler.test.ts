@@ -144,6 +144,22 @@ describe('createTranscriptionReconciler', () => {
     expect(reconcileAudioMemos).toHaveBeenCalledTimes(4)
   })
 
+  it('retries when the app becomes visible again (the iOS foreground signal)', async () => {
+    const subject = create()
+    subject.start()
+    await flush()
+    expect(reconcileAudioMemos).toHaveBeenCalledTimes(1)
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(reconcileAudioMemos).toHaveBeenCalledTimes(2)
+
+    subject.dispose()
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(reconcileAudioMemos).toHaveBeenCalledTimes(2) // listener removed on dispose
+  })
+
   it('exposes the transcribing flag while a pass has memos, and notifies subscribers', async () => {
     let release: (outcome: ReconcileAudioMemosOutcome) => void = () => {}
     reconcileAudioMemos.mockImplementationOnce(

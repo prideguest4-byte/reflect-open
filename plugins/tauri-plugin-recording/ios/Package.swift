@@ -5,8 +5,10 @@ import PackageDescription
 
 let package = Package(
     name: "tauri-plugin-recording",
+    // iOS only: RecordingPlugin.swift imports UIKit/AVFoundation
+    // unconditionally, and the plugin is registered only on the iOS target
+    // (desktop uses the Rust `desktop.rs` stub).
     platforms: [
-        .macOS(.v10_13),
         .iOS(.v13),
     ],
     products: [

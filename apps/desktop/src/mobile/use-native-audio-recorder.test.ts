@@ -75,7 +75,7 @@ describe('useNativeAudioRecorder', () => {
         return undefined
       }
       if (command === 'plugin:recording|stop_recording') {
-        return { path, durationMs: 4000 }
+        return { path, durationMs: 4000, modifiedMs: 1_700_000_000_000 }
       }
       if (command === 'plugin:recording|read_staged') {
         return { base64: base64Of('audio-bytes') }
@@ -97,6 +97,8 @@ describe('useNativeAudioRecorder', () => {
     expect(stopped?.stagedPath).toBe(path)
     expect(stopped?.durationMs).toBe(4000)
     expect(stopped?.mimeType).toBe('audio/mp4')
+    // The memo's identity timestamp is the staged file's mtime, not wall clock.
+    expect(stopped?.recordedAt).toEqual(new Date(1_700_000_000_000))
     expect(await stopped?.blob.text()).toBe('audio-bytes')
     expect(isStagedPathClaimed(path)).toBe(true)
     expect(result.current.status).toBe('idle')
@@ -107,7 +109,7 @@ describe('useNativeAudioRecorder', () => {
     const path = '/staging/stop-short.m4a'
     invoke.mockImplementation(async (command: string) => {
       if (command === 'plugin:recording|stop_recording') {
-        return { path, durationMs: 300 }
+        return { path, durationMs: 300, modifiedMs: 1_700_000_000_000 }
       }
       return undefined
     })
@@ -162,13 +164,22 @@ describe('useNativeAudioRecorder', () => {
     })
 
     await act(async () => {
-      pluginEvents.emit('recordingStopped', { path, durationMs: 5000, reason: 'interruption' })
+      pluginEvents.emit('recordingStopped', {
+        path,
+        durationMs: 5000,
+        modifiedMs: 1_700_000_000_000,
+        reason: 'interruption',
+      })
     })
 
     expect(result.current.status).toBe('idle')
     await waitFor(() =>
       expect(onNativeStop).toHaveBeenCalledWith(
-        expect.objectContaining({ stagedPath: path, durationMs: 5000 }),
+        expect.objectContaining({
+          stagedPath: path,
+          durationMs: 5000,
+          recordedAt: new Date(1_700_000_000_000),
+        }),
       ),
     )
     expect(isStagedPathClaimed(path)).toBe(true)
@@ -181,7 +192,12 @@ describe('useNativeAudioRecorder', () => {
     await waitFor(() => expect(pluginEvents.handlers.has('recordingStopped')).toBe(true))
 
     await act(async () => {
-      pluginEvents.emit('recordingStopped', { path, durationMs: 200, reason: 'background' })
+      pluginEvents.emit('recordingStopped', {
+        path,
+        durationMs: 200,
+        modifiedMs: 1_700_000_000_000,
+        reason: 'interruption',
+      })
     })
 
     await waitFor(() => expect(onNativeStop).toHaveBeenCalledWith(null))
@@ -191,7 +207,7 @@ describe('useNativeAudioRecorder', () => {
     expect(isStagedPathClaimed(path)).toBe(false)
   })
 
-  it('a failed read-back after a native stop releases the claim for the orphan scan', async () => {
+  it('a failed read-back after a native stop releases the claim and closes the UI', async () => {
     const path = '/staging/native-unreadable.m4a'
     invoke.mockImplementation(async (command: string) => {
       if (command === 'plugin:recording|read_staged') {
@@ -203,10 +219,55 @@ describe('useNativeAudioRecorder', () => {
     await waitFor(() => expect(pluginEvents.handlers.has('recordingStopped')).toBe(true))
 
     await act(async () => {
-      pluginEvents.emit('recordingStopped', { path, durationMs: 5000, reason: 'error' })
+      pluginEvents.emit('recordingStopped', {
+        path,
+        durationMs: 5000,
+        modifiedMs: 1_700_000_000_000,
+        reason: 'error',
+      })
     })
 
+    // The file is left staged (released) for the orphan scan, but the host is
+    // still notified so the recording UI closes rather than stranding.
     await waitFor(() => expect(isStagedPathClaimed(path)).toBe(false))
-    expect(onNativeStop).not.toHaveBeenCalled()
+    expect(onNativeStop).toHaveBeenCalledWith(null)
+  })
+
+  it('a native stop landing during start does not resurrect the recording', async () => {
+    const path = '/staging/stop-during-start.m4a'
+    let releaseStart: () => void = () => {}
+    invoke.mockImplementation(async (command: string) => {
+      if (command === 'plugin:recording|start_recording') {
+        await new Promise<void>((resolve) => {
+          releaseStart = resolve
+        })
+        return undefined
+      }
+      return undefined
+    })
+    const { result } = renderRecorder()
+    await waitFor(() => expect(pluginEvents.handlers.has('recordingStopped')).toBe(true))
+
+    let startPromise: Promise<void> = Promise.resolve()
+    await act(async () => {
+      startPromise = result.current.start()
+      await Promise.resolve()
+    })
+    expect(result.current.status).toBe('requesting')
+
+    // The recorder finalizes (e.g. immediate interruption) before start's
+    // invoke resolves — status must stay idle, not flip back to recording.
+    await act(async () => {
+      pluginEvents.emit('recordingStopped', {
+        path,
+        durationMs: 200,
+        modifiedMs: 1_700_000_000_000,
+        reason: 'interruption',
+      })
+      releaseStart()
+      await startPromise
+    })
+
+    expect(result.current.status).toBe('idle')
   })
 })

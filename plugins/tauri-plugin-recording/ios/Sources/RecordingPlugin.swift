@@ -23,6 +23,9 @@ struct RecordingStopped: Encodable {
   /// Absolute path of the staged `.m4a`.
   let path: String
   let durationMs: Double
+  /// The staged file's modification time in epoch ms — the memo's identity
+  /// timestamp (see `StopResponse.modifiedMs`).
+  let modifiedMs: Double
   /// `interruption` | `routeChange` | `maxDuration` | `error`
   let reason: String
 }
@@ -51,6 +54,11 @@ struct QueueActionArgs: Decodable {
 struct StopResponse: Encodable {
   let path: String
   let durationMs: Double
+  /// The staged file's modification time in epoch ms — its stop time, and
+  /// the memo's identity timestamp. The same value the orphan scan reads via
+  /// `listStaged`, so a recording re-ingested after a failed delete resolves
+  /// to the same memo basename instead of a duplicate.
+  let modifiedMs: Double
 }
 
 struct StagedFile: Encodable {
@@ -425,13 +433,30 @@ class RecordingPlugin: Plugin {
 
     if let cancel = pendingCancel {
       pendingCancel = nil
-      try? FileManager.default.removeItem(atPath: path)
-      cancel.resolve()
+      // Cancel must be durable: a file left in staging would be resurrected as
+      // a memo by the orphan scan, undoing the discard. Report the failure so
+      // the caller can surface it rather than silently keeping the recording.
+      do {
+        if FileManager.default.fileExists(atPath: path) {
+          try FileManager.default.removeItem(atPath: path)
+        }
+        cancel.resolve()
+      } catch {
+        cancel.reject("discarding the recording failed: \(error.localizedDescription)")
+      }
       return
     }
     if let stop = pendingStop {
       pendingStop = nil
-      stop.resolve(StopResponse(path: path, durationMs: durationMs))
+      // A failed finalization produced no usable file — reject rather than
+      // hand back a StopResponse pointing at a corrupt/absent recording.
+      if !successfully {
+        stop.reject("the recording failed to finalize")
+      } else {
+        stop.resolve(
+          StopResponse(
+            path: path, durationMs: durationMs, modifiedMs: Self.fileModifiedMs(path)))
+      }
       return
     }
     // A native-initiated stop: the file is staged output now — tell the
@@ -439,10 +464,20 @@ class RecordingPlugin: Plugin {
     do {
       try trigger(
         "recordingStopped",
-        data: RecordingStopped(path: path, durationMs: durationMs, reason: reason.rawValue))
+        data: RecordingStopped(
+          path: path, durationMs: durationMs, modifiedMs: Self.fileModifiedMs(path),
+          reason: reason.rawValue))
     } catch {
       Logger.error("recordingStopped event failed to serialize: \(error)")
     }
+  }
+
+  /// The staged file's modification time in epoch milliseconds — the memo's
+  /// identity timestamp, matching what `listStaged` reports for the same file.
+  private static func fileModifiedMs(_ path: String) -> Double {
+    let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+    let modified = attributes?[.modificationDate] as? Date
+    return (modified ?? Date()).timeIntervalSince1970 * 1000
   }
 
   private func emitLevel() {

@@ -34,6 +34,13 @@ export interface NativeRecorderResult {
   durationMs: number
   /** The staged file's absolute path — delete it once the blob is durable. */
   stagedPath: string
+  /**
+   * The recording's stop time (the staged file's mtime), used as the memo's
+   * identity timestamp. Every ingest path — user stop, native stop, and the
+   * orphan scan — keys off this same value, so re-ingesting a file whose
+   * delete failed resolves to the same memo basename rather than a duplicate.
+   */
+  recordedAt: Date
 }
 
 export interface UseNativeAudioRecorderOptions {
@@ -61,13 +68,18 @@ export interface UseNativeAudioRecorderValue {
   cancel: () => Promise<void>
 }
 
-const stopResponseSchema = z.object({ path: z.string(), durationMs: z.number() })
+const stopResponseSchema = z.object({
+  path: z.string(),
+  durationMs: z.number(),
+  modifiedMs: z.number(),
+})
 const recordingStatusSchema = z.object({ recording: z.boolean(), elapsedMs: z.number() })
 const readStagedSchema = z.object({ base64: z.string() })
 const levelEventSchema = z.object({ level: z.number(), elapsedMs: z.number() })
 const stoppedEventSchema = z.object({
   path: z.string(),
   durationMs: z.number(),
+  modifiedMs: z.number(),
   reason: z.string(),
 })
 
@@ -135,7 +147,7 @@ export async function nativeRecordingStatus(): Promise<{
  */
 export async function stopActiveRecording(): Promise<NativeRecorderResult | null> {
   const raw = await invoke('plugin:recording|stop_recording')
-  const { path, durationMs } = stopResponseSchema.parse(raw)
+  const { path, durationMs, modifiedMs } = stopResponseSchema.parse(raw)
   claimStagedPath(path)
   if (durationMs < MIN_DURATION_MS) {
     await deleteStagedRecording(path).catch(() => {})
@@ -144,7 +156,13 @@ export async function stopActiveRecording(): Promise<NativeRecorderResult | null
   }
   try {
     const blob = await readStagedRecording(path)
-    return { blob, mimeType: NATIVE_RECORDING_MIME, durationMs, stagedPath: path }
+    return {
+      blob,
+      mimeType: NATIVE_RECORDING_MIME,
+      durationMs,
+      stagedPath: path,
+      recordedAt: new Date(modifiedMs),
+    }
   } catch (cause) {
     // Leave the file for the orphan scan rather than losing the memo.
     releaseStagedPath(path)
@@ -152,6 +170,15 @@ export async function stopActiveRecording(): Promise<NativeRecorderResult | null
   }
 }
 
+/**
+ * Drive the native recorder plugin as a React hook. Subscribes to the
+ * plugin's `recordingLevel` / `recordingStopped` events for the hook's whole
+ * life, exposes `status`/`elapsedMs`/`level` as state, and returns
+ * `start`/`stop`/`cancel`. A native-initiated stop (interruption, route
+ * change, the duration cap) arrives on `recordingStopped` and is delivered to
+ * {@link UseNativeAudioRecorderOptions.onNativeStop}; user-initiated `stop`
+ * resolves its own result.
+ */
 export function useNativeAudioRecorder(
   options: UseNativeAudioRecorderOptions,
 ): UseNativeAudioRecorderValue {
@@ -166,6 +193,11 @@ export function useNativeAudioRecorder(
     optionsRef.current = options
   })
   const statusRef = useRef<NativeRecorderStatus>('idle')
+  // Read the live status through a function so control-flow narrowing from an
+  // earlier guard (e.g. the `!== 'idle'` return in `start`) doesn't treat a
+  // later read as still that literal — `setStatusBoth` mutates the ref
+  // opaquely, and a `recordingStopped` event can change it across an await.
+  const currentStatus = useCallback((): NativeRecorderStatus => statusRef.current, [])
   const setStatusBoth = useCallback((next: NativeRecorderStatus): void => {
     statusRef.current = next
     setStatus(next)
@@ -205,7 +237,7 @@ export function useNativeAudioRecorder(
               return
             }
             setStatusBoth('idle')
-            const { path, durationMs } = parsed.data
+            const { path, durationMs, modifiedMs } = parsed.data
             claimStagedPath(path)
             void (async () => {
               if (durationMs < MIN_DURATION_MS) {
@@ -221,13 +253,17 @@ export function useNativeAudioRecorder(
                   mimeType: NATIVE_RECORDING_MIME,
                   durationMs,
                   stagedPath: path,
+                  recordedAt: new Date(modifiedMs),
                 })
               } catch (cause) {
                 // Reading it back failed — leave the file staged (released,
                 // so the orphan scan ingests it on the next launch or
-                // foreground instead).
+                // foreground instead). Still notify the host so the recording
+                // UI closes: the recorder is already idle, and leaving the
+                // drawer open would strand it.
                 releaseStagedPath(path)
                 console.error('reading a native-stopped recording failed:', cause)
+                optionsRef.current.onNativeStop(null)
               }
             })()
           },
@@ -254,7 +290,7 @@ export function useNativeAudioRecorder(
   }, [setStatusBoth])
 
   const start = useCallback(async (): Promise<void> => {
-    if (statusRef.current !== 'idle') {
+    if (currentStatus() !== 'idle') {
       return
     }
     setStatusBoth('requesting')
@@ -266,8 +302,13 @@ export function useNativeAudioRecorder(
       setStatusBoth('idle')
       throw cause
     }
-    setStatusBoth('recording')
-  }, [setStatusBoth])
+    // A `recordingStopped` event (interruption, immediate cap, permission
+    // race) can flip us back to 'idle' while the start invoke is still in
+    // flight — don't resurrect a recording that already finalized.
+    if (currentStatus() === 'requesting') {
+      setStatusBoth('recording')
+    }
+  }, [currentStatus, setStatusBoth])
 
   const stop = useCallback((): Promise<NativeRecorderResult | null> => {
     if (stopPromiseRef.current !== null) {

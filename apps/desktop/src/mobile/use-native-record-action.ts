@@ -65,7 +65,7 @@ export function useNativeRecordAction(options: UseNativeRecordActionOptions): vo
           if (result !== null) {
             enqueueStaged({
               blob: result.blob,
-              recordedAt: new Date(),
+              recordedAt: result.recordedAt,
               stagedPath: result.stagedPath,
             })
           }
@@ -85,6 +85,13 @@ export function useNativeRecordAction(options: UseNativeRecordActionOptions): vo
             return
           }
           void startRef.current()
+          // A repeat delivery (double widget open, or a re-`deliverPendingAction`
+          // while the action is still queued) restarts the confirm window
+          // against the latest start — otherwise an earlier timer could
+          // confirm before this start's UI has survived its full window.
+          if (confirmTimer !== null) {
+            clearTimeout(confirmTimer)
+          }
           // Confirmation is about delivery, not success — a mic-denied start
           // still confirms, or the queue would re-surface the same failure
           // every launch.

@@ -162,6 +162,7 @@ const RECORDING: NativeRecorderResult = {
   mimeType: 'audio/mp4',
   durationMs: 4000,
   stagedPath: '/staging/recording-1.m4a',
+  recordedAt: new Date(1_700_000_000_000),
 }
 
 const MEMO: AudioMemoIdentity = {
@@ -423,6 +424,7 @@ describe('MobileAudioMemoProvider', () => {
       mimeType: 'audio/mp4',
       durationMs: 30_000,
       stagedPath: '/staging/recording-orphan.m4a',
+      recordedAt: new Date(1_700_000_050_000),
     }
     stagedControls.stopActive.mockResolvedValue(orphaned)
 
