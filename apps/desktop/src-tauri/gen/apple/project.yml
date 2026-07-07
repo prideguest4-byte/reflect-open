@@ -63,6 +63,11 @@ targets:
         NSMicrophoneUsageDescription: Reflect uses the microphone to record audio memos that are transcribed into your daily note.
         NSCalendarsFullAccessUsageDescription: Reflect reads your calendar to show the day's meetings beside your daily note. Access is read-only and stays on this device.
         NSCalendarsUsageDescription: Reflect reads your calendar to show the day's meetings beside your daily note. Access is read-only and stays on this device.
+        # Audio memos keep recording through screen lock and backgrounding
+        # (audio-memos wave 2). The recording plugin activates the audio
+        # session only while a recording is live, so the mode never keeps the
+        # app running outside an actual capture.
+        UIBackgroundModes: [audio]
         UILaunchStoryboardName: LaunchScreen
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:

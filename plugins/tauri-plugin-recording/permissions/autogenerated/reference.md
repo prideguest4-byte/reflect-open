@@ -7,6 +7,7 @@ Record audio memos natively, manage the staging directory, and subscribe to reco
 - `allow-start-recording`
 - `allow-stop-recording`
 - `allow-cancel-recording`
+- `allow-recording-status`
 - `allow-list-staged`
 - `allow-read-staged`
 - `allow-delete-staged`
@@ -122,6 +123,32 @@ Enables the read_staged command without any pre-configured scope.
 <td>
 
 Denies the read_staged command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`recording:allow-recording-status`
+
+</td>
+<td>
+
+Enables the recording_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`recording:deny-recording-status`
+
+</td>
+<td>
+
+Denies the recording_status command without any pre-configured scope.
 
 </td>
 </tr>

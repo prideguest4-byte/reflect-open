@@ -58,6 +58,8 @@ const stagedControls = vi.hoisted(() => ({
   claimed: new Set<string>(),
   readStaged: vi.fn<(path: string) => Promise<Blob>>(),
   deleteStaged: vi.fn<(path: string) => Promise<void>>(),
+  recordingStatus: vi.fn<() => Promise<{ recording: boolean; elapsedMs: number }>>(),
+  stopActive: vi.fn<() => Promise<NativeRecorderResult | null>>(),
 }))
 
 vi.mock('@reflect/core', async (importOriginal) => ({
@@ -88,6 +90,8 @@ vi.mock('@/mobile/use-native-audio-recorder', () => ({
   isMicDeniedError: (cause: unknown) => typeof cause === 'string' && cause.includes('denied'),
   readStagedRecording: stagedControls.readStaged,
   deleteStagedRecording: stagedControls.deleteStaged,
+  nativeRecordingStatus: stagedControls.recordingStatus,
+  stopActiveRecording: stagedControls.stopActive,
   claimStagedPath: (path: string) => stagedControls.claimed.add(path),
   releaseStagedPath: (path: string) => stagedControls.claimed.delete(path),
   isStagedPathClaimed: (path: string) => stagedControls.claimed.has(path),
@@ -165,6 +169,8 @@ beforeEach(() => {
   stagedControls.claimed.clear()
   stagedControls.readStaged.mockResolvedValue(new Blob(['staged'], { type: 'audio/mp4' }))
   stagedControls.deleteStaged.mockResolvedValue(undefined)
+  stagedControls.recordingStatus.mockResolvedValue({ recording: false, elapsedMs: 0 })
+  stagedControls.stopActive.mockResolvedValue(null)
   SETTINGS.current = {
     aiProviders: [{ id: 'cfg-openai', provider: 'openai', model: 'gpt-5.1', keyHint: 'wxyz1' }],
     defaultAiProviderId: 'cfg-openai',
@@ -394,6 +400,36 @@ describe('MobileAudioMemoProvider', () => {
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith('plugin:recording|list_staged'),
     )
+  })
+
+  it('a recording that outlived its JS is stopped and saved on mount', async () => {
+    stagedControls.recordingStatus.mockResolvedValue({ recording: true, elapsedMs: 30_000 })
+    const orphaned: NativeRecorderResult = {
+      blob: new Blob(['orphan'], { type: 'audio/mp4' }),
+      mimeType: 'audio/mp4',
+      durationMs: 30_000,
+      stagedPath: '/staging/recording-orphan.m4a',
+    }
+    stagedControls.stopActive.mockResolvedValue(orphaned)
+
+    renderHook(() => useMobileAudioMemo(), { wrapper })
+
+    await waitFor(() => expect(stagedControls.stopActive).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(captureAudioMemo).toHaveBeenCalledWith(
+        expect.objectContaining({ audio: orphaned.blob, generation: 3 }),
+      ),
+    )
+    await waitFor(() =>
+      expect(stagedControls.deleteStaged).toHaveBeenCalledWith(orphaned.stagedPath),
+    )
+  })
+
+  it('no live native recording on mount means no stop call', async () => {
+    renderHook(() => useMobileAudioMemo(), { wrapper })
+
+    await waitFor(() => expect(stagedControls.recordingStatus).toHaveBeenCalled())
+    expect(stagedControls.stopActive).not.toHaveBeenCalled()
   })
 
   it('is unavailable without an OpenAI or Gemini model, and toggle does nothing', async () => {

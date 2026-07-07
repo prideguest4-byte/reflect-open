@@ -12,15 +12,23 @@ struct RecordingLevel: Encodable {
 }
 
 /// The payload of the `recordingStopped` event — a stop the *native* side
-/// initiated (interruption, route change, backgrounding, the duration cap, or
-/// an encoder error). A stop the webview asked for resolves its own invoke
-/// instead and never fires this event.
+/// initiated (interruption, route change, the duration cap, or an encoder
+/// error). A stop the webview asked for resolves its own invoke instead and
+/// never fires this event.
 struct RecordingStopped: Encodable {
   /// Absolute path of the staged `.m4a`.
   let path: String
   let durationMs: Double
-  /// `interruption` | `routeChange` | `background` | `maxDuration` | `error`
+  /// `interruption` | `routeChange` | `maxDuration` | `error`
   let reason: String
+}
+
+/// `recordingStatus`'s response — whether a native recording is live right
+/// now. A fresh webview mount uses this to find a recording that outlived
+/// its UI (a reload or crash mid-memo) and stop-and-save it.
+struct RecordingStatus: Encodable {
+  let recording: Bool
+  let elapsedMs: Double
 }
 
 /// `stopRecording`'s response.
@@ -59,11 +67,14 @@ struct StagedPathArgs: Decodable {
 /// The V1 lesson this preserves: **capture must not depend on the webview.**
 /// The recorder writes AAC mono 44.1 kHz `.m4a` straight into a staging
 /// directory the plugin owns; audio-session interruptions (calls, Siri,
-/// alarms), input-route loss (headphones unplugged), backgrounding, and the
-/// duration cap all finalize the file natively, without JS involvement. The
-/// webview ingests staged files into the graph when it can — including a
-/// launch-time orphan scan for recordings whose stop it never saw — and only
-/// then deletes them, so a crash anywhere in the chain loses nothing.
+/// alarms), input-route loss (headphones unplugged), and the duration cap
+/// all finalize the file natively, without JS involvement. Backgrounding
+/// does NOT stop a recording: the app declares `UIBackgroundModes: audio`,
+/// so a memo keeps capturing through screen lock (V1 parity) — level events
+/// pause while backgrounded rather than piling into a suspended webview.
+/// The webview ingests staged files into the graph when it can — including
+/// a launch-time orphan scan for recordings whose stop it never saw — and
+/// only then deletes them, so a crash anywhere in the chain loses nothing.
 ///
 /// All state is confined to the main queue: invokes hop onto it, the meter
 /// timer runs on it, and AVFoundation notifications are delivered to it.
@@ -74,7 +85,6 @@ class RecordingPlugin: Plugin {
   private enum NativeStopReason: String {
     case interruption
     case routeChange
-    case background
     case maxDuration
     case error
   }
@@ -95,6 +105,9 @@ class RecordingPlugin: Plugin {
   private var nativeStopReason: NativeStopReason?
   /// Bumped by cancel so a permission grant arriving later starts nothing.
   private var startSession = 0
+  /// True while the app is backgrounded — level events pause (a suspended
+  /// webview can't drain them) but the recording itself continues.
+  private var isBackgrounded = false
 
   @objc public override func load(webview: WKWebView) {
     let center = NotificationCenter.default
@@ -110,13 +123,18 @@ class RecordingPlugin: Plugin {
       name: AVAudioSession.routeChangeNotification,
       object: AVAudioSession.sharedInstance()
     )
-    // Wave 1 records in the foreground only (no background-audio entitlement
-    // yet): backgrounding finalizes the memo instead of letting the OS
-    // suspend the process mid-write and corrupt the container.
+    // Backgrounding only gates event emission — with `UIBackgroundModes:
+    // audio` the recording itself continues through screen lock.
     center.addObserver(
       self,
       selector: #selector(handleDidEnterBackground),
       name: UIApplication.didEnterBackgroundNotification,
+      object: nil
+    )
+    center.addObserver(
+      self,
+      selector: #selector(handleWillEnterForeground),
+      name: UIApplication.willEnterForegroundNotification,
       object: nil
     )
   }
@@ -185,6 +203,20 @@ class RecordingPlugin: Plugin {
       }
       self.pendingCancel = invoke
       self.finalize(recorder)
+    }
+  }
+
+  /// Whether a recording is live right now. A fresh webview mount asks this
+  /// to find a recording that outlived its UI (a reload or crash mid-memo)
+  /// and stop-and-save it instead of leaving a hidden hot microphone.
+  @objc public func recordingStatus(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      let recorder = self.recorder
+      invoke.resolve(
+        RecordingStatus(
+          recording: recorder != nil,
+          elapsedMs: (recorder?.currentTime ?? 0) * 1000
+        ))
     }
   }
 
@@ -344,8 +376,11 @@ class RecordingPlugin: Plugin {
 
   private func emitLevel() {
     guard let recorder = self.recorder, recorder.isRecording else { return }
-    recorder.updateMeters()
     lastMeteredDurationMs = recorder.currentTime * 1000
+    // A suspended webview can't drain events — keep tracking the duration
+    // above, but only emit while the app is in the foreground.
+    guard !isBackgrounded else { return }
+    recorder.updateMeters()
     // Average power is dBFS (−160…0); linearize for the waveform.
     let level = pow(10, recorder.averagePower(forChannel: 0) / 20)
     do {
@@ -386,8 +421,11 @@ class RecordingPlugin: Plugin {
   }
 
   @objc private func handleDidEnterBackground() {
-    guard let recorder = self.recorder else { return }
-    finalize(recorder, native: .background)
+    isBackgrounded = true
+  }
+
+  @objc private func handleWillEnterForeground() {
+    isBackgrounded = false
   }
 
   // MARK: - Staging directory

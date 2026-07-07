@@ -343,6 +343,18 @@
           "markdownDescription": "Denies the read_staged command without any pre-configured scope."
         },
         {
+          "description": "Enables the recording_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-recording-status",
+          "markdownDescription": "Enables the recording_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the recording_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-recording-status",
+          "markdownDescription": "Denies the recording_status command without any pre-configured scope."
+        },
+        {
           "description": "Enables the registerListener command without any pre-configured scope.",
           "type": "string",
           "const": "allow-registerListener",
@@ -391,10 +403,10 @@
           "markdownDescription": "Denies the stop_recording command without any pre-configured scope."
         },
         {
-          "description": "Record audio memos natively, manage the staging directory, and subscribe to recording events\n#### This default permission set includes:\n\n- `allow-start-recording`\n- `allow-stop-recording`\n- `allow-cancel-recording`\n- `allow-list-staged`\n- `allow-read-staged`\n- `allow-delete-staged`\n- `allow-registerListener`\n- `allow-remove-listener`",
+          "description": "Record audio memos natively, manage the staging directory, and subscribe to recording events\n#### This default permission set includes:\n\n- `allow-start-recording`\n- `allow-stop-recording`\n- `allow-cancel-recording`\n- `allow-recording-status`\n- `allow-list-staged`\n- `allow-read-staged`\n- `allow-delete-staged`\n- `allow-registerListener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Record audio memos natively, manage the staging directory, and subscribe to recording events\n#### This default permission set includes:\n\n- `allow-start-recording`\n- `allow-stop-recording`\n- `allow-cancel-recording`\n- `allow-list-staged`\n- `allow-read-staged`\n- `allow-delete-staged`\n- `allow-registerListener`\n- `allow-remove-listener`"
+          "markdownDescription": "Record audio memos natively, manage the staging directory, and subscribe to recording events\n#### This default permission set includes:\n\n- `allow-start-recording`\n- `allow-stop-recording`\n- `allow-cancel-recording`\n- `allow-recording-status`\n- `allow-list-staged`\n- `allow-read-staged`\n- `allow-delete-staged`\n- `allow-registerListener`\n- `allow-remove-listener`"
         }
       ]
     }

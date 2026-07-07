@@ -18,6 +18,14 @@ pub struct StopResponse {
     pub duration_ms: f64,
 }
 
+/// `recording_status`'s response — whether a native recording is live.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingStatusResponse {
+    pub recording: bool,
+    pub elapsed_ms: f64,
+}
+
 /// One file in the staging directory — a recording not yet moved into the
 /// graph (an orphan from a crash, or one mid-ingest).
 #[derive(Debug, Clone, Serialize, Deserialize)]

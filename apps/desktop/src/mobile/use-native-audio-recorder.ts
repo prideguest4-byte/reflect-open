@@ -9,9 +9,11 @@ import { z } from 'zod'
  * (`plugins/tauri-plugin-recording`) instead of the webview's MediaRecorder.
  * Capture is native by design (the V1 lesson): AVAudioRecorder writes
  * straight into a staging directory the plugin owns, and interruptions,
- * route loss, backgrounding, and the duration cap all finalize the file
- * without JS — this hook only *presents* recording state and hands finished
- * files to the capture pipeline.
+ * route loss, and the duration cap all finalize the file without JS — this
+ * hook only *presents* recording state and hands finished files to the
+ * capture pipeline. Backgrounding does not stop a recording (the app
+ * declares `UIBackgroundModes: audio`); a memo keeps capturing through
+ * screen lock and is stopped by the user, the cap, or an interruption.
  *
  * Instead of a `MediaStream` for the waveform, the plugin streams ~10 Hz
  * `recordingLevel` events; the latest level and elapsed time are exposed as
@@ -38,9 +40,9 @@ export interface UseNativeAudioRecorderOptions {
   /** Auto-stop cap, enforced natively so it holds even if JS never wakes. */
   maxDurationMs: number
   /**
-   * A stop the native side initiated (interruption, route change,
-   * backgrounding, the cap): the file is already staged — treat it exactly
-   * like a user stop. `null` when the recording was too short to keep.
+   * A stop the native side initiated (interruption, route change, the cap):
+   * the file is already staged — treat it exactly like a user stop. `null`
+   * when the recording was too short to keep.
    */
   onNativeStop: (result: NativeRecorderResult | null) => void
 }
@@ -60,6 +62,7 @@ export interface UseNativeAudioRecorderValue {
 }
 
 const stopResponseSchema = z.object({ path: z.string(), durationMs: z.number() })
+const recordingStatusSchema = z.object({ recording: z.boolean(), elapsedMs: z.number() })
 const readStagedSchema = z.object({ base64: z.string() })
 const levelEventSchema = z.object({ level: z.number(), elapsedMs: z.number() })
 const stoppedEventSchema = z.object({
@@ -109,6 +112,44 @@ export async function readStagedRecording(path: string): Promise<Blob> {
 /** Remove a staged recording once its bytes are durable in the graph. */
 export async function deleteStagedRecording(path: string): Promise<void> {
   await invoke('plugin:recording|delete_staged', { request: { path } })
+}
+
+/**
+ * Whether a native recording is live right now. A fresh mount checks this to
+ * find a recording that outlived its JS (a webview reload or crash mid-memo).
+ */
+export async function nativeRecordingStatus(): Promise<{
+  recording: boolean
+  elapsedMs: number
+}> {
+  const raw = await invoke('plugin:recording|recording_status')
+  return recordingStatusSchema.parse(raw)
+}
+
+/**
+ * Stop the live native recording, claim its staged file, and read it back —
+ * `null` for one too short to be a memo. The shared machinery behind the
+ * hook's `stop` and the provider's mount-time reconcile of a recording that
+ * outlived its UI. Rejects when nothing is recording (a native finalize won
+ * the race — its `recordingStopped` event delivers the memo instead).
+ */
+export async function stopActiveRecording(): Promise<NativeRecorderResult | null> {
+  const raw = await invoke('plugin:recording|stop_recording')
+  const { path, durationMs } = stopResponseSchema.parse(raw)
+  claimStagedPath(path)
+  if (durationMs < MIN_DURATION_MS) {
+    await deleteStagedRecording(path).catch(() => {})
+    releaseStagedPath(path)
+    return null
+  }
+  try {
+    const blob = await readStagedRecording(path)
+    return { blob, mimeType: NATIVE_RECORDING_MIME, durationMs, stagedPath: path }
+  } catch (cause) {
+    // Leave the file for the orphan scan rather than losing the memo.
+    releaseStagedPath(path)
+    throw cause
+  }
 }
 
 export function useNativeAudioRecorder(
@@ -236,22 +277,10 @@ export function useNativeAudioRecorder(
       return Promise.resolve(null)
     }
     const stopped = (async (): Promise<NativeRecorderResult | null> => {
-      const raw = await invoke('plugin:recording|stop_recording')
-      setStatusBoth('idle')
-      const { path, durationMs } = stopResponseSchema.parse(raw)
-      claimStagedPath(path)
-      if (durationMs < MIN_DURATION_MS) {
-        await deleteStagedRecording(path).catch(() => {})
-        releaseStagedPath(path)
-        return null
-      }
       try {
-        const blob = await readStagedRecording(path)
-        return { blob, mimeType: NATIVE_RECORDING_MIME, durationMs, stagedPath: path }
-      } catch (cause) {
-        // Leave the file for the orphan scan rather than losing the memo.
-        releaseStagedPath(path)
-        throw cause
+        return await stopActiveRecording()
+      } finally {
+        setStatusBoth('idle')
       }
     })().finally(() => {
       stopPromiseRef.current = null

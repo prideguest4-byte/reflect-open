@@ -26,6 +26,16 @@ pub(crate) async fn cancel_recording<R: Runtime>(app: AppHandle<R>) -> Result<()
     app.recording().cancel_recording()
 }
 
+/// Whether a native recording is live right now. A fresh webview mount asks
+/// this to find a recording that outlived its UI (a reload or crash
+/// mid-memo) and stop-and-save it.
+#[command]
+pub(crate) async fn recording_status<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<RecordingStatusResponse> {
+    app.recording().recording_status()
+}
+
 /// Finished recordings still in staging — crash orphans a launch pass must
 /// ingest, plus any file currently mid-ingest (callers filter those).
 #[command]

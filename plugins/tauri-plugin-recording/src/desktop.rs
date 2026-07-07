@@ -28,6 +28,10 @@ impl<R: Runtime> Recording<R> {
         Err(crate::Error::UnsupportedPlatform)
     }
 
+    pub fn recording_status(&self) -> crate::Result<RecordingStatusResponse> {
+        Err(crate::Error::UnsupportedPlatform)
+    }
+
     pub fn list_staged(&self) -> crate::Result<ListStagedResponse> {
         Err(crate::Error::UnsupportedPlatform)
     }

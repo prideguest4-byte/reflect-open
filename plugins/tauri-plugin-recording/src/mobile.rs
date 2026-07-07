@@ -51,6 +51,14 @@ impl<R: Runtime> Recording<R> {
             .map_err(Into::into)
     }
 
+    /// Whether a native recording is live right now — a fresh webview mount
+    /// uses this to stop-and-save a recording that outlived its UI.
+    pub fn recording_status(&self) -> crate::Result<RecordingStatusResponse> {
+        self.0
+            .run_mobile_plugin("recordingStatus", ())
+            .map_err(Into::into)
+    }
+
     /// Finished recordings still in staging (crash orphans, files mid-ingest).
     pub fn list_staged(&self) -> crate::Result<ListStagedResponse> {
         self.0

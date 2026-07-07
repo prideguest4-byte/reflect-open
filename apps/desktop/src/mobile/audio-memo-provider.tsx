@@ -21,8 +21,10 @@ import {
   isMicDeniedError,
   isStagedPathClaimed,
   NATIVE_RECORDING_MIME,
+  nativeRecordingStatus,
   readStagedRecording,
   releaseStagedPath,
+  stopActiveRecording,
   useNativeAudioRecorder,
   type NativeRecorderResult,
 } from '@/mobile/use-native-audio-recorder'
@@ -34,12 +36,17 @@ import {
  * presents recording in a sidebar popover; here it is a bottom drawer plus a
  * mic FAB on the daily spine.
  *
- * Two mobile-only responsibilities live here:
+ * Three mobile-only responsibilities live here:
  *
- * - **Native stops.** Interruptions (calls, Siri), input-route loss,
- *   backgrounding, and the duration cap finalize the recording natively and
- *   announce it on the plugin's `recordingStopped` event — ingested exactly
- *   like a user stop.
+ * - **Native stops.** Interruptions (calls, Siri), input-route loss, and the
+ *   duration cap finalize the recording natively and announce it on the
+ *   plugin's `recordingStopped` event — ingested exactly like a user stop.
+ *   Backgrounding is deliberately not a stop: `UIBackgroundModes: audio`
+ *   keeps a memo capturing through screen lock (V1 parity).
+ * - **The live-recording reconcile.** A recording that outlived its JS — a
+ *   webview reload or crash mid-memo, a provider remount — must never leave
+ *   a hidden hot microphone: on mount, a still-live native recording is
+ *   stopped and saved.
  * - **The orphan scan.** A recording whose stop the webview never saw (a
  *   crash, a kill while backgrounded) is still sitting in the plugin's
  *   staging directory: on mount and on every foreground, staged files no
@@ -246,6 +253,36 @@ export function MobileAudioMemoProvider({
     },
     [recorder.status, stopAndSave, cancelRecorder, setDrawerOpen],
   )
+
+  // The live-recording reconcile: this mount did not start any recording, so
+  // a native one still running (the webview reloaded or crashed mid-memo, or
+  // the provider remounted across a graph switch) has no UI — stop and save
+  // it rather than leave a hidden hot microphone.
+  useEffect(() => {
+    if (!hasBridge()) {
+      return
+    }
+    void (async () => {
+      try {
+        const status = await nativeRecordingStatus()
+        if (!status.recording) {
+          return
+        }
+        const result = await stopActiveRecording()
+        if (result !== null) {
+          enqueueStaged({
+            blob: result.blob,
+            recordedAt: new Date(),
+            stagedPath: result.stagedPath,
+          })
+        }
+      } catch (cause) {
+        // A user stop or native finalize winning the race lands here — the
+        // memo arrives through that path (or the orphan scan) instead.
+        console.warn('reconciling a live native recording failed:', cause)
+      }
+    })()
+  }, [enqueueStaged])
 
   // The orphan scan: staged recordings no live flow owns — from a crash, a
   // webview reload, or a kill while backgrounded — are ingested on mount and

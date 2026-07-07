@@ -40,6 +40,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::start_recording,
             commands::stop_recording,
             commands::cancel_recording,
+            commands::recording_status,
             commands::list_staged,
             commands::read_staged,
             commands::delete_staged,

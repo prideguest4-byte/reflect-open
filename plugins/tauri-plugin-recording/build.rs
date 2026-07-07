@@ -5,6 +5,7 @@ const COMMANDS: &[&str] = &[
     "start_recording",
     "stop_recording",
     "cancel_recording",
+    "recording_status",
     "list_staged",
     "read_staged",
     "delete_staged",
