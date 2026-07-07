@@ -475,6 +475,18 @@ describe('read_assets', () => {
     expect(output.error).toBe(NO_ASSET_DESCRIPTION_ERROR)
   })
 
+  it('answers unavailable, not no-description, for a blocked asset with an empty sidecar', async () => {
+    const tools = assetTools(
+      { [SIDECAR]: '---\nreflectAsset: true\n---\n\n', [PRIVATE_PATH]: PRIVATE_REF },
+      [PRIVATE_PATH],
+    )
+    const output = await runReadAsset(tools, ASSET)
+    if (output.ok) {
+      expect.unreachable('expected a refusal')
+    }
+    expect(output.error).toBe(ASSET_UNAVAILABLE_ERROR)
+  })
+
   it('caps an oversized description and flags the cut', async () => {
     const tools = assetTools(
       {

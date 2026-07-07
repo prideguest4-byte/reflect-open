@@ -78,7 +78,9 @@ export interface ReadAssetDeps {
  * (`./`-prefixes, percent-escapes). Existence is checked next — a missing
  * sidecar reveals nothing — then the live privacy verdict over the
  * referencing notes (the sidecar on disk can predate a note turning private)
- * gates the mint, failing closed.
+ * gates the mint, failing closed. Once a sidecar exists, the verdict outranks
+ * everything else about it — even an empty body answers "unavailable", not
+ * "no description", when the asset is blocked.
  */
 export function buildReadOneAsset(deps: ReadAssetDeps) {
   return async function readOneAsset(path: string): Promise<ReadAssetResult> {
@@ -96,22 +98,23 @@ export function buildReadOneAsset(deps: ReadAssetDeps) {
       throw cause
     }
     const body = splitFrontmatter(source).body.trim()
-    if (body === '') {
-      return { ok: false, path, error: NO_ASSET_DESCRIPTION_ERROR }
-    }
     const candidates = await deps.assetReferencingNotePathsFn(canonical)
     const verdict = await classifyAssetFromNotes(canonical, candidates, deps.readNoteFn)
     const truncated = body.length > MAX_ASSET_DESCRIPTION_CHARS
     try {
-      return {
-        ok: true,
-        asset: cloudSafeAssetDescription({
-          path: canonical,
-          isPrivate: verdict !== 'send',
-          description: truncated ? body.slice(0, MAX_ASSET_DESCRIPTION_CHARS) : body,
-          truncated,
-        }),
+      const asset = cloudSafeAssetDescription({
+        path: canonical,
+        isPrivate: verdict !== 'send',
+        description: truncated ? body.slice(0, MAX_ASSET_DESCRIPTION_CHARS) : body,
+        truncated,
+      })
+      if (body === '') {
+        // An existing-but-empty sidecar reads as "no description" — but only
+        // for a sendable asset; a blocked one threw above, so the two miss
+        // messages stay consistent with the privacy contract.
+        return { ok: false, path, error: NO_ASSET_DESCRIPTION_ERROR }
       }
+      return { ok: true, asset }
     } catch (cause) {
       if (isPrivateNoteError(cause)) {
         return { ok: false, path, error: ASSET_UNAVAILABLE_ERROR }
