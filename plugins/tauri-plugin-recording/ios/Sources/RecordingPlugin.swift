@@ -121,6 +121,12 @@ class RecordingPlugin: Plugin {
   /// from an OS entry point survives webview crashes and cold starts here
   /// until the webview confirms it ran.
   private static let pendingActionKey = "reflect.recording.pendingAction"
+  private static let pendingActionQueuedAtKey = "reflect.recording.pendingActionQueuedAt"
+  /// A queued action older than this is dropped, not delivered: re-firing a
+  /// crash-orphaned request seconds later is the contract, but turning the
+  /// microphone on days after the tap that asked for it is a surprise no
+  /// user reads as their own action.
+  private static let pendingActionMaxAgeSeconds: TimeInterval = 15 * 60
 
   /// The delegate-hook target for OS callbacks that carry no plugin context.
   private static weak var shared: RecordingPlugin?
@@ -195,6 +201,11 @@ class RecordingPlugin: Plugin {
     )
     Self.shared = self
     Self.installShortcutHandler()
+    // A crash mid-recording leaves its Live Activity counting on the lock
+    // screen with nothing behind it (the orphan scan saves the audio, but
+    // nobody ended the activity). Nothing can be legitimately live at plugin
+    // load, so end them all.
+    endStaleLiveActivities()
   }
 
   // MARK: - Commands
@@ -504,7 +515,7 @@ class RecordingPlugin: Plugin {
   /// The webview executed the delivered action — retire it from the queue.
   @objc public func actionPerformed(_ invoke: Invoke) {
     DispatchQueue.main.async {
-      UserDefaults.standard.removeObject(forKey: Self.pendingActionKey)
+      Self.clearPendingAction()
       invoke.resolve()
     }
   }
@@ -525,6 +536,8 @@ class RecordingPlugin: Plugin {
   /// the action must be neither lost nor double-run.
   private func queueNativeAction(_ action: String) {
     UserDefaults.standard.set(action, forKey: Self.pendingActionKey)
+    UserDefaults.standard.set(
+      Date().timeIntervalSince1970, forKey: Self.pendingActionQueuedAtKey)
     deliverPendingAction()
   }
 
@@ -533,11 +546,21 @@ class RecordingPlugin: Plugin {
       webviewReadyForActions,
       let action = UserDefaults.standard.string(forKey: Self.pendingActionKey)
     else { return }
+    let queuedAt = UserDefaults.standard.double(forKey: Self.pendingActionQueuedAtKey)
+    guard Date().timeIntervalSince1970 - queuedAt <= Self.pendingActionMaxAgeSeconds else {
+      Self.clearPendingAction()
+      return
+    }
     do {
       try trigger("nativeAction", data: NativeAction(action: action))
     } catch {
       Logger.error("nativeAction event failed to serialize: \(error)")
     }
+  }
+
+  private static func clearPendingAction() {
+    UserDefaults.standard.removeObject(forKey: pendingActionKey)
+    UserDefaults.standard.removeObject(forKey: pendingActionQueuedAtKey)
   }
 
   @objc private func handleStartRequested() {
@@ -619,6 +642,18 @@ class RecordingPlugin: Plugin {
         liveActivity = nil
         Task {
           await activity.end(nil, dismissalPolicy: .immediate)
+        }
+      }
+    #endif
+  }
+
+  private func endStaleLiveActivities() {
+    #if canImport(ActivityKit)
+      if #available(iOS 16.2, *) {
+        Task {
+          for activity in Activity<RecordingActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+          }
         }
       }
     #endif

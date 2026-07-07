@@ -2,32 +2,29 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactElement,
   type ReactNode,
 } from 'react'
-import { addPluginListener, invoke } from '@tauri-apps/api/core'
 import { errorMessage, hasBridge, type GraphInfo } from '@reflect/core'
-import { z } from 'zod'
 import { useAudioMemoPipeline, type PendingAudioCapture } from '@/hooks/use-audio-memo-pipeline'
 import type { AudioMemoPhase } from '@/providers/audio-memo-provider'
 import { hapticImpactLight } from '@/mobile/haptics'
 import {
-  claimStagedPath,
   deleteStagedRecording,
   isMicDeniedError,
-  isStagedPathClaimed,
   NATIVE_RECORDING_MIME,
-  nativeRecordingStatus,
-  readStagedRecording,
   releaseStagedPath,
-  stopActiveRecording,
   useNativeAudioRecorder,
   type NativeRecorderResult,
 } from '@/mobile/use-native-audio-recorder'
+import { useNativeRecordAction } from '@/mobile/use-native-record-action'
+import {
+  useStagedRecordingIngest,
+  type StagedRecordingInput,
+} from '@/mobile/use-staged-recording-ingest'
 
 /**
  * The mobile React surface for audio memos: the native recorder plugin over
@@ -43,21 +40,13 @@ import {
  *   plugin's `recordingStopped` event — ingested exactly like a user stop.
  *   Backgrounding is deliberately not a stop: `UIBackgroundModes: audio`
  *   keeps a memo capturing through screen lock (V1 parity).
- * - **The live-recording reconcile.** A recording that outlived its JS — a
- *   webview reload or crash mid-memo, a provider remount — must never leave
- *   a hidden hot microphone: on mount, a still-live native recording is
- *   stopped and saved.
- * - **The orphan scan.** A recording whose stop the webview never saw (a
- *   crash, a kill while backgrounded) is still sitting in the plugin's
- *   staging directory: on mount and on every foreground, staged files no
- *   live flow owns are ingested, then deleted. Ingest is idempotent by stop
- *   time — a re-scan of a file whose delete failed rewrites the same
- *   `audio-memos/` path rather than duplicating the memo.
- * - **The native-action handshake.** OS entry points (Siri, the home-screen
- *   quick action, the lock-screen widget) queue a `recordAudio` request in
- *   the plugin, persisted until this surface confirms it ran — so a request
- *   arriving before the webview exists, or right before it dies, is neither
- *   lost nor double-run (`docs/porting/reflect-mobile/native-entry-points.md`).
+ * - **The orphan scan** ({@link useStagedRecordingIngest}): staged
+ *   recordings whose stop the webview never saw are ingested on mount and
+ *   on every foreground.
+ * - **The live-recording reconcile + native-action handshake**
+ *   ({@link useNativeRecordAction}): a recording that outlived its JS is
+ *   stopped and saved rather than left a hidden hot microphone, and OS
+ *   entry points' queued `recordAudio` requests are claimed and confirmed.
  */
 
 interface MobileAudioMemoContextValue {
@@ -98,19 +87,6 @@ const MAX_DURATION_MS = 10 * 60_000
 const MIC_DENIED_REASON =
   'Microphone access was denied. Allow it for Reflect in the Settings app.'
 
-const listStagedSchema = z.object({
-  files: z.array(z.object({ path: z.string(), modifiedMs: z.number() })),
-})
-
-const nativeActionSchema = z.object({ action: z.string() })
-
-/**
- * How long the recording UI must survive before a delivered native action is
- * confirmed (V1 parity): a webview crash during presentation must leave the
- * action queued so it re-fires on the next launch.
- */
-const ACTION_CONFIRM_DELAY_MS = 2000
-
 interface MobileAudioMemoProviderProps {
   graph: GraphInfo
   children: ReactNode
@@ -141,7 +117,7 @@ export function MobileAudioMemoProvider({
 
   /** Wrap a staged recording as a pipeline capture that owns the file. */
   const enqueueStaged = useCallback(
-    (input: { blob: Blob; recordedAt: Date; stagedPath: string }): void => {
+    (input: StagedRecordingInput): void => {
       const release = async (): Promise<void> => {
         await deleteStagedRecording(input.stagedPath)
         releaseStagedPath(input.stagedPath)
@@ -268,142 +244,8 @@ export function MobileAudioMemoProvider({
     [recorder.status, stopAndSave, cancelRecorder, setDrawerOpen],
   )
 
-  const startRef = useRef(start)
-  useEffect(() => {
-    startRef.current = start
-  })
-
-  // The live-recording reconcile, then the native-action handshake — in that
-  // order, so a queued "record" delivered at `actions_ready` can never race
-  // the stop of a recording that outlived the previous webview.
-  //
-  // Reconcile: this mount did not start any recording, so a native one still
-  // running (the webview reloaded or crashed mid-memo, or the provider
-  // remounted across a graph switch) has no UI — stop and save it rather
-  // than leave a hidden hot microphone.
-  //
-  // Handshake: claim the plugin's persisted action queue; a delivered
-  // `recordAudio` starts a memo and is confirmed only once the recording UI
-  // has survived presentation (an unconfirmed action re-fires next launch).
-  // Confirmation is about delivery, not success — a mic-denied start still
-  // confirms, or the queue would re-surface the same failure every launch.
-  useEffect(() => {
-    if (!hasBridge()) {
-      return
-    }
-    let disposed = false
-    let confirmTimer: ReturnType<typeof setTimeout> | null = null
-    let unlisten: (() => void) | null = null
-    void (async () => {
-      try {
-        const status = await nativeRecordingStatus()
-        if (status.recording) {
-          const result = await stopActiveRecording()
-          if (result !== null) {
-            enqueueStaged({
-              blob: result.blob,
-              recordedAt: new Date(),
-              stagedPath: result.stagedPath,
-            })
-          }
-        }
-      } catch (cause) {
-        // A user stop or native finalize winning the race lands here — the
-        // memo arrives through that path (or the orphan scan) instead.
-        console.warn('reconciling a live native recording failed:', cause)
-      }
-      if (disposed) {
-        return
-      }
-      try {
-        const listener = await addPluginListener('recording', 'nativeAction', (raw: unknown) => {
-          const parsed = nativeActionSchema.safeParse(raw)
-          if (disposed || !parsed.success || parsed.data.action !== 'recordAudio') {
-            return
-          }
-          void startRef.current()
-          confirmTimer = setTimeout(() => {
-            void invoke('plugin:recording|action_performed').catch((cause: unknown) => {
-              console.warn('confirming a native action failed:', cause)
-            })
-          }, ACTION_CONFIRM_DELAY_MS)
-        })
-        if (disposed) {
-          void listener.unregister()
-          return
-        }
-        unlisten = () => void listener.unregister()
-        await invoke('plugin:recording|actions_ready')
-      } catch (cause) {
-        console.error('the native-action handshake is unavailable:', cause)
-      }
-    })()
-    return () => {
-      disposed = true
-      if (confirmTimer !== null) {
-        clearTimeout(confirmTimer)
-      }
-      unlisten?.()
-    }
-  }, [enqueueStaged])
-
-  // The orphan scan: staged recordings no live flow owns — from a crash, a
-  // webview reload, or a kill while backgrounded — are ingested on mount and
-  // on every foreground, oldest first (list_staged sorts by name = by time).
-  const scanningRef = useRef(false)
-  useEffect(() => {
-    if (!hasBridge()) {
-      return
-    }
-    let disposed = false
-    const scan = async (): Promise<void> => {
-      if (scanningRef.current) {
-        return
-      }
-      scanningRef.current = true
-      try {
-        const raw = await invoke('plugin:recording|list_staged')
-        const { files } = listStagedSchema.parse(raw)
-        for (const file of files) {
-          if (disposed) {
-            return
-          }
-          if (isStagedPathClaimed(file.path)) {
-            continue
-          }
-          claimStagedPath(file.path)
-          try {
-            const blob = await readStagedRecording(file.path)
-            enqueueStaged({
-              blob,
-              // The file's stop time, so a re-ingest after a failed delete
-              // resolves to the same memo identity instead of a duplicate.
-              recordedAt: new Date(file.modifiedMs),
-              stagedPath: file.path,
-            })
-          } catch (cause) {
-            releaseStagedPath(file.path)
-            console.error('ingesting a staged recording failed:', cause)
-          }
-        }
-      } catch (cause) {
-        console.error('audio memo orphan scan failed:', cause)
-      } finally {
-        scanningRef.current = false
-      }
-    }
-    void scan()
-    const onVisibilityChange = (): void => {
-      if (document.visibilityState === 'visible') {
-        void scan()
-      }
-    }
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    return () => {
-      disposed = true
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-    }
-  }, [enqueueStaged])
+  useNativeRecordAction({ start, enqueueStaged })
+  useStagedRecordingIngest(enqueueStaged)
 
   // A live capture owns the surface — a background save's failure parks and
   // shows after the stop, never yanking the waveform mid-recording.

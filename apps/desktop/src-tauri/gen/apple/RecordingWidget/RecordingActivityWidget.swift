@@ -79,7 +79,7 @@ private struct RecordingTimerText: View {
 private struct StopRecordingButton: View {
   var body: some View {
     if #available(iOS 17.0, *) {
-      Button(intent: StopRecordingIntent()) {
+      Button(intent: StopRecordingLiveActivityIntent()) {
         Image(systemName: "stop.fill")
           .font(.title3)
           .foregroundStyle(.red)

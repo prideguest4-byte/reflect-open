@@ -13,8 +13,11 @@ import Foundation
   /// (the button references the type) — the standard shared-source pattern.
   /// The notification name mirrors `RecordingPlugin.stopRequestedNotification`.
   @available(iOS 17.0, *)
-  struct StopRecordingIntent: LiveActivityIntent {
+  struct StopRecordingLiveActivityIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Stop recording"
+    /// Hidden from the Shortcuts app — `StopRecordingSiriIntent` is the
+    /// discoverable stop; this one exists only behind the activity's button.
+    static var isDiscoverable: Bool = false
 
     @MainActor
     func perform() async throws -> some IntentResult {
