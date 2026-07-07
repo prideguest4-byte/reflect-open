@@ -177,6 +177,31 @@ export function withTitle(body: string, title: string): string {
 }
 
 /**
+ * Rewrite a daily entry's wiki-link display text after its capture note was
+ * retitled. Both writers (the drain's dedup refresh and the enrichment
+ * retitle) keep the invariant "daily link text mirrors the note's H1", so the
+ * rewrite fires only when the entry still reads `from` verbatim — a mismatch
+ * means the user edited the daily and their text wins. The link target (the
+ * stable capture id) never changes.
+ */
+export function retitleDailyEntry(
+  dailySource: string,
+  base: string,
+  from: string,
+  to: string,
+): string {
+  if (from === to) {
+    return dailySource
+  }
+  const entry = `[[${base}|${from}]]`
+  if (!dailySource.includes(entry)) {
+    return dailySource
+  }
+  // Function replacer: `$` sequences in titles must stay literal.
+  return dailySource.replace(entry, () => `[[${base}|${to}]]`)
+}
+
+/**
  * Insert or replace the description metadata bullet for link captures. The
  * raw body has a `- Type: #link` anchor.
  */

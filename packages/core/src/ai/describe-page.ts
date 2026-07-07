@@ -4,6 +4,7 @@ import { ReflectError } from '../errors'
 import { wikiLinkSafe } from '../markdown/edit'
 import type { AiProviderConfig } from '../settings/schema'
 import { languageModel } from './language-model'
+import { clipAtWordBoundary } from './text'
 
 /**
  * BYOK page enrichment for link capture (Plan 11): one short multimodal call
@@ -47,7 +48,7 @@ export interface DescribePageRequest {
 }
 
 /** What one enrichment call produces for a captured page. */
-export interface PageDescription {
+export interface PageEnrichment {
   /**
    * The cleaned-up display title, wiki-link safe and capped, or `null` when
    * the model produced nothing usable — the caller keeps the captured title.
@@ -133,16 +134,8 @@ function describePrompt(request: DescribePageRequest): string {
   return lines.join('\n')
 }
 
-function clipTitle(title: string): string {
-  if (title.length <= MAX_TITLE_CHARS) {
-    return title
-  }
-  const clipped = title.slice(0, MAX_TITLE_CHARS).replace(/\s+\S*$/, '').trim()
-  return clipped === '' ? title.slice(0, MAX_TITLE_CHARS).trim() : clipped
-}
-
 function normalizedTitle(candidate: string): string | null {
-  const safe = clipTitle(wikiLinkSafe(candidate))
+  const safe = clipAtWordBoundary(wikiLinkSafe(candidate), MAX_TITLE_CHARS)
   return safe === '' ? null : safe
 }
 
@@ -152,7 +145,7 @@ function normalizedTitle(candidate: string): string | null {
  * and {@link DescriptionRejectedError} when the provider refuses this capture
  * itself.
  */
-export async function describePage(request: DescribePageRequest): Promise<PageDescription> {
+export async function describePage(request: DescribePageRequest): Promise<PageEnrichment> {
   const content: UserContent = [{ type: 'text', text: describePrompt(request) }]
   if (request.screenshotBase64) {
     content.push({

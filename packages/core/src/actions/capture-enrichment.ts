@@ -1,4 +1,4 @@
-import { describePage, isDescriptionRejected } from '../ai/describe-page'
+import { describePage, isDescriptionRejected, type PageEnrichment } from '../ai/describe-page'
 import { defaultAiProvider, type AiProvidersState } from '../ai/provider-config'
 import { aiKeySecretName } from '../ai/secrets'
 import { errorMessage, isAppError, toAppError } from '../errors'
@@ -8,6 +8,7 @@ import { hashContent } from '../indexing/hash'
 import { parseNote } from '../markdown/extract'
 import { parseFrontmatter, splitFrontmatter, upsertFrontmatter } from '../markdown/frontmatter'
 import { getSecret } from '../secrets/keychain'
+import type { AiProviderConfig } from '../settings/schema'
 import type { ReconcileStop } from './audio-memo'
 import { captureFromPath, type CaptureIdentity } from './capture-identity'
 import {
@@ -17,8 +18,10 @@ import {
   metadataValue,
   notePrivate,
   noteSource,
+  retitleDailyEntry,
   withDescription,
   withTitle,
+  type CaptureNoteMeta,
   type CaptureStatus,
 } from './capture-note'
 import { scrapePageMeta, type PageMeta } from './meta-scrape'
@@ -74,6 +77,58 @@ export interface ReconcileCaptureEnrichmentOutcome {
   skipped: number
   /** Why captures remain pending, or `null` when the pass drained. */
   stopped: ReconcileStop | null
+}
+
+interface GenerateEnrichmentInput {
+  config: AiProviderConfig
+  apiKey: string
+  fetchFn?: typeof fetch | undefined
+  /** The pending capture's frontmatter keys (URL, screenshot asset). */
+  meta: CaptureNoteMeta
+  /** The note's current display title. */
+  title: string
+  scraped: PageMeta | null
+  /** The raw drain-written body (page text is extracted from it). */
+  body: string
+  generation: number
+}
+
+/**
+ * The AI leg of one capture's enrichment: read the screenshot asset, make the
+ * one-shot provider call, and treat a provider refusal as "no enrichment"
+ * (`null`) — the scraped meta is the fallback. Transient failures (`auth`,
+ * `network`) propagate for the pass to retry later.
+ */
+async function generateEnrichment(input: GenerateEnrichmentInput): Promise<PageEnrichment | null> {
+  let screenshotBase64: string | undefined
+  if (input.meta.captureScreenshot) {
+    try {
+      screenshotBase64 = await readAsset(input.meta.captureScreenshot, input.generation)
+    } catch (cause) {
+      if (!isAppError(cause) || cause.kind !== 'notFound') {
+        throw cause
+      }
+    }
+  }
+  try {
+    return await describePage({
+      config: input.config,
+      apiKey: input.apiKey,
+      fetchFn: input.fetchFn,
+      url: input.meta.captureUrl,
+      title: input.title,
+      metaTitle: input.scraped?.title ?? undefined,
+      siteName: input.scraped?.siteName ?? undefined,
+      metaDescription: input.scraped?.description ?? undefined,
+      contentText: capturePageTextFromBody(input.body),
+      screenshotBase64,
+    })
+  } catch (cause) {
+    if (!isDescriptionRejected(cause)) {
+      throw cause
+    }
+    return null
+  }
 }
 
 /**
@@ -182,43 +237,24 @@ export async function reconcileCaptureEnrichment(
       }
 
       const title = parseNote({ path: identity.notePath, source }).title
-      let aiTitle: string | null = null
-      let description: string | null = null
+      let generated: PageEnrichment | null = null
       if (config !== null && apiKey !== null) {
-        let screenshotBase64: string | undefined
-        if (meta.captureScreenshot) {
-          try {
-            screenshotBase64 = await readAsset(meta.captureScreenshot, input.generation)
-          } catch (cause) {
-            if (!isAppError(cause) || cause.kind !== 'notFound') {
-              throw cause
-            }
-          }
-        }
-        try {
-          const generated = await describePage({
-            config,
-            apiKey,
-            fetchFn: input.fetchFn,
-            url: meta.captureUrl,
-            title,
-            metaTitle: pageMeta?.title ?? undefined,
-            siteName: pageMeta?.siteName ?? undefined,
-            metaDescription: pageMeta?.description ?? undefined,
-            contentText: capturePageTextFromBody(split.body),
-            screenshotBase64,
-          })
-          aiTitle = generated.title
-          description = generated.description
-        } catch (cause) {
-          if (!isDescriptionRejected(cause)) {
-            throw cause
-          }
-        }
+        generated = await generateEnrichment({
+          config,
+          apiKey,
+          fetchFn: input.fetchFn,
+          meta,
+          title,
+          scraped: pageMeta,
+          body: split.body,
+          generation: input.generation,
+        })
         if (stale()) {
           return outcome({ reason: 'stale', message: 'the graph session ended mid-pass' })
         }
       }
+      const aiTitle = generated?.title ?? null
+      const description = generated?.description ?? null
 
       const usedAiDescription = description !== null && metadataValue(description) !== ''
       const usedAi = (usedAiDescription || aiTitle !== null) && config !== null
@@ -246,13 +282,9 @@ export async function reconcileCaptureEnrichment(
         // Re-read the daily: the provider call above is slow, and the
         // pre-call snapshot would silently drop anything written meanwhile.
         const freshDaily = await noteSource(dailyPath(identity.date), input.generation)
-        const entry = `[[${identity.base}|${title}]]`
-        if (freshDaily.includes(entry)) {
-          await writeNote(
-            dailyPath(identity.date),
-            freshDaily.replace(entry, () => `[[${identity.base}|${aiTitle}]]`),
-            input.generation,
-          )
+        const retitled = retitleDailyEntry(freshDaily, identity.base, title, aiTitle)
+        if (retitled !== freshDaily) {
+          await writeNote(dailyPath(identity.date), retitled, input.generation)
         }
       }
       enriched += 1

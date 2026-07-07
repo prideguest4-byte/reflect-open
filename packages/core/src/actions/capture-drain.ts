@@ -32,6 +32,7 @@ import {
   displayTitle,
   notePrivate,
   noteSource,
+  retitleDailyEntry,
   type CaptureStatus,
 } from './capture-note'
 
@@ -211,15 +212,10 @@ export async function drainCaptureInbox(
       )
       const freshTitle = displayTitle(envelope)
       let updatedDaily = dailySource
-      if (existing !== null && existing.title !== freshTitle) {
+      if (existing !== null) {
         // The refresh reset the note's H1 to the fresh tab title; keep the
-        // daily's link text in step. Enrichment leaves the H1 and the link
-        // text equal, so a mismatch here means the user edited the daily —
-        // their text wins.
-        const entry = `[[${identity.base}|${existing.title}]]`
-        if (updatedDaily.includes(entry)) {
-          updatedDaily = updatedDaily.replace(entry, () => `[[${identity.base}|${freshTitle}]]`)
-        }
+        // daily's link text in step.
+        updatedDaily = retitleDailyEntry(updatedDaily, identity.base, existing.title, freshTitle)
       }
       if (!updatedDaily.includes(`[[${identity.base}`)) {
         updatedDaily = appendUnderHeading(
