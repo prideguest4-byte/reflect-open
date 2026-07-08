@@ -18,13 +18,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::error::{AppError, AppResult};
 
 use self::io::{atomic_write, bootstrap, collect_files, NOTE_DIRS};
 use self::resolve::resolve;
+
+/// Cancellation flag for the running Reflect V1 import, managed as Tauri
+/// state in `lib.rs` (`graph_import_cancel` trips it).
+pub use self::import::ImportCancel;
 
 /// Atomic byte write staged under `.reflect/tmp/`, shared with the conflict
 /// machinery (shadow bases, resolution writes) so every graph write follows
@@ -213,23 +217,65 @@ pub fn graph_create(path: String, state: State<GraphState>) -> AppResult<GraphIn
 
 /// Import a user-selected Reflect V1 export `.zip` into the open graph. V1's
 /// export is already the graph folder shape, so this extracts safe entries
-/// directly under the current root and refuses to overwrite existing files.
-/// Attachments the notes link to on Firebase Storage are downloaded into
-/// `assets/` first and the links rewritten, so the imported graph doesn't
-/// depend on Reflect V1's infrastructure staying up.
+/// directly under the current root; existing files are never replaced (and
+/// never fail the import — identical files skip, conflicting notes rename,
+/// conflicting daily notes merge). Attachments the notes link to on Firebase
+/// Storage are downloaded into `assets/` first and the links rewritten, so
+/// the imported graph doesn't depend on Reflect V1's infrastructure staying
+/// up. Progress is emitted as `import:progress` events, and
+/// [`graph_import_cancel`] aborts the run before anything lands in the graph.
 #[tauri::command]
 pub async fn graph_import_reflect_v1_zip(
     path: String,
     generation: u64,
+    app: tauri::AppHandle,
     state: State<'_, GraphState>,
+    cancel: State<'_, ImportCancel>,
 ) -> AppResult<import::ImportSummary> {
     let root = root_for_generation(&state, generation)?;
+    cancel.begin();
     let prepared = import::prepare_zip_import(&root, Path::new(&path))?;
-    let downloads = prepared.download_assets().await?;
+    if prepared.remote_asset_count() > 0 {
+        emit_import_progress(&app, "downloading", 0, prepared.remote_asset_count());
+    }
+    let download_app = app.clone();
+    let downloads = prepared
+        .download_assets(
+            cancel.flag(),
+            std::sync::Arc::new(move |done, total| {
+                emit_import_progress(&download_app, "downloading", done, total);
+            }),
+        )
+        .await?;
     // The downloads can take a while; refuse to write into a graph the user
-    // has switched away from in the meantime.
+    // has switched away from (or an import the user cancelled) in the
+    // meantime — nothing has been written yet.
+    cancel.ensure_active()?;
     root_for_generation(&state, generation)?;
-    import::finalize_import(&root, prepared, downloads)
+    // Writing is fast and local; throttle the events to ~100 per import so a
+    // large graph doesn't flood the webview.
+    let mut last_emitted = 0usize;
+    import::finalize_import(&root, prepared, downloads, |done, total| {
+        let step = (total / 100).max(1);
+        if done == total || done >= last_emitted + step {
+            last_emitted = done;
+            emit_import_progress(&app, "writing", done, total);
+        }
+    })
+}
+
+/// Cancel the running Reflect V1 import (a no-op when none is running). The
+/// import aborts before any graph write, so cancellation is always safe.
+#[tauri::command]
+pub fn graph_import_cancel(cancel: State<ImportCancel>) {
+    cancel.cancel();
+}
+
+fn emit_import_progress(app: &tauri::AppHandle, stage: &'static str, done: usize, total: usize) {
+    let _ = app.emit(
+        "import:progress",
+        import::ImportProgress { stage, done, total },
+    );
 }
 
 /// Open an existing graph at `path`, ensuring the standard layout exists.

@@ -10,13 +10,26 @@
 //! The flow is three phases so nothing lands in the graph until everything is
 //! in hand: [`prepare_zip_import`] (read + validate, no writes), the async
 //! [`PreparedImport::download_assets`] (network, staging writes only), then
-//! [`finalize_import`] (rewrite, collision-check, atomic writes).
+//! [`finalize_import`] (rewrite, atomic writes).
+//!
+//! Existing graph files never make an import fail, and are never replaced:
+//! identical files are skipped, a conflicting note lands under a `-2`-style
+//! suffixed name (note links resolve by title, so the filename is free to
+//! move), a conflicting daily note has the imported entry's body appended
+//! (one day, one note — the merge is idempotent across re-imports), and a
+//! conflicting asset lands suffixed with the imported notes' literal
+//! `assets/…` links rewritten to follow it. Every real V1 import hits at
+//! least one conflict (a fresh graph seeds `notes/how-to-use-reflect.md`,
+//! which V1 exports also carry), so a fatal conflict policy would fail
+//! practically every import.
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use serde::Serialize;
 
@@ -40,16 +53,62 @@ pub struct ImportSummary {
     /// Remote attachments that are permanently gone (4xx); their notes keep
     /// the remote link.
     pub failed_asset_downloads: usize,
-    /// Zip notes written under a `-2`-style suffixed name because their own
-    /// name is occupied by a differing file the filesystem treats as the same
-    /// path (case-insensitive APFS folds `Füße.md`/`füsse.md`/`füße.md`
-    /// together; the V1 export keeps them distinct notes). Only note
-    /// markdown is renamed — a note's links resolve by title, so the
-    /// filename is free to move; asset links are literal paths, so an
-    /// aliased asset stays a fatal conflict.
+    /// Zip files written under a `-2`-style suffixed name because their own
+    /// name is held by a differing existing file — a genuine same-name file,
+    /// or one the filesystem merely aliases to the same path
+    /// (case-insensitive APFS folds `Füße.md`/`füsse.md`/`füße.md` together;
+    /// the V1 export keeps them distinct notes). Renamed assets have the
+    /// imported notes' `assets/…` links rewritten to the suffixed name.
     pub renamed_files: usize,
-    /// Graph-relative paths newly written to the open graph.
+    /// Existing daily notes that gained the imported entry's body: the day
+    /// already had a note with different content, so the import appends
+    /// rather than duplicating the day under a suffixed name.
+    pub merged_files: usize,
+    /// Graph-relative paths written to the open graph (new files and merged
+    /// daily notes).
     pub changed_paths: Vec<String>,
+}
+
+/// Progress of the running import, emitted to the frontend as
+/// `import:progress` events (`stage` is `"downloading"` or `"writing"`).
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgress {
+    pub stage: &'static str,
+    pub done: usize,
+    pub total: usize,
+}
+
+/// Cooperative cancellation for the (single) running import, managed as Tauri
+/// state. `begin` rearms the flag when an import starts; `graph_import_cancel`
+/// trips it. Downloads stop promptly and the import aborts *before any graph
+/// write* — cancellation never leaves a half-imported graph.
+#[derive(Default)]
+pub struct ImportCancel(Arc<AtomicBool>);
+
+impl ImportCancel {
+    /// Rearm for a fresh import (clears a leftover cancel).
+    pub fn begin(&self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+
+    /// Request cancellation of the running import.
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    /// The shared flag, for the download workers.
+    pub fn flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.0)
+    }
+
+    /// Error out if cancellation was requested (checked between phases).
+    pub fn ensure_active(&self) -> AppResult<()> {
+        if self.0.load(Ordering::SeqCst) {
+            return Err(AppError::io("import cancelled"));
+        }
+        Ok(())
+    }
 }
 
 struct ImportEntry {
@@ -71,8 +130,20 @@ impl PreparedImport {
     /// Download every remote attachment into the graph's staging directory.
     /// Transient failures abort (nothing has been written to the graph yet);
     /// permanent 4xx failures come back as [`DownloadOutcome::Gone`].
-    pub async fn download_assets(&self) -> AppResult<HashMap<String, DownloadOutcome>> {
-        import_assets::download_remote_assets(&self.staging, self.urls.clone()).await
+    /// `cancelled` stops the workers between fetches; `on_progress` receives
+    /// `(completed, total)` after each download settles.
+    pub async fn download_assets(
+        &self,
+        cancelled: Arc<AtomicBool>,
+        on_progress: Arc<dyn Fn(usize, usize) + Send + Sync>,
+    ) -> AppResult<HashMap<String, DownloadOutcome>> {
+        import_assets::download_remote_assets(&self.staging, self.urls.clone(), cancelled, on_progress)
+            .await
+    }
+
+    /// How many remote attachments the export links (the download total).
+    pub fn remote_asset_count(&self) -> usize {
+        self.urls.len()
     }
 }
 
@@ -143,17 +214,20 @@ fn ensure_has_notes(entries: &[ImportEntry]) -> AppResult<()> {
     Ok(())
 }
 
-/// Localize the downloaded attachments, rewrite the notes' remote links to
-/// `assets/…` paths, then write everything into the graph with the same
-/// collision policy as before: never overwrite a differing existing file,
-/// skip identical ones. Note entries whose name is only *aliased* to an
-/// existing file by the filesystem (case-insensitive APFS folds `füße.md`
-/// and `füsse.md` to the same path) are distinct notes and land under a
-/// suffixed name instead of failing the import.
+/// Localize the downloaded attachments, write the zip's assets (renaming
+/// conflicting ones), rewrite the notes' links (renamed `assets/…` paths and
+/// downloaded remote URLs), then write the notes. Existing files are never
+/// replaced and never fail the import: identical bytes are skipped, a
+/// conflicting note lands under a suffixed name (whether the collision is a
+/// genuine same-name file or a filesystem alias — case-insensitive APFS folds
+/// `füße.md` and `füsse.md` to the same path), and a conflicting daily note
+/// has the imported body appended instead. `on_progress` receives
+/// `(processed, total)` per zip entry for the writing stage.
 pub(super) fn finalize_import(
     root: &Path,
     prepared: PreparedImport,
     mut outcomes: HashMap<String, DownloadOutcome>,
+    mut on_progress: impl FnMut(usize, usize),
 ) -> AppResult<ImportSummary> {
     let PreparedImport {
         mut entries,
@@ -163,10 +237,16 @@ pub(super) fn finalize_import(
     } = prepared;
 
     let assets_dir = root.join("assets");
-    let mut replacements = HashMap::new();
+    let mut url_replacements = HashMap::new();
     let mut planned: Vec<(import_assets::FetchedAsset, import_assets::PlannedAssetName)> =
         Vec::new();
-    let mut taken = HashSet::new();
+    // Downloads must not take asset names the zip itself will write.
+    let mut taken = entries
+        .iter()
+        .filter_map(|entry| entry.relative.strip_prefix("assets/"))
+        .filter(|name| !name.is_empty() && !name.contains('/'))
+        .map(str::to_string)
+        .collect::<HashSet<_>>();
     let mut downloaded_assets = 0;
     let mut failed_asset_downloads = 0;
     for url in &urls {
@@ -174,7 +254,7 @@ pub(super) fn finalize_import(
             Some(DownloadOutcome::Fetched(fetched)) => {
                 downloaded_assets += 1;
                 if let Some(name) = planned_duplicate(&planned, &fetched)? {
-                    replacements.insert(url.clone(), format!("assets/{name}"));
+                    url_replacements.insert(url.clone(), format!("assets/{name}"));
                     continue;
                 }
                 let plan = import_assets::plan_asset_name(
@@ -184,7 +264,7 @@ pub(super) fn finalize_import(
                     &taken,
                 )?;
                 taken.insert(plan.name.clone());
-                replacements.insert(url.clone(), format!("assets/{}", plan.name));
+                url_replacements.insert(url.clone(), format!("assets/{}", plan.name));
                 planned.push((fetched, plan));
             }
             Some(DownloadOutcome::Gone) => failed_asset_downloads += 1,
@@ -192,51 +272,10 @@ pub(super) fn finalize_import(
         }
     }
 
-    if !replacements.is_empty() {
-        for entry in &mut entries {
-            if !is_note_markdown(&entry.relative) {
-                continue;
-            }
-            let Ok(text) = std::str::from_utf8(&entry.bytes) else {
-                continue;
-            };
-            let rewritten = import_assets::rewrite_markdown(text, &prefix, &replacements);
-            if rewritten != text {
-                entry.bytes = rewritten.into_bytes();
-            }
-        }
-    }
-
-    let claimed = entries
-        .iter()
-        .map(|entry| entry.relative.clone())
-        .collect::<HashSet<_>>();
-    let mut names = DirNames::default();
-    let collisions = entries
-        .iter()
-        .map(|entry| plan_entry(root, entry, &mut names, &claimed))
-        .collect::<AppResult<Vec<_>>>()?
-        .into_iter()
-        .filter_map(|plan| match plan {
-            WritePlan::Conflict(path) => Some(path),
-            WritePlan::Write { .. } | WritePlan::SkipIdentical => None,
-        })
-        .collect::<Vec<_>>();
-    if !collisions.is_empty() {
-        return Err(AppError::io(format!(
-            "import would overwrite existing files: {}",
-            collisions
-                .iter()
-                .take(5)
-                .map(String::as_str)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )));
-    }
-
     let mut imported_files = 0;
     let mut skipped_files = 0;
     let mut renamed_files = 0;
+    let mut merged_files = 0;
     let mut changed_paths = Vec::new();
     for (fetched, plan) in planned {
         if plan.reuse {
@@ -245,18 +284,67 @@ pub(super) fn finalize_import(
         import_assets::persist_planned(fetched, &assets_dir, &plan.name)?;
         changed_paths.push(format!("assets/{}", plan.name));
     }
-    // Fresh cache: the asset writes above happened after the pre-check's
-    // directory listings were taken.
+
+    let claimed = entries
+        .iter()
+        .map(|entry| entry.relative.clone())
+        .collect::<HashSet<_>>();
     let mut names = DirNames::default();
-    for entry in entries {
-        match plan_entry(root, &entry, &mut names, &claimed)? {
-            WritePlan::Conflict(path) => {
-                return Err(AppError::io(format!(
-                    "import would overwrite existing files: {path}"
-                )));
+    let total = entries.len();
+    let mut processed = 0;
+
+    // Non-note files first (assets a note links must exist — and be named —
+    // before the note is rewritten and written).
+    let mut path_replacements = HashMap::new();
+    for entry in &entries {
+        if is_note_markdown(&entry.relative) {
+            continue;
+        }
+        match plan_other_entry(root, entry, &claimed)? {
+            EntryPlan::SkipIdentical => skipped_files += 1,
+            EntryPlan::Write { relative, renamed } => {
+                let target = resolve(root, &relative)?;
+                atomic_write_bytes(root, &target, &entry.bytes)?;
+                names.record(&target);
+                imported_files += 1;
+                if renamed {
+                    renamed_files += 1;
+                    if entry.relative.starts_with("assets/") {
+                        path_replacements.insert(entry.relative.clone(), relative.clone());
+                    }
+                }
+                changed_paths.push(relative);
             }
-            WritePlan::SkipIdentical => skipped_files += 1,
-            WritePlan::Write { relative, renamed } => {
+        }
+        processed += 1;
+        on_progress(processed, total);
+    }
+
+    if !url_replacements.is_empty() || !path_replacements.is_empty() {
+        for entry in &mut entries {
+            if !is_note_markdown(&entry.relative) {
+                continue;
+            }
+            let Ok(text) = std::str::from_utf8(&entry.bytes) else {
+                continue;
+            };
+            // Zip-borne `assets/…` links first: the remote rewrite splices in
+            // downloaded assets' final names, which must not be re-mapped.
+            let rewritten = import_assets::rewrite_asset_paths(text, &path_replacements);
+            let rewritten = import_assets::rewrite_markdown(&rewritten, &prefix, &url_replacements);
+            if rewritten != text {
+                entry.bytes = rewritten.into_bytes();
+            }
+        }
+    }
+
+    for entry in &entries {
+        if !is_note_markdown(&entry.relative) {
+            continue;
+        }
+        match plan_note_entry(root, entry, &mut names, &claimed)? {
+            NotePlan::SkipIdentical => skipped_files += 1,
+            NotePlan::Write { relative, renamed } => {
                 let target = resolve(root, &relative)?;
                 atomic_write_bytes(root, &target, &entry.bytes)?;
                 names.record(&target);
@@ -266,7 +354,15 @@ pub(super) fn finalize_import(
                 }
                 changed_paths.push(relative);
             }
+            NotePlan::Merge { merged } => {
+                let target = resolve(root, &entry.relative)?;
+                atomic_write_bytes(root, &target, &merged)?;
+                merged_files += 1;
+                changed_paths.push(entry.relative.clone());
+            }
         }
+        processed += 1;
+        on_progress(processed, total);
     }
 
     Ok(ImportSummary {
@@ -275,6 +371,7 @@ pub(super) fn finalize_import(
         downloaded_assets,
         failed_asset_downloads,
         renamed_files,
+        merged_files,
         changed_paths,
     })
 }
@@ -298,16 +395,24 @@ fn dedupe_entries(entries: Vec<ImportEntry>) -> AppResult<Vec<ImportEntry>> {
     Ok(unique)
 }
 
-enum WritePlan {
+enum EntryPlan {
     /// Write the entry at `relative` — its own name, or a suffixed one when
-    /// the filesystem aliases its name to a differing existing file.
+    /// a differing existing file (genuine, filesystem-aliased, or an evicted
+    /// iCloud placeholder whose content is unknowable) holds its name.
     Write { relative: String, renamed: bool },
     /// The entry's bytes are already in the graph; leave the file untouched.
     SkipIdentical,
-    /// A file that is genuinely named like the entry differs in content (or
-    /// is an evicted iCloud placeholder whose content is unknowable) — the
-    /// never-overwrite policy makes this fatal.
-    Conflict(String),
+}
+
+enum NotePlan {
+    /// As [`EntryPlan::Write`].
+    Write { relative: String, renamed: bool },
+    /// As [`EntryPlan::SkipIdentical`] — including a daily entry whose body
+    /// an earlier import already merged into the existing daily note.
+    SkipIdentical,
+    /// A daily note for this day already exists with different content:
+    /// write `merged` (the existing note plus the imported body) in place.
+    Merge { merged: Vec<u8> },
 }
 
 /// Directory listings cached per parent, to tell a true same-name file from
@@ -354,39 +459,69 @@ impl DirNames {
 /// probe is lying, and failing loud beats spinning.
 const MAX_RENAME_PROBES: usize = 1000;
 
-/// Decide what writing `entry` should do given the current disk state.
-/// `claimed` holds every relative path the import will write under its own
-/// name, so a rename never takes a name a later entry owns.
-fn plan_entry(
+/// Decide what writing a non-note `entry` should do given the current disk
+/// state: its own name when free, skip when identical, a suffixed name when
+/// a differing file holds it. `claimed` holds every relative path the import
+/// will write under its own name, so a rename never takes a name a later
+/// entry owns.
+fn plan_other_entry(
+    root: &Path,
+    entry: &ImportEntry,
+    claimed: &HashSet<String>,
+) -> AppResult<EntryPlan> {
+    let target = resolve(root, &entry.relative)?;
+    if !target.exists() && !file_occupied(&target) {
+        return Ok(EntryPlan::Write {
+            relative: entry.relative.clone(),
+            renamed: false,
+        });
+    }
+    if target.is_file() && fs::read(&target)? == entry.bytes {
+        return Ok(EntryPlan::SkipIdentical);
+    }
+    suffixed_plan(root, entry, claimed)
+}
+
+/// Decide what writing a note `entry` should do. Same policy as
+/// [`plan_other_entry`], with one refinement: a *genuinely* same-named daily
+/// note merges (one day, one note) instead of renaming — a suffixed filename
+/// would fall out of the daily stream, whose dates parse from `YYYY-MM-DD.md`
+/// names. A merely filesystem-aliased name is a distinct note and renames.
+fn plan_note_entry(
     root: &Path,
     entry: &ImportEntry,
     names: &mut DirNames,
     claimed: &HashSet<String>,
-) -> AppResult<WritePlan> {
+) -> AppResult<NotePlan> {
     let target = resolve(root, &entry.relative)?;
-    if !target.exists() {
-        return Ok(if file_occupied(&target) {
-            WritePlan::Conflict(entry.relative.clone())
-        } else {
-            WritePlan::Write {
-                relative: entry.relative.clone(),
-                renamed: false,
-            }
+    if !target.exists() && !file_occupied(&target) {
+        return Ok(NotePlan::Write {
+            relative: entry.relative.clone(),
+            renamed: false,
         });
     }
     if target.is_file() && fs::read(&target)? == entry.bytes {
-        return Ok(WritePlan::SkipIdentical);
+        return Ok(NotePlan::SkipIdentical);
     }
-    if names.contains(&target)? {
-        return Ok(WritePlan::Conflict(entry.relative.clone()));
+    if is_daily_note(&entry.relative) && target.is_file() && names.contains(&target)? {
+        let existing = fs::read(&target)?;
+        if let Some(plan) = plan_daily_merge(&existing, &entry.bytes) {
+            return Ok(plan);
+        }
     }
-    // Only note markdown is safe to land under another filename: note links
-    // resolve by title, so the file can move. Asset links are literal
-    // `assets/…` paths that are not rewritten, so a renamed aliased asset
-    // would leave its notes pointing at the aliasing file — fail instead.
-    if !is_note_markdown(&entry.relative) {
-        return Ok(WritePlan::Conflict(entry.relative.clone()));
+    match suffixed_plan(root, entry, claimed)? {
+        EntryPlan::Write { relative, renamed } => Ok(NotePlan::Write { relative, renamed }),
+        EntryPlan::SkipIdentical => Ok(NotePlan::SkipIdentical),
     }
+}
+
+/// Probe `entry.relative`'s `-2`-style suffixed names for a free one (or an
+/// identical existing copy, from an earlier import's rename).
+fn suffixed_plan(
+    root: &Path,
+    entry: &ImportEntry,
+    claimed: &HashSet<String>,
+) -> AppResult<EntryPlan> {
     for suffix in 2..MAX_RENAME_PROBES {
         let candidate = suffixed_relative(&entry.relative, suffix);
         if claimed.contains(&candidate) {
@@ -395,14 +530,14 @@ fn plan_entry(
         let candidate_target = resolve(root, &candidate)?;
         if candidate_target.exists() {
             if candidate_target.is_file() && fs::read(&candidate_target)? == entry.bytes {
-                return Ok(WritePlan::SkipIdentical);
+                return Ok(EntryPlan::SkipIdentical);
             }
             continue;
         }
         if file_occupied(&candidate_target) {
             continue;
         }
-        return Ok(WritePlan::Write {
+        return Ok(EntryPlan::Write {
             relative: candidate,
             renamed: true,
         });
@@ -411,6 +546,77 @@ fn plan_entry(
         "import could not find a collision-free name for {}",
         entry.relative
     )))
+}
+
+/// The merge (or skip) for a daily entry whose day already has a differing
+/// note, or `None` when the contents don't merge cleanly (either side isn't
+/// UTF-8) and the caller should fall back to a rename.
+///
+/// The appended body drops the imported entry's frontmatter (the existing
+/// note keeps its identity) and its leading H1 (both apps render the day as
+/// an H1 first line — appending it verbatim would repeat the date heading
+/// mid-note). An empty remainder, or one the existing note already contains
+/// (a re-import after an earlier merge), skips instead — the merge is
+/// idempotent.
+fn plan_daily_merge(existing: &[u8], imported: &[u8]) -> Option<NotePlan> {
+    let existing = std::str::from_utf8(existing).ok()?;
+    let imported = std::str::from_utf8(imported).ok()?;
+    let body = without_leading_h1(without_frontmatter(imported)).trim();
+    if body.is_empty() || existing.contains(body) {
+        return Some(NotePlan::SkipIdentical);
+    }
+    let merged = format!("{}\n\n{}\n", existing.trim_end(), body);
+    Some(NotePlan::Merge {
+        merged: merged.into_bytes(),
+    })
+}
+
+/// The text after a leading `---`-fenced frontmatter block, or all of it
+/// when no complete fence opens the file.
+fn without_frontmatter(text: &str) -> &str {
+    let Some(rest) = text.strip_prefix("---\n") else {
+        return text;
+    };
+    match rest.find("\n---\n") {
+        Some(end) => &rest[end + "\n---\n".len()..],
+        None => match rest.strip_suffix("\n---") {
+            Some(_) => "",
+            None => text,
+        },
+    }
+}
+
+/// The text after a leading H1 line (`# …` as the first non-empty line), or
+/// all of it when the file opens with anything else.
+fn without_leading_h1(text: &str) -> &str {
+    let trimmed = text.trim_start_matches(['\n', '\r']);
+    if !trimmed.starts_with("# ") {
+        return text;
+    }
+    match trimmed.find('\n') {
+        Some(end) => &trimmed[end + 1..],
+        None => "",
+    }
+}
+
+/// Is this relative path a daily note (`daily/YYYY-MM-DD.md`)? Mirrors the
+/// frontend's `DAILY_PATH_RE` — only dated names are part of the daily
+/// stream; anything else under `daily/` is an ordinary note.
+fn is_daily_note(relative: &str) -> bool {
+    let Some(stem) = relative
+        .strip_prefix("daily/")
+        .and_then(|name| name.strip_suffix(".md"))
+    else {
+        return false;
+    };
+    stem.len() == 10
+        && stem
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| match index {
+                4 | 7 => byte == b'-',
+                _ => byte.is_ascii_digit(),
+            })
 }
 
 /// `notes/füße.md` + 2 → `notes/füße-2.md` — the `-2` collision suffix the
@@ -571,6 +777,7 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
+    use std::sync::Mutex;
     use tempfile::tempdir;
     use zip::write::SimpleFileOptions;
 
@@ -600,12 +807,20 @@ mod tests {
             urls: Vec::new(),
             prefix: import_assets::V1_ASSET_URL_PREFIX.to_string(),
         };
-        finalize_import(root, prepared, HashMap::new())
+        finalize_import(root, prepared, HashMap::new(), |_, _| {})
     }
 
     fn import_zip_into_graph(root: &Path, zip_path: &Path) -> AppResult<ImportSummary> {
         let prepared = prepare_zip_import(root, zip_path)?;
-        finalize_import(root, prepared, HashMap::new())
+        finalize_import(root, prepared, HashMap::new(), |_, _| {})
+    }
+
+    fn no_cancel() -> Arc<AtomicBool> {
+        Arc::new(AtomicBool::new(false))
+    }
+
+    fn no_progress() -> Arc<dyn Fn(usize, usize) + Send + Sync> {
+        Arc::new(|_, _| {})
     }
 
     fn write_zip(path: &Path, pairs: &[(&str, &str)]) {
@@ -730,10 +945,13 @@ mod tests {
                 downloaded_assets: 0,
                 failed_asset_downloads: 0,
                 renamed_files: 0,
+                merged_files: 0,
+                // Non-note files land first: an asset must exist (and be
+                // named) before the notes that link it are written.
                 changed_paths: vec![
+                    "assets/pic.bin".to_string(),
                     "notes/a.md".to_string(),
-                    "daily/2026-07-04.md".to_string(),
-                    "assets/pic.bin".to_string()
+                    "daily/2026-07-04.md".to_string()
                 ],
             }
         );
@@ -775,21 +993,138 @@ mod tests {
         assert!(!root.path().join("notes/.DS_Store").exists());
     }
 
+    /// The reported migration blocker: a fresh graph seeds
+    /// `notes/how-to-use-reflect.md` and every V1 export carries its own
+    /// differing copy, so a fatal conflict policy failed practically every
+    /// import. A conflicting note now lands under a suffixed name, with the
+    /// existing note untouched.
     #[test]
-    fn refuses_to_overwrite_existing_files() {
+    fn conflicting_notes_import_under_suffixed_names() {
         let root = tempdir().unwrap();
         fs::create_dir_all(root.path().join("notes")).unwrap();
         fs::write(root.path().join("notes/a.md"), "# Mine\n").unwrap();
 
-        let result = import_entries_into_graph(root.path(), entries(&[("notes/a.md", "# V1\n")]));
+        let summary =
+            import_entries_into_graph(root.path(), entries(&[("notes/a.md", "# V1\n")])).unwrap();
 
-        match result.unwrap_err() {
-            AppError::Io { message } => assert!(message.contains("notes/a.md")),
-            other => panic!("expected an IO collision error, got {other:?}"),
-        }
+        assert_eq!(summary.imported_files, 1);
+        assert_eq!(summary.renamed_files, 1);
+        assert_eq!(summary.changed_paths, vec!["notes/a-2.md".to_string()]);
         assert_eq!(
             fs::read_to_string(root.path().join("notes/a.md")).unwrap(),
             "# Mine\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/a-2.md")).unwrap(),
+            "# V1\n"
+        );
+    }
+
+    /// A conflicting daily note merges instead of renaming — one day, one
+    /// note (a suffixed daily filename would fall out of the daily stream).
+    /// The imported entry's duplicate date heading is dropped.
+    #[test]
+    fn conflicting_daily_notes_merge_into_the_existing_note() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("daily")).unwrap();
+        fs::write(
+            root.path().join("daily/2026-07-04.md"),
+            "# July 4th, 2026\n\n- written in V2\n",
+        )
+        .unwrap();
+
+        let summary = import_entries_into_graph(
+            root.path(),
+            entries(&[(
+                "daily/2026-07-04.md",
+                "---\nid: abc\n---\n\n# July 4th, 2026\n\n- written in V1\n",
+            )]),
+        )
+        .unwrap();
+
+        assert_eq!(summary.imported_files, 0);
+        assert_eq!(summary.merged_files, 1);
+        assert_eq!(
+            summary.changed_paths,
+            vec!["daily/2026-07-04.md".to_string()]
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("daily/2026-07-04.md")).unwrap(),
+            "# July 4th, 2026\n\n- written in V2\n\n- written in V1\n"
+        );
+    }
+
+    /// Re-importing the same export after a daily merge must not append the
+    /// body again.
+    #[test]
+    fn reimporting_after_a_daily_merge_is_idempotent() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("daily")).unwrap();
+        fs::write(
+            root.path().join("daily/2026-07-04.md"),
+            "# July 4th, 2026\n\n- written in V2\n",
+        )
+        .unwrap();
+        let pairs = [(
+            "daily/2026-07-04.md",
+            "# July 4th, 2026\n\n- written in V1\n",
+        )];
+        import_entries_into_graph(root.path(), entries(&pairs)).unwrap();
+
+        let second = import_entries_into_graph(root.path(), entries(&pairs)).unwrap();
+
+        assert_eq!(second.merged_files, 0);
+        assert_eq!(second.skipped_files, 1);
+        assert!(second.changed_paths.is_empty());
+        assert_eq!(
+            fs::read_to_string(root.path().join("daily/2026-07-04.md")).unwrap(),
+            "# July 4th, 2026\n\n- written in V2\n\n- written in V1\n"
+        );
+    }
+
+    /// A daily entry that is nothing but its date heading (and frontmatter)
+    /// has no body to merge — the existing note stays untouched.
+    #[test]
+    fn empty_daily_bodies_do_not_merge() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("daily")).unwrap();
+        fs::write(
+            root.path().join("daily/2026-07-04.md"),
+            "# July 4th, 2026\n\n- kept\n",
+        )
+        .unwrap();
+
+        let summary = import_entries_into_graph(
+            root.path(),
+            entries(&[("daily/2026-07-04.md", "# July 4th, 2026\n")]),
+        )
+        .unwrap();
+
+        assert_eq!(summary.merged_files, 0);
+        assert_eq!(summary.skipped_files, 1);
+        assert_eq!(
+            fs::read_to_string(root.path().join("daily/2026-07-04.md")).unwrap(),
+            "# July 4th, 2026\n\n- kept\n"
+        );
+    }
+
+    /// Non-dated files under `daily/` are ordinary notes: conflicts rename
+    /// rather than merge.
+    #[test]
+    fn undated_daily_conflicts_rename_instead_of_merging() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("daily")).unwrap();
+        fs::write(root.path().join("daily/scratch.md"), "# Mine\n").unwrap();
+
+        let summary =
+            import_entries_into_graph(root.path(), entries(&[("daily/scratch.md", "# V1\n")]))
+                .unwrap();
+
+        assert_eq!(summary.renamed_files, 1);
+        assert_eq!(summary.merged_files, 0);
+        assert_eq!(
+            fs::read_to_string(root.path().join("daily/scratch-2.md")).unwrap(),
+            "# V1\n"
         );
     }
 
@@ -938,12 +1273,44 @@ mod tests {
         );
     }
 
-    /// Aliased assets are never renamed: unlike note links (which resolve
-    /// by title), asset links are literal paths that are not rewritten, so
-    /// a suffixed copy would leave its notes pointing at the aliasing file.
-    /// The never-overwrite refusal stands.
+    /// A conflicting asset lands under a suffixed name, and the imported
+    /// notes' literal `assets/…` links are rewritten to follow it — unlike
+    /// note links (which resolve by title), asset links are paths.
     #[test]
-    fn aliased_assets_stay_fatal_conflicts() {
+    fn conflicting_assets_rename_and_imported_links_follow() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("assets")).unwrap();
+        fs::write(root.path().join("assets/pic.bin"), b"theirs").unwrap();
+
+        let summary = import_entries_into_graph(
+            root.path(),
+            entries(&[
+                ("notes/a.md", "![](assets/pic.bin)\n\nsee assets/pic.bin\n"),
+                ("assets/pic.bin", "mine"),
+            ]),
+        )
+        .unwrap();
+
+        assert_eq!(summary.imported_files, 2);
+        assert_eq!(summary.renamed_files, 1);
+        assert_eq!(
+            fs::read(root.path().join("assets/pic.bin")).unwrap(),
+            b"theirs"
+        );
+        assert_eq!(
+            fs::read(root.path().join("assets/pic-2.bin")).unwrap(),
+            b"mine"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/a.md")).unwrap(),
+            "![](assets/pic-2.bin)\n\nsee assets/pic-2.bin\n"
+        );
+    }
+
+    /// The same policy covers names the filesystem merely aliases together
+    /// (case-insensitive APFS): the aliased asset renames instead of failing.
+    #[test]
+    fn aliased_assets_rename_instead_of_failing() {
         let root = tempdir().unwrap();
         fs::create_dir_all(root.path().join("assets")).unwrap();
         if !filesystem_folds(&root.path().join("assets"), "PIC.bin", "pic.bin") {
@@ -951,19 +1318,28 @@ mod tests {
         }
         fs::write(root.path().join("assets/PIC.bin"), b"theirs").unwrap();
 
-        let result = import_entries_into_graph(
+        let summary = import_entries_into_graph(
             root.path(),
-            entries(&[("notes/a.md", "# A\n"), ("assets/pic.bin", "mine")]),
-        );
+            entries(&[
+                ("notes/a.md", "![](assets/pic.bin)\n"),
+                ("assets/pic.bin", "mine"),
+            ]),
+        )
+        .unwrap();
 
-        match result.unwrap_err() {
-            AppError::Io { message } => assert!(message.contains("assets/pic.bin")),
-            other => panic!("expected an IO collision error, got {other:?}"),
-        }
-        assert!(!root.path().join("notes/a.md").exists());
+        assert_eq!(summary.imported_files, 2);
+        assert_eq!(summary.renamed_files, 1);
         assert_eq!(
             fs::read(root.path().join("assets/PIC.bin")).unwrap(),
             b"theirs"
+        );
+        assert_eq!(
+            fs::read(root.path().join("assets/pic-2.bin")).unwrap(),
+            b"mine"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/a.md")).unwrap(),
+            "![](assets/pic-2.bin)\n"
         );
     }
 
@@ -1005,6 +1381,7 @@ mod tests {
                 downloaded_assets: 0,
                 failed_asset_downloads: 0,
                 renamed_files: 0,
+                merged_files: 0,
                 changed_paths: Vec::new(),
             }
         );
@@ -1028,6 +1405,7 @@ mod tests {
                 downloaded_assets: 0,
                 failed_asset_downloads: 0,
                 renamed_files: 0,
+                merged_files: 0,
                 changed_paths: vec!["notes/a.md".to_string()],
             }
         );
@@ -1053,20 +1431,25 @@ mod tests {
         assert!(!root.path().join("notes/a.md").exists());
     }
 
+    /// An evicted iCloud placeholder occupies its note's name with unknowable
+    /// content — the entry renames rather than racing the download.
     #[test]
-    fn evicted_icloud_placeholder_blocks_import() {
+    fn evicted_icloud_placeholder_renames_the_entry() {
         let root = tempdir().unwrap();
         fs::create_dir_all(root.path().join("notes")).unwrap();
         fs::write(root.path().join("notes/.a.md.icloud"), "placeholder").unwrap();
 
-        let result = import_entries_into_graph(root.path(), entries(&[("notes/a.md", "# V1\n")]));
+        let summary =
+            import_entries_into_graph(root.path(), entries(&[("notes/a.md", "# V1\n")])).unwrap();
 
-        match result.unwrap_err() {
-            AppError::Io { message } => assert!(message.contains("notes/a.md")),
-            other => panic!("expected a placeholder collision error, got {other:?}"),
-        }
+        assert_eq!(summary.imported_files, 1);
+        assert_eq!(summary.renamed_files, 1);
         assert!(!root.path().join("notes/a.md").exists());
         assert!(root.path().join("notes/.a.md.icloud").exists());
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/a-2.md")).unwrap(),
+            "# V1\n"
+        );
     }
 
     #[test]
@@ -1085,8 +1468,9 @@ mod tests {
         prefix: &str,
     ) -> AppResult<ImportSummary> {
         let prepared = prepare_zip_import_from(root, zip_path, prefix)?;
-        let downloads = tauri::async_runtime::block_on(prepared.download_assets())?;
-        finalize_import(root, prepared, downloads)
+        let downloads =
+            tauri::async_runtime::block_on(prepared.download_assets(no_cancel(), no_progress()))?;
+        finalize_import(root, prepared, downloads, |_, _| {})
     }
 
     #[test]
@@ -1168,7 +1552,9 @@ mod tests {
         let Some(before) = open_fd_count() else {
             return;
         };
-        let downloads = tauri::async_runtime::block_on(prepared.download_assets()).unwrap();
+        let downloads =
+            tauri::async_runtime::block_on(prepared.download_assets(no_cancel(), no_progress()))
+                .unwrap();
         let Some(after) = open_fd_count() else {
             return;
         };
@@ -1179,7 +1565,7 @@ mod tests {
             "asset downloads kept too many file descriptors open: before {before}, after {after}"
         );
 
-        let summary = finalize_import(root.path(), prepared, downloads).unwrap();
+        let summary = finalize_import(root.path(), prepared, downloads, |_, _| {}).unwrap();
         assert_eq!(summary.imported_files, 1);
         assert_eq!(summary.downloaded_assets, ASSET_COUNT);
         assert_eq!(summary.failed_asset_downloads, 0);
@@ -1244,6 +1630,78 @@ mod tests {
         let note = fs::read_to_string(root.path().join("daily/2026-07-04.md")).unwrap();
         assert_eq!(note, markdown);
         assert!(!root.path().join("assets").join("deleted").exists());
+    }
+
+    #[test]
+    fn download_progress_reports_every_settled_url() {
+        let root = tempdir().unwrap();
+        let base = serve_generated_assets(3);
+        let zip_path = root.path().join("export.zip");
+        let markdown = (0..3)
+            .map(|index| format!("![]({base}asset-{index}?alt=media\\&token={index})\n"))
+            .collect::<String>();
+        write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
+        let prepared = prepare_zip_import_from(root.path(), &zip_path, &base).unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&seen);
+
+        tauri::async_runtime::block_on(prepared.download_assets(
+            no_cancel(),
+            Arc::new(move |done, total| record.lock().unwrap().push((done, total))),
+        ))
+        .unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 3);
+        assert!(seen.contains(&(3, 3)));
+        assert!(seen.iter().all(|(_, total)| *total == 3));
+    }
+
+    /// A cancelled import stops downloading and errors before any graph
+    /// write — the graph is untouched and the import can simply be rerun.
+    #[test]
+    fn cancelled_downloads_abort_before_any_write() {
+        let root = tempdir().unwrap();
+        let base = serve_generated_assets(1);
+        let zip_path = root.path().join("export.zip");
+        let markdown = format!("![]({base}photo?alt=media\\&token=t)\n");
+        write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
+        let prepared = prepare_zip_import_from(root.path(), &zip_path, &base).unwrap();
+        let cancelled = Arc::new(AtomicBool::new(true));
+
+        let result =
+            tauri::async_runtime::block_on(prepared.download_assets(cancelled, no_progress()));
+
+        match result.err() {
+            Some(AppError::Io { message }) => assert!(message.contains("cancelled")),
+            other => panic!("expected a cancellation error, got {other:?}"),
+        }
+        assert!(!root.path().join("daily/2026-07-04.md").exists());
+        assert!(!root.path().join("assets").exists());
+    }
+
+    #[test]
+    fn write_progress_counts_every_entry() {
+        let root = tempdir().unwrap();
+        let entries = entries(&[
+            ("notes/a.md", "# A\n"),
+            ("daily/2026-07-04.md", "Today\n"),
+            ("assets/pic.bin", "raw"),
+        ]);
+        let prepared = PreparedImport {
+            entries: dedupe_entries(entries).unwrap(),
+            staging: super::super::assets::staging_dir(root.path()).unwrap(),
+            urls: Vec::new(),
+            prefix: import_assets::V1_ASSET_URL_PREFIX.to_string(),
+        };
+        let mut seen = Vec::new();
+
+        finalize_import(root.path(), prepared, HashMap::new(), |done, total| {
+            seen.push((done, total))
+        })
+        .unwrap();
+
+        assert_eq!(seen, vec![(1, 3), (2, 3), (3, 3)]);
     }
 
     #[test]

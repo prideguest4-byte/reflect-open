@@ -67,13 +67,31 @@ export const graphImportSummarySchema = z.object({
   /** Attachments that are permanently gone; their notes keep the remote link. */
   failedAssetDownloads: z.number(),
   /**
-   * Notes written under a suffixed name because the filesystem treats their
-   * own name as an alias of a differing existing file (e.g. case-insensitive
-   * APFS folds `füße.md` and `füsse.md` to one path). Only note markdown is
-   * renamed; an aliased asset stays a fatal conflict.
+   * Zip files written under a suffixed name because a differing existing
+   * file holds their own name — a genuine same-name file, or one the
+   * filesystem merely aliases to the same path (e.g. case-insensitive APFS
+   * folds `füße.md` and `füsse.md` to one path). Renamed assets have the
+   * imported notes' `assets/…` links rewritten to the suffixed name.
    */
   renamedFiles: z.number(),
-  /** Graph-relative paths newly written to the open graph. */
+  /**
+   * Existing daily notes that gained an imported entry's body: the day
+   * already had a differing note, so the import appended rather than
+   * duplicating the day under a suffixed name.
+   */
+  mergedFiles: z.number(),
+  /** Graph-relative paths written to the open graph (incl. merged dailies). */
   changedPaths: z.array(z.string()),
 })
 export type GraphImportSummary = z.infer<typeof graphImportSummarySchema>
+
+/** One `import:progress` tick from the running Reflect V1 import. */
+export const graphImportProgressSchema = z.object({
+  /** Long remote downloads first, then fast local writes. */
+  stage: z.enum(['downloading', 'writing']),
+  /** Items finished within the stage. */
+  done: z.number(),
+  /** Items the stage will process in total. */
+  total: z.number(),
+})
+export type GraphImportProgress = z.infer<typeof graphImportProgressSchema>

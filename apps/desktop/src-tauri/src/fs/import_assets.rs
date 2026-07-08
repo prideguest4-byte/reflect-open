@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -121,16 +122,52 @@ pub(super) fn rewrite_markdown(
     result
 }
 
+/// Replace graph-relative `assets/…` references in `markdown` per
+/// `replacements` (old relative path → new relative path) — the follow-up
+/// when a zip-borne asset lands under a suffixed name. Only spans opening a
+/// link destination count (preceded by `(`, `<`, a quote, whitespace, or the
+/// start of the text), and only exact whole-path matches are rewritten.
+pub(super) fn rewrite_asset_paths(
+    markdown: &str,
+    replacements: &HashMap<String, String>,
+) -> String {
+    if replacements.is_empty() {
+        return markdown.to_string();
+    }
+    let mut result = markdown.to_string();
+    for span in scan_remote_spans(markdown, "assets/").into_iter().rev() {
+        let opens_destination = markdown[..span.start]
+            .chars()
+            .next_back()
+            .is_none_or(|before| {
+                before.is_whitespace() || matches!(before, '(' | '<' | '"' | '\'')
+            });
+        if !opens_destination {
+            continue;
+        }
+        if let Some(renamed) = replacements.get(&span.url) {
+            result.replace_range(span.start..span.end, renamed);
+        }
+    }
+    result
+}
+
 /// Download every URL into `staging`, a few at a time. Returns the outcome
 /// per URL, or the first transient error — in which case nothing survives
 /// (the staged temp files delete on drop) and the import can be retried.
+/// `cancelled` stops the workers between fetches (also an error: a cancelled
+/// import must not proceed to writes); `on_progress` receives
+/// `(settled, total)` after each URL resolves.
 pub(super) async fn download_remote_assets(
     staging: &Path,
     urls: Vec<String>,
+    cancelled: Arc<AtomicBool>,
+    on_progress: Arc<dyn Fn(usize, usize) + Send + Sync>,
 ) -> AppResult<HashMap<String, DownloadOutcome>> {
     if urls.is_empty() {
         return Ok(HashMap::new());
     }
+    let total = urls.len();
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(5))
         .connect_timeout(CONNECT_TIMEOUT)
@@ -146,24 +183,32 @@ pub(super) async fn download_remote_assets(
     for _ in 0..workers {
         let queue = Arc::clone(&queue);
         let results = Arc::clone(&results);
+        let cancelled = Arc::clone(&cancelled);
+        let on_progress = Arc::clone(&on_progress);
         let client = client.clone();
         let staging = staging.to_path_buf();
         handles.push(tauri::async_runtime::spawn(async move {
             loop {
-                let Some(url) = next_url(&queue, &results) else {
+                let Some(url) = next_url(&queue, &results, &cancelled) else {
                     return;
                 };
                 let outcome = fetch_asset(&client, &url, &staging).await;
-                let Ok(mut results) = results.lock() else {
-                    return;
-                };
-                match outcome {
-                    Ok(outcome) => {
-                        if let Ok(map) = results.as_mut() {
-                            map.insert(url, outcome);
+                let settled = {
+                    let Ok(mut results) = results.lock() else {
+                        return;
+                    };
+                    match outcome {
+                        Ok(outcome) => {
+                            if let Ok(map) = results.as_mut() {
+                                map.insert(url, outcome);
+                            }
                         }
+                        Err(err) => *results = Err(err),
                     }
-                    Err(err) => *results = Err(err),
+                    results.as_ref().map(HashMap::len).ok()
+                };
+                if let Some(settled) = settled {
+                    on_progress(settled, total);
                 }
             }
         }));
@@ -172,6 +217,9 @@ pub(super) async fn download_remote_assets(
         handle
             .await
             .map_err(|err| AppError::io(format!("asset download task failed: {err}")))?;
+    }
+    if cancelled.load(Ordering::SeqCst) {
+        return Err(AppError::io("import cancelled"));
     }
     Arc::into_inner(results)
         .and_then(|mutex| mutex.into_inner().ok())
@@ -184,13 +232,15 @@ fn lock<T>(mutex: &Arc<Mutex<T>>) -> AppResult<std::sync::MutexGuard<'_, T>> {
         .map_err(|_| AppError::io("asset download state lock poisoned"))
 }
 
-/// Pop the next URL, or `None` once the queue is drained *or* another worker
-/// already recorded an error — no point downloading into an aborted import.
+/// Pop the next URL, or `None` once the queue is drained, another worker
+/// already recorded an error, or the import was cancelled — no point
+/// downloading into an aborted import.
 fn next_url(
     queue: &Arc<Mutex<Vec<String>>>,
     results: &Arc<Mutex<AppResult<HashMap<String, DownloadOutcome>>>>,
+    cancelled: &Arc<AtomicBool>,
 ) -> Option<String> {
-    if results.lock().ok()?.is_err() {
+    if cancelled.load(Ordering::SeqCst) || results.lock().ok()?.is_err() {
         return None;
     }
     queue.lock().ok()?.pop()
@@ -569,6 +619,19 @@ mod tests {
         assert_eq!(
             rewrite_markdown(markdown, PREFIX, &replacements),
             "![](assets/photo.webp) and [f](https://firebasestorage.googleapis.com/o/b?alt=media\\&token=u)"
+        );
+    }
+
+    #[test]
+    fn rewrite_asset_paths_matches_whole_destinations_only() {
+        let markdown = "![](assets/pic.png) and [f](assets/pic.png.bak) and see assets/pic.png\nfoo-assets/pic.png stays\n";
+        let replacements = HashMap::from([(
+            "assets/pic.png".to_string(),
+            "assets/pic-2.png".to_string(),
+        )]);
+        assert_eq!(
+            rewrite_asset_paths(markdown, &replacements),
+            "![](assets/pic-2.png) and [f](assets/pic.png.bak) and see assets/pic-2.png\nfoo-assets/pic.png stays\n"
         );
     }
 

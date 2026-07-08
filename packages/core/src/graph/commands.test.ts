@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { subscribeOwnWrites } from '../indexing/local-write-echo'
 import { setBridge } from '../ipc/bridge'
-import { importReflectV1Zip, markReflectV1ImportOwnWrites, openAsset } from './commands'
+import {
+  cancelReflectV1Import,
+  importReflectV1Zip,
+  markReflectV1ImportOwnWrites,
+  openAsset,
+  subscribeImportProgress,
+  IMPORT_PROGRESS_EVENT,
+} from './commands'
 
 afterEach(() => {
   setBridge(null)
@@ -27,6 +34,7 @@ describe('graph commands', () => {
       downloadedAssets: 0,
       failedAssetDownloads: 0,
       renamedFiles: 0,
+      mergedFiles: 0,
       changedPaths: ['notes/a.md', 'daily/2026-07-04.md'],
     }))
     setBridge({ invoke, listen: async () => () => {} })
@@ -42,8 +50,43 @@ describe('graph commands', () => {
       downloadedAssets: 0,
       failedAssetDownloads: 0,
       renamedFiles: 0,
+      mergedFiles: 0,
       changedPaths: ['notes/a.md', 'daily/2026-07-04.md'],
     })
+  })
+
+  it('surfaces validated import progress ticks and drops malformed ones', async () => {
+    let emit: ((payload: unknown) => void) | null = null
+    setBridge({
+      invoke: async () => null,
+      listen: async (event, handler) => {
+        expect(event).toBe(IMPORT_PROGRESS_EVENT)
+        emit = handler
+        return () => {}
+      },
+    })
+    const seen: unknown[] = []
+    await subscribeImportProgress((progress) => {
+      seen.push(progress)
+    })
+    if (emit === null) {
+      throw new Error('expected the subscription to register a listener')
+    }
+    const publish: (payload: unknown) => void = emit
+
+    publish({ stage: 'downloading', done: 1, total: 4 })
+    publish({ stage: 'launching', done: 1, total: 4 })
+
+    expect(seen).toEqual([{ stage: 'downloading', done: 1, total: 4 }])
+  })
+
+  it('cancels the running import through the native command', async () => {
+    const invoke = vi.fn(async () => null)
+    setBridge({ invoke, listen: async () => () => {} })
+
+    await cancelReflectV1Import()
+
+    expect(invoke).toHaveBeenCalledWith('graph_import_cancel', {})
   })
 
   it('marks completed import files as this device’s own writes', () => {
@@ -58,6 +101,7 @@ describe('graph commands', () => {
         downloadedAssets: 0,
         failedAssetDownloads: 0,
         renamedFiles: 0,
+        mergedFiles: 0,
         changedPaths: ['notes/a.md', 'daily/2026-07-04.md'],
       })
 
