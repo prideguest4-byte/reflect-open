@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import type { TaskMarker } from '../markdown'
 import { db } from './db'
 
@@ -12,8 +11,6 @@ export interface OpenTask extends TaskMarker {
   checked: boolean
   /** Display text, markdown stripped. */
   text: string
-  /** Parent outline/list item text, top-down, displayed above the task row. */
-  breadcrumbs: string[]
   noteTitle: string
   /** The task's explicit `[[YYYY-MM-DD]]` due date, or null. */
   dueDate: string | null
@@ -25,8 +22,6 @@ export interface OpenTask extends TaskMarker {
   updatedAt: number
 }
 
-const taskBreadcrumbsSchema = z.array(z.string())
-
 function taskRowsQuery() {
   return db
     .selectFrom('tasks')
@@ -37,7 +32,6 @@ function taskRowsQuery() {
       'tasks.markerOffset',
       'tasks.raw',
       'tasks.text',
-      'tasks.breadcrumbs',
       'tasks.checked',
       'tasks.dueDate',
       'notes.title as noteTitle',
@@ -51,10 +45,8 @@ function taskRowsQuery() {
 function toTaskRow(row: {
   checked: number
   isPinned: number
-  breadcrumbs: string
-}): { checked: boolean; isPinned: boolean; breadcrumbs: string[] } {
-  const breadcrumbs = taskBreadcrumbsSchema.parse(JSON.parse(row.breadcrumbs))
-  return { ...row, checked: row.checked !== 0, isPinned: row.isPinned !== 0, breadcrumbs }
+}): { checked: boolean; isPinned: boolean } {
+  return { ...row, checked: row.checked !== 0, isPinned: row.isPinned !== 0 }
 }
 
 /**

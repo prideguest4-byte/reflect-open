@@ -1,4 +1,3 @@
-import type { SyntaxNode } from '@lezer/common'
 import { dateFromDailyPath, isDaily } from '../graph/paths'
 import { parseFrontmatter, splitFrontmatter } from './frontmatter'
 import { parseBody } from './grammar'
@@ -189,55 +188,6 @@ function hasRoundTaskListMarker(body: string, markerStart: number): boolean {
   return /^[\t ]*\+[\t ]+$/.test(body.slice(lineStart, markerStart))
 }
 
-function lineEndAfter(body: string, from: number): number {
-  const newline = body.indexOf('\n', from)
-  return newline === -1 ? body.length : newline
-}
-
-function listItemBreadcrumbLabel(
-  body: string,
-  item: SyntaxNode,
-  cuts: Span[],
-  literalRanges: Span[],
-): string | null {
-  const lineEnd = lineEndAfter(body, item.from)
-  const firstLine = body.slice(item.from, lineEnd)
-  const marker = /^[\t ]*(?:[-+*]|\d+[.)])[\t ]+/.exec(firstLine)
-  if (marker === null) {
-    return null
-  }
-  const textStart = item.from + marker[0].length
-  const text = plainTextOfRange(body, textStart, lineEnd, cuts, literalRanges)
-  return text === '' ? null : text
-}
-
-function taskBreadcrumbs(
-  body: string,
-  taskNode: SyntaxNode,
-  cuts: Span[],
-  literalRanges: Span[],
-): string[] {
-  const ownItem = taskNode.parent
-  if (ownItem?.name !== 'ListItem') {
-    return []
-  }
-
-  const breadcrumbs: string[] = []
-  let ancestor = ownItem.parent
-
-  while (ancestor !== null && ancestor !== undefined) {
-    if (ancestor.name === 'ListItem') {
-      const text = listItemBreadcrumbLabel(body, ancestor, cuts, literalRanges)
-      if (text !== null) {
-        breadcrumbs.push(text)
-      }
-    }
-    ancestor = ancestor.parent
-  }
-
-  return breadcrumbs.reverse()
-}
-
 /**
  * Resolve a `Task` Lezer node (the marker starts at `from`) into a
  * {@link ParsedTask}, or `null` when the marker shape isn't Reflect's task
@@ -246,13 +196,13 @@ function taskBreadcrumbs(
  */
 function readTask(
   body: string,
-  taskNode: SyntaxNode,
+  range: Span,
   bodyOffset: number,
   cuts: Span[],
   literalRanges: Span[],
   wikiLinks: WikiLink[],
 ): ParsedTask | null {
-  const { from, to } = taskNode
+  const { from, to } = range
   if (!hasRoundTaskListMarker(body, from)) {
     return null
   }
@@ -260,11 +210,11 @@ function readTask(
   if (marker === null) {
     return null
   }
-  const lineEnd = lineEndAfter(body, from)
+  const newline = body.indexOf('\n', from)
+  const lineEnd = newline === -1 ? body.length : newline
   const markerOffset = from + bodyOffset
   return {
     text: plainTextOfRange(body, from, lineEnd, cuts, literalRanges),
-    breadcrumbs: taskBreadcrumbs(body, taskNode, cuts, literalRanges),
     raw: body.slice(from, lineEnd),
     checked: marker.checked,
     markerOffset,
@@ -363,7 +313,7 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   const cuts: Span[] = [] // body coords — syntax to drop from plain text
   const tagExcluded: Span[] = [] // body coords — regions that don't yield tags
   const literalPlainText: Span[] = [] // body coords — regions that render backslashes literally
-  const taskNodes: SyntaxNode[] = [] // body coords — `Task` nodes, resolved after the walk
+  const taskRanges: Span[] = [] // body coords — `Task` node spans, resolved after the walk
 
   tree.iterate({
     enter: (node) => {
@@ -377,7 +327,7 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
         // needs to strip its text — and the `[[date]]` due-date link inside it —
         // aren't collected until their own `enter`. The node span bounds the
         // due-date search to this task.
-        taskNodes.push(node.node)
+        taskRanges.push({ from, to })
       }
       if (isTagExcludedNode(name)) {
         tagExcluded.push({ from, to })
@@ -419,8 +369,8 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   collectTags(body, tagExcluded, tags)
 
   const tasks: ParsedTask[] = []
-  for (const taskNode of taskNodes) {
-    const task = readTask(body, taskNode, bodyOffset, cuts, literalPlainText, wikiLinks)
+  for (const range of taskRanges) {
+    const task = readTask(body, range, bodyOffset, cuts, literalPlainText, wikiLinks)
     if (task) {
       tasks.push(task)
     }
