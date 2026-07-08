@@ -45,10 +45,6 @@ const CODE_TO_BINDING_KEY: Record<string, string> = {
   BracketRight: ']',
 }
 
-function isModKey(event: KeyboardEvent): boolean {
-  return event.metaKey || event.ctrlKey
-}
-
 function bindingKeyFor(event: KeyboardEvent): string {
   if (!event.altKey && event.key.length === 1) {
     return event.key.toLowerCase()
@@ -69,14 +65,26 @@ function bindingKeyFor(event: KeyboardEvent): string {
 }
 
 function idForKeyDown(event: KeyboardEvent): string | null {
-  if (!isModKey(event) || event.repeat) {
+  if ((!event.metaKey && !event.ctrlKey) || event.repeat) {
     return null // held keys must not spam navigations (e.g. a stack of new notes)
   }
   // Alt participates in the lookup rather than being rejected, so `Alt-Mod-l`
   // can bind while an alt chord still never fires a plain `Mod-` command.
   const alt = event.altKey ? 'Alt-' : ''
   const shift = event.shiftKey ? 'Shift-' : ''
-  return BINDING_TO_ID.get(`${alt}Mod-${shift}${bindingKeyFor(event)}`) ?? null
+  const key = bindingKeyFor(event)
+  const candidates = [
+    event.metaKey ? `${alt}Meta-${shift}${key}` : null,
+    event.ctrlKey ? `${alt}Ctrl-${shift}${key}` : null,
+    `${alt}Mod-${shift}${key}`,
+  ].filter((candidate): candidate is string => candidate !== null)
+  for (const candidate of candidates) {
+    const id = BINDING_TO_ID.get(candidate)
+    if (id !== undefined) {
+      return id
+    }
+  }
+  return null
 }
 
 /**
@@ -90,7 +98,7 @@ export function useAppShortcuts(): CommandContext {
   const { route, navigate, back, forward, clearScrollState } = useRouter()
   const focusedDailyDate = useFocusedDailyDate()
   const { resolvedTheme, setTheme } = useTheme()
-  const { graph } = useGraph()
+  const { graph, recents, openRecent } = useGraph()
   const { openPalette, open: paletteOpen } = usePalette()
   const { openShortcuts, closeShortcuts, open: shortcutsOpen } = useShortcuts()
   const {
@@ -118,6 +126,9 @@ export function useAppShortcuts(): CommandContext {
   // Read at run time, not captured: a command can fire long after the render
   // that created the context (palette open across an index rebuild, etc.).
   const generationRef = useRef<number | null>(graph?.generation ?? null)
+  const graphRootRef = useRef<string | null>(graph?.root ?? null)
+  const recentsRef = useRef(recents)
+  const openRecentRef = useRef(openRecent)
   const routeRef = useRef(route)
   const focusedDailyDateRef = useRef(focusedDailyDate)
   useEffect(() => {
@@ -125,6 +136,9 @@ export function useAppShortcuts(): CommandContext {
     shortcutsOpenRef.current = shortcutsOpen
     templatesOpenRef.current = templatePickerOpen || templateCreateOpen
     generationRef.current = graph?.generation ?? null
+    graphRootRef.current = graph?.root ?? null
+    recentsRef.current = recents
+    openRecentRef.current = openRecent
     routeRef.current = route
     focusedDailyDateRef.current = focusedDailyDate
   })
@@ -148,6 +162,13 @@ export function useAppShortcuts(): CommandContext {
       toggleTheme: () => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'),
       toggleSidebar,
       newChat,
+      switchGraph: (index) => {
+        const recent = recentsRef.current[index]
+        if (recent === undefined || recent.root === graphRootRef.current) {
+          return
+        }
+        void openRecentRef.current(recent.root)
+      },
       toggleAudioMemo,
       generation: () => generationRef.current,
       openPalette,
