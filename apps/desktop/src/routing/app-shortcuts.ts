@@ -64,6 +64,14 @@ function bindingKeyFor(event: KeyboardEvent): string {
   return event.key.toLowerCase()
 }
 
+function physicalDigitKeyFor(event: KeyboardEvent): string | null {
+  if (event.altKey) {
+    return null
+  }
+  const match = /^Digit([0-9])$/.exec(event.code)
+  return match?.[1] ?? null
+}
+
 function idForKeyDown(event: KeyboardEvent): string | null {
   if ((!event.metaKey && !event.ctrlKey) || event.repeat) {
     return null // held keys must not spam navigations (e.g. a stack of new notes)
@@ -72,16 +80,20 @@ function idForKeyDown(event: KeyboardEvent): string | null {
   // can bind while an alt chord still never fires a plain `Mod-` command.
   const alt = event.altKey ? 'Alt-' : ''
   const shift = event.shiftKey ? 'Shift-' : ''
-  const key = bindingKeyFor(event)
-  const candidates = [
-    event.metaKey ? `${alt}Meta-${shift}${key}` : null,
-    event.ctrlKey ? `${alt}Ctrl-${shift}${key}` : null,
-    `${alt}Mod-${shift}${key}`,
-  ].filter((candidate): candidate is string => candidate !== null)
-  for (const candidate of candidates) {
-    const id = BINDING_TO_ID.get(candidate)
-    if (id !== undefined) {
-      return id
+  const bindingKeys = [bindingKeyFor(event), physicalDigitKeyFor(event)].filter(
+    (key, index, keys): key is string => key !== null && keys.indexOf(key) === index,
+  )
+  for (const key of bindingKeys) {
+    const candidates = [
+      event.metaKey ? `${alt}Meta-${shift}${key}` : null,
+      event.ctrlKey ? `${alt}Ctrl-${shift}${key}` : null,
+      `${alt}Mod-${shift}${key}`,
+    ].filter((candidate): candidate is string => candidate !== null)
+    for (const candidate of candidates) {
+      const id = BINDING_TO_ID.get(candidate)
+      if (id !== undefined) {
+        return id
+      }
     }
   }
   return null

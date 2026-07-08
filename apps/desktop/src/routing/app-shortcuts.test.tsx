@@ -238,6 +238,14 @@ describe('app shortcuts', () => {
     expect(openRecent).toHaveBeenCalledTimes(1)
   })
 
+  it('matches graph number shortcuts by physical digit key on symbol-producing layouts', () => {
+    shortcutsHook()
+
+    act(() => press('@', { code: 'Digit2' }))
+
+    expect(openRecent).toHaveBeenCalledWith('/work')
+  })
+
   it('keeps graph switching on the Meta key, not Ctrl-number', () => {
     shortcutsHook()
 
