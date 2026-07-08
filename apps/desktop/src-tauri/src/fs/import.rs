@@ -137,8 +137,13 @@ impl PreparedImport {
         cancelled: Arc<AtomicBool>,
         on_progress: Arc<dyn Fn(usize, usize) + Send + Sync>,
     ) -> AppResult<HashMap<String, DownloadOutcome>> {
-        import_assets::download_remote_assets(&self.staging, self.urls.clone(), cancelled, on_progress)
-            .await
+        import_assets::download_remote_assets(
+            &self.staging,
+            self.urls.clone(),
+            cancelled,
+            on_progress,
+        )
+        .await
     }
 
     /// How many remote attachments the export links (the download total).
@@ -610,13 +615,10 @@ fn is_daily_note(relative: &str) -> bool {
         return false;
     };
     stem.len() == 10
-        && stem
-            .bytes()
-            .enumerate()
-            .all(|(index, byte)| match index {
-                4 | 7 => byte == b'-',
-                _ => byte.is_ascii_digit(),
-            })
+        && stem.bytes().enumerate().all(|(index, byte)| match index {
+            4 | 7 => byte == b'-',
+            _ => byte.is_ascii_digit(),
+        })
 }
 
 /// `notes/füße.md` + 2 → `notes/füße-2.md` — the `-2` collision suffix the

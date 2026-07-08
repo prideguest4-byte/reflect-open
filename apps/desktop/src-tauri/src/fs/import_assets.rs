@@ -625,10 +625,8 @@ mod tests {
     #[test]
     fn rewrite_asset_paths_matches_whole_destinations_only() {
         let markdown = "![](assets/pic.png) and [f](assets/pic.png.bak) and see assets/pic.png\nfoo-assets/pic.png stays\n";
-        let replacements = HashMap::from([(
-            "assets/pic.png".to_string(),
-            "assets/pic-2.png".to_string(),
-        )]);
+        let replacements =
+            HashMap::from([("assets/pic.png".to_string(), "assets/pic-2.png".to_string())]);
         assert_eq!(
             rewrite_asset_paths(markdown, &replacements),
             "![](assets/pic-2.png) and [f](assets/pic.png.bak) and see assets/pic-2.png\nfoo-assets/pic.png stays\n"

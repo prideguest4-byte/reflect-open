@@ -39,6 +39,16 @@ vi.mock('@/providers/sync-provider', () => ({
     backUpNow: async () => {},
   }),
 }))
+// The Import section only hands the picked zip to the workspace-level V1
+// import controller, which these screen tests don't mount.
+vi.mock('@/providers/v1-import-provider', () => ({
+  useV1Import: () => ({
+    state: { phase: 'idle' },
+    startImport: () => {},
+    cancelImport: () => {},
+    dismiss: () => {},
+  }),
+}))
 
 // jsdom doesn't implement this; Radix Select scrolls the selected option into
 // view when the listbox opens.
