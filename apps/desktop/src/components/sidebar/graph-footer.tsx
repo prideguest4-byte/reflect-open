@@ -31,6 +31,7 @@ const MENU_ITEM_CLASS = 'gap-2 px-2 py-1.5 text-[13px] text-text-secondary'
 const SETTINGS_BINDING = keybindingFor('settings.open')
 
 function graphSwitchBindingFor(index: number): string | null {
+  // Recent rows are zero-based; `graph.switchN` commands and keycaps are one-based.
   return keybindingFor(`graph.switch${index + 1}`)
 }
 
