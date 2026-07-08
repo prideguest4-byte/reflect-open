@@ -194,7 +194,7 @@ function lineEndAfter(body: string, from: number): number {
   return newline === -1 ? body.length : newline
 }
 
-function listItemText(
+function listItemBreadcrumbLabel(
   body: string,
   item: SyntaxNode,
   cuts: Span[],
@@ -217,13 +217,17 @@ function taskBreadcrumbs(
   cuts: Span[],
   literalRanges: Span[],
 ): string[] {
-  const breadcrumbs: string[] = []
   const ownItem = taskNode.parent
-  let ancestor = ownItem?.parent
+  if (ownItem?.name !== 'ListItem') {
+    return []
+  }
+
+  const breadcrumbs: string[] = []
+  let ancestor = ownItem.parent
 
   while (ancestor !== null && ancestor !== undefined) {
-    if (ancestor.name === 'ListItem' && ancestor !== ownItem) {
-      const text = listItemText(body, ancestor, cuts, literalRanges)
+    if (ancestor.name === 'ListItem') {
+      const text = listItemBreadcrumbLabel(body, ancestor, cuts, literalRanges)
       if (text !== null) {
         breadcrumbs.push(text)
       }

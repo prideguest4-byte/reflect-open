@@ -261,4 +261,12 @@ describe('parseNote — tasks', () => {
     const note = parse('+ [ ] no date here\n+ [ ] dated [[2026-07-01]]\n')
     expect(note.tasks.map((task) => task.dueDate)).toEqual([null, '2026-07-01'])
   })
+
+  it('does not borrow a due-date link from a nested child task', () => {
+    const note = parse('+ [ ] parent\n  + [ ] child [[2026-07-01]]\n')
+    expect(note.tasks.map((task) => ({ text: task.text, dueDate: task.dueDate }))).toEqual([
+      { text: 'parent', dueDate: null },
+      { text: 'child 2026-07-01', dueDate: '2026-07-01' },
+    ])
+  })
 })
