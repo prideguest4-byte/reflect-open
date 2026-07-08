@@ -69,7 +69,16 @@ function physicalDigitKeyFor(event: KeyboardEvent): string | null {
     return null
   }
   const match = /^Digit([0-9])$/.exec(event.code)
-  return match?.[1] ?? null
+  if (match === null) {
+    return null
+  }
+  const digit = match[1]!
+  // Some layouts type number-row digits with Shift. Treat that as the same
+  // graph-switch shortcut, but don't make US-style Cmd+Shift+@ mean Cmd+2.
+  if (event.shiftKey && event.key !== digit) {
+    return null
+  }
+  return digit
 }
 
 function idForKeyDown(event: KeyboardEvent): string | null {
@@ -79,11 +88,21 @@ function idForKeyDown(event: KeyboardEvent): string | null {
   // Alt participates in the lookup rather than being rejected, so `Alt-Mod-l`
   // can bind while an alt chord still never fires a plain `Mod-` command.
   const alt = event.altKey ? 'Alt-' : ''
-  const shift = event.shiftKey ? 'Shift-' : ''
-  const bindingKeys = [bindingKeyFor(event), physicalDigitKeyFor(event)].filter(
-    (key, index, keys): key is string => key !== null && keys.indexOf(key) === index,
+  const producedKey = bindingKeyFor(event)
+  const physicalDigitKey = physicalDigitKeyFor(event)
+  const bindingKeys = [
+    { key: producedKey, shift: event.shiftKey },
+    physicalDigitKey === null ? null : { key: physicalDigitKey, shift: false },
+  ].filter(
+    (lookup, index, lookups): lookup is { key: string; shift: boolean } =>
+      lookup !== null &&
+      lookups.findIndex(
+        (candidate) =>
+          candidate !== null && candidate.key === lookup.key && candidate.shift === lookup.shift,
+      ) === index,
   )
-  for (const key of bindingKeys) {
+  for (const { key, shift: shifted } of bindingKeys) {
+    const shift = shifted ? 'Shift-' : ''
     const candidates = [
       event.metaKey ? `${alt}Meta-${shift}${key}` : null,
       event.ctrlKey ? `${alt}Ctrl-${shift}${key}` : null,

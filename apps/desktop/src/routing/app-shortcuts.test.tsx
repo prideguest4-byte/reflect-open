@@ -246,6 +246,22 @@ describe('app shortcuts', () => {
     expect(openRecent).toHaveBeenCalledWith('/work')
   })
 
+  it('strips Shift from physical digit fallback on layouts where digits require Shift', () => {
+    shortcutsHook()
+
+    act(() => press('2', { code: 'Digit2', shiftKey: true }))
+
+    expect(openRecent).toHaveBeenCalledWith('/work')
+  })
+
+  it('does not turn produced symbols with Shift into graph number shortcuts', () => {
+    shortcutsHook()
+
+    act(() => press('@', { code: 'Digit2', shiftKey: true }))
+
+    expect(openRecent).not.toHaveBeenCalled()
+  })
+
   it('keeps graph switching on the Meta key, not Ctrl-number', () => {
     shortcutsHook()
 
