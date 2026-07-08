@@ -365,7 +365,9 @@ describe('Sidebar', () => {
     const { view } = renderSidebar()
 
     await userEvent.click(view.getByRole('button', { name: /Notes/ }))
-    await userEvent.click(view.getByRole('menuitem', { name: 'Work' }))
+    const work = view.getByRole('menuitem', { name: 'Work' })
+    expect([...work.querySelectorAll('kbd')].map((keycap) => keycap.textContent)).toContain('2')
+    await userEvent.click(work)
     expect(openRecent).toHaveBeenCalledWith('/work')
 
     await userEvent.click(view.getByRole('button', { name: /Notes/ }))

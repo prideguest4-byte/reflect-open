@@ -45,6 +45,11 @@ const CODE_TO_BINDING_KEY: Record<string, string> = {
   BracketRight: ']',
 }
 
+interface BindingKeyLookup {
+  key: string
+  shift: boolean
+}
+
 function bindingKeyFor(event: KeyboardEvent): string {
   if (!event.altKey && event.key.length === 1) {
     return event.key.toLowerCase()
@@ -81,34 +86,45 @@ function physicalDigitKeyFor(event: KeyboardEvent): string | null {
   return digit
 }
 
+function addBindingLookup(lookups: BindingKeyLookup[], lookup: BindingKeyLookup): void {
+  if (lookups.some((existing) => existing.key === lookup.key && existing.shift === lookup.shift)) {
+    return
+  }
+  lookups.push(lookup)
+}
+
+function bindingLookupsFor(event: KeyboardEvent): BindingKeyLookup[] {
+  const lookups: BindingKeyLookup[] = []
+  addBindingLookup(lookups, { key: bindingKeyFor(event), shift: event.shiftKey })
+
+  const digit = physicalDigitKeyFor(event)
+  if (digit !== null) {
+    addBindingLookup(lookups, { key: digit, shift: false })
+  }
+
+  return lookups
+}
+
+function modifierPrefixesFor(event: KeyboardEvent): string[] {
+  const alt = event.altKey ? 'Alt-' : ''
+  return [
+    event.metaKey ? `${alt}Meta-` : null,
+    event.ctrlKey ? `${alt}Ctrl-` : null,
+    `${alt}Mod-`,
+  ].filter((prefix): prefix is string => prefix !== null)
+}
+
 function idForKeyDown(event: KeyboardEvent): string | null {
   if ((!event.metaKey && !event.ctrlKey) || event.repeat) {
     return null // held keys must not spam navigations (e.g. a stack of new notes)
   }
-  // Alt participates in the lookup rather than being rejected, so `Alt-Mod-l`
-  // can bind while an alt chord still never fires a plain `Mod-` command.
-  const alt = event.altKey ? 'Alt-' : ''
-  const producedKey = bindingKeyFor(event)
-  const physicalDigitKey = physicalDigitKeyFor(event)
-  const bindingKeys = [
-    { key: producedKey, shift: event.shiftKey },
-    physicalDigitKey === null ? null : { key: physicalDigitKey, shift: false },
-  ].filter(
-    (lookup, index, lookups): lookup is { key: string; shift: boolean } =>
-      lookup !== null &&
-      lookups.findIndex(
-        (candidate) =>
-          candidate !== null && candidate.key === lookup.key && candidate.shift === lookup.shift,
-      ) === index,
-  )
-  for (const { key, shift: shifted } of bindingKeys) {
+  for (const { key, shift: shifted } of bindingLookupsFor(event)) {
     const shift = shifted ? 'Shift-' : ''
-    const candidates = [
-      event.metaKey ? `${alt}Meta-${shift}${key}` : null,
-      event.ctrlKey ? `${alt}Ctrl-${shift}${key}` : null,
-      `${alt}Mod-${shift}${key}`,
-    ].filter((candidate): candidate is string => candidate !== null)
-    for (const candidate of candidates) {
+    for (const prefix of modifierPrefixesFor(event)) {
+      // Alt participates in the lookup rather than being rejected, so
+      // `Alt-Mod-l` can bind while an alt chord still never fires a plain
+      // `Mod-` command.
+      const candidate = `${prefix}${shift}${key}`
       const id = BINDING_TO_ID.get(candidate)
       if (id !== undefined) {
         return id
