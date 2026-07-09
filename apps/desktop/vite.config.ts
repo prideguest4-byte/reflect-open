@@ -10,6 +10,8 @@ const host = process.env.TAURI_DEV_HOST
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN
 // @ts-expect-error process is a Node.js global available in the Vite config context
 const sentryRelease = process.env.SENTRY_RELEASE ?? process.env.VITE_SENTRY_RELEASE ?? process.env.GITHUB_SHA
+// @ts-expect-error process is a Node.js global available in the Vite config context
+const sentryEnabled = process.env.VITE_SENTRY_ENABLED ?? (sentryAuthToken ? 'true' : '')
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -31,6 +33,7 @@ export default defineConfig(async () => ({
   build: { cssTarget: 'safari17.5', sourcemap: true },
 
   define: {
+    'import.meta.env.VITE_SENTRY_ENABLED': JSON.stringify(sentryEnabled),
     'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(sentryRelease ?? ''),
   },
 

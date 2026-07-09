@@ -76,9 +76,9 @@ disk at call time), and it is covered by tests.
   breadcrumbs that help explain how the app reached the failure. Reflect disables
   Sentry user identity collection, cookies, query params, HTTP header and body
   capture, and generative-AI input/output capture. Session Replay is not enabled.
-- **When:** automatically in production builds when the React app throws, catches, or
-  recovers from an error. Development builds send diagnostics only when explicitly
-  enabled for that build.
+- **When:** automatically in official production builds when the React app throws,
+  catches, or recovers from an error. Development builds and third-party source builds
+  send diagnostics only when explicitly configured for that build.
 
 ## Apple Contacts (off by default)
 
@@ -122,7 +122,7 @@ API keys and tokens live in the **OS keychain only** — never in markdown, neve
 | Model download | Hugging Face | No | Yes (opt-in) |
 | Backup | Your git repository | Yes — including private notes | Yes (needs connecting) |
 | Key validation | The provider | No | — (only when adding a key) |
-| Error diagnostics | Sentry | Not intentionally — error metadata only | No (packaged builds) |
+| Error diagnostics | Sentry | Not intentionally — error metadata only | Official builds: no; source builds: yes |
 | Update check | GitHub Releases | No | On in packaged builds |
 | Browser capture | Nowhere (local host on disk) | — (stays on your machine) | — (only when you capture) |
 | Contacts lookup | Nowhere (on-device OS store) | — (stays on your machine) | Yes (opt-in) |
