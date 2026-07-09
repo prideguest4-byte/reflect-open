@@ -188,6 +188,7 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     raw: `[ ] ${text}`,
     checked: false,
     text,
+    breadcrumbs: [],
     noteTitle: 'N',
     dueDate: null,
     dailyDate: null,
@@ -321,6 +322,60 @@ describe('TasksScreen', () => {
     expect(headers).toEqual(['Current', 'Overdue', 'Project'])
     expect(view.getByText('overdue task')).toBeDefined()
     expect(view.getByText('project task')).toBeDefined()
+    view.unmount()
+  })
+
+  it('renders one breadcrumb per consecutive task context and selects that context', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        text: 'first',
+        noteTitle: 'Project',
+        breadcrumbs: ['StartupToolbox', 'Reflections'],
+      }),
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 20,
+        text: 'second',
+        noteTitle: 'Project',
+        breadcrumbs: ['StartupToolbox', 'Reflections'],
+      }),
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 40,
+        text: 'third',
+        noteTitle: 'Project',
+        breadcrumbs: ['StartupToolbox', 'Later'],
+      }),
+    ])
+    const view = renderScreen()
+
+    const context = await view.findByRole('button', {
+      name: 'StartupToolbox → Reflections',
+    })
+    expect(view.getAllByText('StartupToolbox → Reflections')).toHaveLength(1)
+    view.getByText('StartupToolbox → Later')
+
+    await userEvent.click(context)
+    expect(view.getByRole('button', { name: 'Convert to bullet 2' })).toBeDefined()
+    view.unmount()
+  })
+
+  it('hides a lone generic task breadcrumb', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        text: 'project task',
+        noteTitle: 'Project',
+        breadcrumbs: ['Tasks:'],
+      }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('project task')
+    expect(view.queryByText('Tasks:')).toBeNull()
     view.unmount()
   })
 
