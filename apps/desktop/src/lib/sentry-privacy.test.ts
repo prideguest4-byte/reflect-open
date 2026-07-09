@@ -26,6 +26,20 @@ describe('Sentry privacy scrubber', () => {
         note: { markdown: 'secret note text' },
       },
       sdkProcessingMetadata: { note: 'secret note text' },
+      debug_meta: {
+        images: [
+          {
+            type: 'sourcemap',
+            code_file: 'tauri://localhost/assets/index.js?note=secret-note#selection',
+            debug_id: '11111111-1111-4111-8111-111111111111',
+          },
+          {
+            type: 'sourcemap',
+            code_file: 'notes/secret-note.md',
+            debug_id: '22222222-2222-4222-8222-222222222222',
+          },
+        ],
+      },
       exception: {
         values: [
           {
@@ -34,7 +48,7 @@ describe('Sentry privacy scrubber', () => {
             stacktrace: {
               frames: [
                 {
-                  filename: 'assets/index.js',
+                  filename: 'assets/index.js?note=secret-note#selection',
                   function: 'renderEditor',
                   module: 'Users.alex.reflect-open.editor',
                   abs_path: '/Users/alex/notes/secret-note/assets/index.js',
@@ -69,8 +83,8 @@ describe('Sentry privacy scrubber', () => {
     expect(scrubbed.sdkProcessingMetadata).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.type).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.value).toBeUndefined()
-    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBeUndefined()
-    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.abs_path).toBeUndefined()
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBe('assets/index.js')
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.abs_path).toBe('app:///assets/index.js')
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.module).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.function).toBe('renderEditor')
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.context_line).toBeUndefined()
@@ -78,6 +92,69 @@ describe('Sentry privacy scrubber', () => {
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.post_context).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.vars).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.module_metadata).toBeUndefined()
+    expect(scrubbed.debug_meta?.images).toEqual([
+      {
+        type: 'sourcemap',
+        code_file: 'tauri://localhost/assets/index.js',
+        debug_id: '11111111-1111-4111-8111-111111111111',
+      },
+    ])
+  })
+
+  it('keeps Sentry source map asset paths while removing URL payloads', () => {
+    const scrubbed = scrubSentryEventForPrivacy({
+      type: undefined,
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [
+                {
+                  filename: 'tauri://localhost/assets/index-abc123.js?note=secret#text',
+                  abs_path: 'http://localhost:1420/assets/index-abc123.js?note=secret#text',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    })
+
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBe(
+      'tauri://localhost/assets/index-abc123.js',
+    )
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.abs_path).toBe(
+      'http://localhost:1420/assets/index-abc123.js',
+    )
+  })
+
+  it('drops unknown stack frame paths instead of guessing whether they are safe', () => {
+    const scrubbed = scrubSentryEventForPrivacy({
+      type: undefined,
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [
+                {
+                  filename: 'notes/secret-note.md',
+                  abs_path: 'reflect://graph/notes/secret-note.md',
+                },
+                {
+                  filename: 'app:///notes/secret-note.md',
+                  abs_path: 'http://localhost:1420/notes/secret-note.md',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    })
+
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBeUndefined()
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.abs_path).toBeUndefined()
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[1]?.filename).toBeUndefined()
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[1]?.abs_path).toBeUndefined()
   })
 
   it('drops every breadcrumb before it can be attached to an event', () => {
