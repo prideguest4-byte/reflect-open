@@ -58,6 +58,7 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
   const headerDate =
     displayedWeekStart === selectionWeekStart ? date : addDaysIso(displayedWeekStart, 3)
   const showingToday = date === today
+  const todayButtonRef = useRef<HTMLButtonElement>(null)
 
   const jumpToToday = (): void => {
     hapticImpactLight()
@@ -97,6 +98,13 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
     showWeekOf(date)
   }, [resetSeq, date, showWeekOf])
 
+  useEffect(() => {
+    const todayButton = todayButtonRef.current
+    if (showingToday && todayButton !== null && todayButton === document.activeElement) {
+      todayButton.blur()
+    }
+  }, [showingToday])
+
   return (
     <header
       className="shrink-0 border-b border-border px-2 pb-1"
@@ -129,6 +137,7 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
         </h1>
         <div className="justify-self-end">
           <Button
+            ref={todayButtonRef}
             variant="ghost"
             size="sm"
             aria-hidden={showingToday ? true : undefined}
@@ -137,7 +146,7 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
               'transition-opacity duration-200 ease-out motion-reduce:transition-none',
               showingToday ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
-            onClick={jumpToToday}
+            onClick={showingToday ? undefined : jumpToToday}
           >
             Today
           </Button>

@@ -326,7 +326,9 @@ describe('MobileShell', () => {
 
     await user.click(view.getByRole('button', { name: 'Today' }))
     expect(view.queryByRole('button', { name: 'Today' })).toBeNull()
-    expect(view.getByText('Today').closest('button')?.className).toContain('opacity-0')
+    const fadedTodayButton = view.getByText('Today').closest('button')
+    expect(fadedTodayButton?.className).toContain('opacity-0')
+    expect(document.activeElement).not.toBe(fadedTodayButton)
     expect(view.getByRole('button', { name: dayCellLabel(today) }).getAttribute('aria-current')).toBe(
       'date',
     )
