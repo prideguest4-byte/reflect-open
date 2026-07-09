@@ -36,6 +36,8 @@ describe('Sentry privacy scrubber', () => {
                 {
                   filename: 'assets/index.js',
                   function: 'renderEditor',
+                  module: 'Users.alex.reflect-open.editor',
+                  abs_path: '/Users/alex/notes/secret-note/assets/index.js',
                   lineno: 10,
                   colno: 4,
                   context_line: 'const note = "secret note text"',
@@ -67,7 +69,10 @@ describe('Sentry privacy scrubber', () => {
     expect(scrubbed.sdkProcessingMetadata).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.type).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.value).toBeUndefined()
-    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBe('assets/index.js')
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBeUndefined()
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.abs_path).toBeUndefined()
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.module).toBeUndefined()
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.function).toBe('renderEditor')
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.context_line).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.pre_context).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.post_context).toBeUndefined()
