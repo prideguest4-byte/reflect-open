@@ -41,6 +41,10 @@ The helper lives at `apps/desktop/scripts/release-macos.mjs` and is exposed as
    reject anything not signed with it), so back it up; rotating it only reaches users via
    a release signed with the old key that ships the new pubkey.
 
+5. **The exception telemetry DSN.** Set `VITE_SENTRY_DSN` for local release builds and
+   configure the same public Sentry DSN as the repository secret `SENTRY_DSN`. Release CI
+   requires it so packaged builds cannot silently ship without JavaScript diagnostics.
+
 Nothing signing-related is committed to the repo: contributors without the certificate
 can still build unsigned bundles with plain `pnpm tauri build`.
 

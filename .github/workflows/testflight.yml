@@ -43,9 +43,10 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           missing=()
-          for name in APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_CONTENT; do
+          for name in APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_CONTENT SENTRY_DSN; do
             [ -n "${!name}" ] || missing+=("$name")
           done
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -87,6 +88,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
           EXPORT_METHOD: ${{ inputs.export_method }}
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           WAIT_FLAG: ${{ inputs.wait_for_processing && '--wait' || '' }}
         run: |
           pnpm release:ios preflight --build-number="$BUILD_NUMBER"

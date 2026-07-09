@@ -29,6 +29,7 @@
     "@reflect/db": "workspace:*",
     "@reflect/design-system": "workspace:*",
     "@reflect/utils": "workspace:*",
+    "@sentry/react": "^10.64.0",
     "@shadcn/react": "^0.1.0",
     "@tanstack/react-query": "^5.101.1",
     "@tauri-apps/api": "^2.11.1",

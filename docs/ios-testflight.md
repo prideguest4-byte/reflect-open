@@ -60,7 +60,11 @@ for `pnpm release:ios testflight`.
    created by `pnpm release:macos setup`, passing the stored password to altool
    through `@env:APPLE_PASSWORD`.
 
-4. **A monotonically increasing build number.** TestFlight rejects duplicate
+4. **The exception telemetry DSN.** Set `VITE_SENTRY_DSN` for local TestFlight builds and
+   configure the same public Sentry DSN as the repository secret `SENTRY_DSN`. The
+   TestFlight workflow requires it before building.
+
+5. **A monotonically increasing build number.** TestFlight rejects duplicate
    `CFBundleVersion` values for the same marketing version. The GitHub Action
    always generates a UTC timestamp in `YYYYMMDDHHmm` format. Local `preflight`
    and `testflight` commands generate the same timestamp when `--build-number`
