@@ -310,14 +310,23 @@ describe('MobileShell', () => {
     const view = mount({ kind: 'today' })
 
     expect(view.queryByRole('button', { name: 'Today' })).toBeNull()
+    const hiddenTodayButton = view.getByText('Today').closest('button')
+    if (hiddenTodayButton === null) {
+      throw new Error('missing mounted Today button')
+    }
+    expect(hiddenTodayButton.getAttribute('aria-hidden')).toBe('true')
+    expect(hiddenTodayButton.className).toContain('opacity-0')
     await user.click(view.getByRole('button', { name: dayCellLabel(other) }))
     expect(view.getByRole('button', { name: dayCellLabel(other) }).getAttribute('aria-current')).toBe(
       'date',
     )
-    expect(view.getByRole('button', { name: 'Today' })).toBeTruthy()
+    const shownTodayButton = view.getByRole('button', { name: 'Today' })
+    expect(shownTodayButton.className).toContain('transition-opacity')
+    expect(shownTodayButton.className).toContain('opacity-100')
 
     await user.click(view.getByRole('button', { name: 'Today' }))
     expect(view.queryByRole('button', { name: 'Today' })).toBeNull()
+    expect(view.getByText('Today').closest('button')?.className).toContain('opacity-0')
     expect(view.getByRole('button', { name: dayCellLabel(today) }).getAttribute('aria-current')).toBe(
       'date',
     )

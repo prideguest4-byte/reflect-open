@@ -3,6 +3,7 @@ import { ChevronDown, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { addDaysIso } from '@/lib/dates'
 import { monthOf } from '@/lib/month-grid'
+import { cn } from '@/lib/utils'
 import { monthPickTarget, weekAtIndex, weekStartOf } from '@/mobile/calendar'
 import { hapticImpactLight } from '@/mobile/haptics'
 import { MonthPickerDrawer } from '@/mobile/month-picker-drawer'
@@ -56,6 +57,7 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
   const selectionWeekStart = weekStartOf(date, settings.weekStartDay)
   const headerDate =
     displayedWeekStart === selectionWeekStart ? date : addDaysIso(displayedWeekStart, 3)
+  const showingToday = date === today
 
   const jumpToToday = (): void => {
     hapticImpactLight()
@@ -126,11 +128,19 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
           </button>
         </h1>
         <div className="justify-self-end">
-          {date !== today && (
-            <Button variant="ghost" size="sm" onClick={jumpToToday}>
-              Today
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-hidden={showingToday ? true : undefined}
+            tabIndex={showingToday ? -1 : undefined}
+            className={cn(
+              'transition-opacity duration-200 ease-out motion-reduce:transition-none',
+              showingToday ? 'pointer-events-none opacity-0' : 'opacity-100',
+            )}
+            onClick={jumpToToday}
+          >
+            Today
+          </Button>
         </div>
       </div>
       <div className="overflow-hidden" ref={emblaRef}>
