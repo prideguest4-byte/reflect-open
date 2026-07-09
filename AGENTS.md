@@ -58,7 +58,7 @@ into it for a stable release. Versions on `next` carry a prerelease suffix
 
 PR titles must be conventional commits (`feat:` / `fix:` / `chore:` …, enforced by
 CI). The title becomes the squash-commit message, drives the release-please version
-bump, and — for `feat`/`fix`/`perf` — is the user-facing changelog entry, so write it
+bump, and — for `feat`/`fix` — is the user-facing changelog entry, so write it
 as behavior, not implementation. Do not use `feat!:` or `BREAKING CHANGE:` footers;
 see [CONTRIBUTING.md](CONTRIBUTING.md).
 

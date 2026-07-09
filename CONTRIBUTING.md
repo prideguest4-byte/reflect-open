@@ -26,11 +26,10 @@ cargo test        # from apps/desktop/src-tauri, if you touched Rust
 
 PR titles must follow [Conventional Commits](https://www.conventionalcommits.org)
 — CI enforces the format. The repo squash-merges, so your PR title becomes the
-commit message and, for `feat`/`fix`/`perf`, the user-facing changelog entry.
+commit message and, for `feat`/`fix`, the user-facing changelog entry.
 
 - `feat: …` — new behavior; bumps the minor version (on `next`: the next beta).
-- `fix: …` / `perf: …` — fixes; bump the patch version (on `next`: the next
-  beta).
+- `fix: …` — a fix; bumps the patch version (on `next`: the next beta).
 - `docs:` / `chore:` / `ci:` / `test:` / `refactor:` / `build:` — no release,
   no changelog entry.
 - Reflect is an app, not a library: `feat!:` and `BREAKING CHANGE:` footers are
