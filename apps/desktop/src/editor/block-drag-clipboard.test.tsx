@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { docToMarkdown, markdownToDoc } from '@meowdown/core'
@@ -26,8 +26,8 @@ vi.mock('@meowdown/react', () => ({
   useEditor: () => editor,
 }))
 
-function renderBridge(): void {
-  render(
+function renderBridge(): ReturnType<typeof render> {
+  return render(
     <div className="meowdown">
       <div
         ref={(element) => {
@@ -66,6 +66,7 @@ afterEach(() => {
   editor.view.dom = document.createElement('div')
   editor.view.dragging = null
   editor.view.state.schema = null
+  vi.restoreAllMocks()
   vi.clearAllMocks()
 })
 
@@ -111,18 +112,22 @@ describe('BlockDragClipboard', () => {
   })
 
   it('does not rewrite unrelated drag payloads', () => {
-    editor.view.dragging = {
+    const unrelatedDragging = {
       slice: Slice.empty,
       move: true,
       node: { from: 1, to: 2 },
     }
+    editor.view.dragging = unrelatedDragging
 
     renderBridge()
-    fireEvent.dragStart(screen.getByTestId('other-drag-source'), {
+    const otherSource = screen.getByTestId('other-drag-source')
+    fireEvent.dragStart(otherSource, {
       dataTransfer: dataTransfer(),
     })
+    fireEvent.dragEnd(otherSource)
 
     expect(editor.view.serializeForClipboard).not.toHaveBeenCalled()
+    expect(editor.view.dragging).toBe(unrelatedDragging)
   })
 
   it('clears the source slice when the handled drag ends', () => {
@@ -136,5 +141,49 @@ describe('BlockDragClipboard', () => {
     fireEvent.dragEnd(screen.getByTestId('block-handle'))
 
     expect(editor.view.dragging).toBeNull()
+  })
+
+  it('retries a delayed mount and removes its listeners on unmount', () => {
+    const retries: FrameRequestCallback[] = []
+    const requestFrame = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        retries.push(callback)
+        return 1
+      })
+    editor.mounted = false
+
+    const rendered = renderBridge()
+    const handle = screen.getByTestId('block-handle')
+    const wrapper = handle.closest('.meowdown')
+    if (wrapper === null) {
+      throw new Error('Expected the test handle inside a Meowdown wrapper')
+    }
+    expect(requestFrame).toHaveBeenCalledOnce()
+
+    editor.mounted = true
+    const runRetry = retries[0]
+    if (runRetry === undefined) {
+      throw new Error('Expected the bridge to schedule a mount retry')
+    }
+    act(() => runRetry(0))
+    editor.view.dragging = {
+      slice: Slice.empty,
+      move: true,
+      node: { from: 1, to: 2 },
+    }
+    fireEvent.dragEnd(handle)
+    expect(editor.view.dragging).toBeNull()
+
+    const draggingAfterUnmount = {
+      slice: Slice.empty,
+      move: true,
+      node: { from: 2, to: 3 },
+    }
+    rendered.unmount()
+    editor.view.dragging = draggingAfterUnmount
+    wrapper.append(handle)
+    fireEvent.dragEnd(handle)
+    expect(editor.view.dragging).toBe(draggingAfterUnmount)
   })
 })

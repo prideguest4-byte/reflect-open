@@ -11,6 +11,10 @@ function isBlockHandleEvent(event: Event): boolean {
   )
 }
 
+function isDragEvent(event: Event): event is DragEvent {
+  return 'dataTransfer' in event
+}
+
 /**
  * Give block-handle drags a ProseMirror-native clipboard envelope. ProseKit's
  * handle only supplies the rendered block HTML; that is enough
@@ -43,10 +47,10 @@ export function BlockDragClipboard(): null {
       }
 
       const handleDragStart = (event: Event): void => {
-        const dragEvent = event as DragEvent
-        if (dragEvent.dataTransfer === null) {
+        if (!isDragEvent(event) || event.dataTransfer === null) {
           return
         }
+        const dataTransfer = event.dataTransfer
         if (!isBlockHandleEvent(event)) {
           return
         }
@@ -84,8 +88,8 @@ export function BlockDragClipboard(): null {
         }
         firstElement.setAttribute('data-pm-slice', sliceMetadata)
 
-        dragEvent.dataTransfer.setData('text/html', container.innerHTML)
-        dragEvent.dataTransfer.setData('text/plain', serialized.text)
+        dataTransfer.setData('text/html', container.innerHTML)
+        dataTransfer.setData('text/plain', serialized.text)
         view.dragging = { ...dragging, slice: serialized.slice }
       }
 
