@@ -4,8 +4,8 @@
 //! `daily/`, `notes/`, optional `assets/`, plus ignorable local metadata. The
 //! import path is therefore a bounded archive extraction into the active graph,
 //! not a content migration — with one addition: attachments the notes link
-//! straight to Firebase Storage are downloaded into `assets/` and the links
-//! rewritten (see [`super::import_assets`]).
+//! straight to Reflect V1's storage hosts are downloaded into `assets/` and
+//! the links rewritten (see [`super::import_assets`]).
 //!
 //! The flow is three phases so nothing lands in the graph until everything is
 //! in hand: [`prepare_zip_import`] (read + validate, no writes), the async
@@ -147,7 +147,7 @@ pub struct PreparedImport {
     /// Unique remote-asset URLs across all notes, in first-seen order (which
     /// also fixes collision-suffix assignment).
     urls: Vec<String>,
-    prefix: String,
+    prefixes: Vec<String>,
 }
 
 impl PreparedImport {
@@ -179,15 +179,15 @@ impl PreparedImport {
 /// Read and validate a user-selected Reflect V1 export zip against `root`,
 /// without writing anything.
 pub(super) fn prepare_zip_import(root: &Path, zip_path: &Path) -> AppResult<PreparedImport> {
-    prepare_zip_import_from(root, zip_path, import_assets::V1_ASSET_URL_PREFIX)
+    prepare_zip_import_from(root, zip_path, import_assets::V1_ASSET_URL_PREFIXES)
 }
 
-/// [`prepare_zip_import`] with the remote-asset URL prefix injectable, so
+/// [`prepare_zip_import`] with the remote-asset URL prefixes injectable, so
 /// tests can point it at a local server.
 fn prepare_zip_import_from(
     root: &Path,
     zip_path: &Path,
-    prefix: &str,
+    prefixes: &[&str],
 ) -> AppResult<PreparedImport> {
     let entries = dedupe_entries(read_zip_entries(zip_path)?)?;
     ensure_has_notes(&entries)?;
@@ -200,7 +200,7 @@ fn prepare_zip_import_from(
         let Ok(text) = std::str::from_utf8(&entry.bytes) else {
             continue;
         };
-        for span in import_assets::scan_remote_spans(text, prefix) {
+        for span in import_assets::scan_remote_spans(text, prefixes) {
             if seen.insert(span.url.clone()) {
                 urls.push(span.url);
             }
@@ -210,7 +210,10 @@ fn prepare_zip_import_from(
         entries,
         staging: super::assets::staging_dir(root)?,
         urls,
-        prefix: prefix.to_string(),
+        prefixes: prefixes
+            .iter()
+            .map(|prefix| (*prefix).to_string())
+            .collect(),
     })
 }
 
@@ -261,7 +264,7 @@ pub(super) fn finalize_import(
     let PreparedImport {
         mut entries,
         urls,
-        prefix,
+        prefixes,
         ..
     } = prepared;
 
@@ -360,7 +363,8 @@ pub(super) fn finalize_import(
             // Zip-borne `assets/…` links first: the remote rewrite splices in
             // downloaded assets' final names, which must not be re-mapped.
             let rewritten = import_assets::rewrite_asset_paths(text, &path_replacements);
-            let rewritten = import_assets::rewrite_markdown(&rewritten, &prefix, &url_replacements);
+            let rewritten =
+                import_assets::rewrite_markdown(&rewritten, &prefixes, &url_replacements);
             if rewritten != text {
                 entry.bytes = rewritten.into_bytes();
             }
@@ -831,7 +835,10 @@ mod tests {
             entries,
             staging: super::super::assets::staging_dir(root)?,
             urls: Vec::new(),
-            prefix: import_assets::V1_ASSET_URL_PREFIX.to_string(),
+            prefixes: import_assets::V1_ASSET_URL_PREFIXES
+                .iter()
+                .map(|prefix| (*prefix).to_string())
+                .collect(),
         };
         finalize_import(root, prepared, HashMap::new(), |_, _| {})
     }
@@ -1493,10 +1500,29 @@ mod tests {
         zip_path: &Path,
         prefix: &str,
     ) -> AppResult<ImportSummary> {
-        let prepared = prepare_zip_import_from(root, zip_path, prefix)?;
+        let prepared = prepare_zip_import_from(root, zip_path, &[prefix])?;
         let downloads =
             tauri::async_runtime::block_on(prepared.download_assets(no_cancel(), no_progress()))?;
         finalize_import(root, prepared, downloads, |_, _| {})
+    }
+
+    #[test]
+    fn recognizes_both_v1_asset_url_families() {
+        let root = tempdir().unwrap();
+        let zip_path = root.path().join("export.zip");
+        let firebase =
+            "https://firebasestorage.googleapis.com/v0/b/reflect/o/users%2Fu%2Fa?alt=media&token=t";
+        let asset_cdn = "https://reflect-assets.app/v1/users/u/graph/a?key=k";
+        let markdown = format!("![]({firebase})\n\n[attachment]({asset_cdn})\n");
+        write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
+
+        let prepared = prepare_zip_import(root.path(), &zip_path).unwrap();
+
+        assert_eq!(prepared.remote_asset_count(), 2);
+        assert_eq!(
+            prepared.urls,
+            vec![firebase.to_string(), asset_cdn.to_string()]
+        );
     }
 
     #[test]
@@ -1574,7 +1600,7 @@ mod tests {
             .collect::<String>();
         write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
 
-        let prepared = prepare_zip_import_from(root.path(), &zip_path, &base).unwrap();
+        let prepared = prepare_zip_import_from(root.path(), &zip_path, &[base.as_str()]).unwrap();
         let Some(before) = open_fd_count() else {
             return;
         };
@@ -1683,7 +1709,7 @@ mod tests {
             .map(|index| format!("![]({base}asset-{index}?alt=media\\&token={index})\n"))
             .collect::<String>();
         write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
-        let prepared = prepare_zip_import_from(root.path(), &zip_path, &base).unwrap();
+        let prepared = prepare_zip_import_from(root.path(), &zip_path, &[base.as_str()]).unwrap();
         let seen = Arc::new(Mutex::new(Vec::new()));
         let record = Arc::clone(&seen);
 
@@ -1708,7 +1734,7 @@ mod tests {
         let zip_path = root.path().join("export.zip");
         let markdown = format!("![]({base}photo?alt=media\\&token=t)\n");
         write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
-        let prepared = prepare_zip_import_from(root.path(), &zip_path, &base).unwrap();
+        let prepared = prepare_zip_import_from(root.path(), &zip_path, &[base.as_str()]).unwrap();
         let cancelled = Arc::new(AtomicBool::new(true));
 
         let result =
@@ -1734,7 +1760,10 @@ mod tests {
             entries: dedupe_entries(entries).unwrap(),
             staging: super::super::assets::staging_dir(root.path()).unwrap(),
             urls: Vec::new(),
-            prefix: import_assets::V1_ASSET_URL_PREFIX.to_string(),
+            prefixes: import_assets::V1_ASSET_URL_PREFIXES
+                .iter()
+                .map(|prefix| (*prefix).to_string())
+                .collect(),
         };
         let mut seen = Vec::new();
 
