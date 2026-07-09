@@ -37,6 +37,7 @@ export function scrubSentryEventForPrivacy(event: SentryErrorEvent): SentryError
 
 function scrubException(exception: SentryException): SentryException {
   const scrubbed = { ...exception }
+  delete scrubbed.type
   delete scrubbed.value
   if (scrubbed.stacktrace?.frames) {
     scrubbed.stacktrace = {

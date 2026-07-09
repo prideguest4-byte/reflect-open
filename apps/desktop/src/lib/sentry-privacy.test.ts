@@ -65,7 +65,7 @@ describe('Sentry privacy scrubber', () => {
     expect(scrubbed.server_name).toBeUndefined()
     expect(scrubbed.contexts).toBeUndefined()
     expect(scrubbed.sdkProcessingMetadata).toBeUndefined()
-    expect(scrubbed.exception?.values?.[0]?.type).toBe('Error')
+    expect(scrubbed.exception?.values?.[0]?.type).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.value).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBe('assets/index.js')
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.context_line).toBeUndefined()
