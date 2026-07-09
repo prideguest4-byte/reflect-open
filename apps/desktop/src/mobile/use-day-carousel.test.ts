@@ -19,16 +19,11 @@ import {
 const embla = vi.hoisted(() => {
   const handlers = new Map<string, Set<(api: unknown) => void>>()
   let selected = 0
-  const rootEl = typeof document === 'undefined' ? null : document.createElement('div')
+  const rootEl = document.createElement('div')
 
   const api = {
     selectedScrollSnap: (): number => selected,
-    rootNode: (): HTMLElement => {
-      if (!rootEl) {
-        throw new Error('no document')
-      }
-      return rootEl
-    },
+    rootNode: (): HTMLElement => rootEl,
     on: (event: string, handler: (api: unknown) => void) => {
       let registered = handlers.get(event)
       if (!registered) {

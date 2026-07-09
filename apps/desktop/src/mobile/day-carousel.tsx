@@ -54,11 +54,10 @@ export function DayCarousel({
   const [scrollMemory] = useState(() => new Map<string, number>())
 
   return (
-    /* `overflow: clip`, not `hidden`: a clip box is not a scroll container, so
-       nothing (ProseMirror's caret reveal, WebKit's focus reveal) can
-       programmatically scroll the viewport off its transform-positioned belt.
-       Inline so pre-iOS-16 WebKit rejects the value and falls back to the
-       class's `hidden`, which the scroll guard in useDayCarousel heals. */
+    /* `overflow: clip`: not a scroll container, so a stray scrollLeft write
+       (ProseMirror's caret reveal) cannot offset the transform-positioned
+       belt. Inline so pre-iOS-16 falls back to the class's `hidden`, healed
+       by the scroll guard in useDayCarousel. */
     <div className="min-h-0 flex-1 overflow-hidden" style={{ overflow: 'clip' }} ref={emblaRef}>
       <div className="flex h-full">
         {Array.from({ length: dayWindow.count }, (_, index) => {

@@ -34,9 +34,7 @@ export interface FormattingToolbarCommands {
   dismissKeyboard: () => void
   /**
    * Scroll the caret back into view if it left the visible area; a no-op
-   * while it is visible. Not a toolbar button: the keyboard reveal calls it
-   * on whichever editor holds the caret, and this store is already the one
-   * place that knows which editor that is.
+   * while it is visible. Called by the keyboard reveal, not a toolbar button.
    */
   scrollCaretIntoView: () => void
 }
@@ -130,11 +128,9 @@ export function useFormattingToolbar(): FormattingToolbar | null {
 }
 
 /**
- * The focused editor's commands, or `null` when none is focused. The
- * non-reactive twin of {@link useFormattingToolbar}, for callers that act on
- * the focused editor without rendering from it (the keyboard caret reveal).
- * Always `null` off the touch surface: only `FormattingToolbarBridge`
- * publishes here, and it no-ops on desktop.
+ * The focused editor's commands, or `null` when none is focused (always the
+ * case off the touch surface). The non-reactive twin of
+ * {@link useFormattingToolbar}, for the keyboard caret reveal.
  */
 export function focusedEditorCommands(): FormattingToolbarCommands | null {
   return active?.commands ?? null

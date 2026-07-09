@@ -30,8 +30,6 @@ import { RouterProvider } from '@/routing/router'
 export function MobileApp(): ReactElement {
   const { status, graph, error, needsOnboarding } = useGraph()
   useKeyboardHeightVar()
-  // The keyboard is what occludes the caret, so the keyboard is what reveals
-  // it: one listener here covers every screen's editors.
   useKeyboardCaretReveal()
   useTaskCheckboxHaptics()
   // iCloud graphs have an out-of-process writer (the OS syncing files in):

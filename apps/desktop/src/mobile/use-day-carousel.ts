@@ -204,18 +204,12 @@ export function useDayCarousel(
     }
   }, [emblaApi, onEmblaSelect, onEmblaSettle])
 
-  // Embla positions the slide belt with transforms and never reads or resets
-  // the viewport's scrollLeft, but the viewport is an `overflow: hidden` box
-  // with ~733 slides of scrollable overflow: any programmatic scrollLeft
-  // write sticks as a permanent visual offset on every later snap.
-  // ProseMirror's caret reveal is such a writer: scrollRectIntoView walks
-  // every ancestor, and revealing a caret while a snap animation is mid-
-  // flight writes the animation's residual displacement here (observed on
-  // device; a negative residual clamps at 0, a positive one sticks). The
-  // viewport's `overflow: clip` blocks writes on iOS 16+; this guard heals
-  // the `overflow: hidden` fallback below that, and any native (UA) writer
-  // clip can't intercept. Embla itself never scrolls the viewport, so any
-  // scroll event here is a stray write.
+  // Embla positions the belt with transforms and never resets the viewport's
+  // scrollLeft, so a stray programmatic write (ProseMirror revealing a caret
+  // mid-snap; observed on device) sticks as a permanent visual offset.
+  // `overflow: clip` on the viewport blocks such writes on iOS 16+; this
+  // heals the `hidden` fallback below that. Embla never scrolls the viewport
+  // itself, so any scroll event here is a stray write.
   useEffect(() => {
     if (!emblaApi) {
       return

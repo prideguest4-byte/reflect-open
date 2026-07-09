@@ -143,10 +143,8 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
           </Button>
         </div>
       </div>
-      {/* `overflow: clip` with the class as pre-iOS-16 fallback, same as the
-          day carousel's viewport: an Embla viewport must not be a scroll
-          container, or a stray programmatic scrollLeft write offsets the
-          transform-positioned belt permanently. */}
+      {/* `overflow: clip` with the class as pre-iOS-16 fallback: see the day
+          carousel's viewport. */}
       <div className="overflow-hidden" style={{ overflow: 'clip' }} ref={emblaRef}>
         <div className="flex">
           {Array.from({ length: weekWindow.count }, (_, index) => {
