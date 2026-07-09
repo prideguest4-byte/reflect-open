@@ -50,6 +50,18 @@ describe('useListSelection', () => {
     expect(result.current.activeKey()).toBe('c')
   })
 
+  it('replaces the selection with an explicit visible set', () => {
+    const { result } = renderHook(() => useListSelection(KEYS))
+
+    act(() => result.current.select(['b', 'c', 'missing']))
+    expect([...result.current.selected]).toEqual(['b', 'c'])
+    expect(result.current.activeKey()).toBe('c')
+
+    act(() => result.current.select([]))
+    expect(result.current.selectedCount).toBe(0)
+    expect(result.current.activeKey()).toBeNull()
+  })
+
   it('prunes keys that leave the visible order', () => {
     const { result, rerender } = renderHook(({ keys }) => useListSelection(keys), {
       initialProps: { keys: KEYS },

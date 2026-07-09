@@ -30,6 +30,48 @@ export interface TaskGroup {
   tasks: OpenTask[]
 }
 
+/** One adjacent run of tasks that shares the same ancestor-list path. */
+export interface TaskContext {
+  breadcrumbs: string[]
+  tasks: OpenTask[]
+}
+
+function sameBreadcrumbs(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((breadcrumb, index) => breadcrumb === right[index])
+}
+
+/**
+ * Split render-ordered rows into adjacent breadcrumb contexts. Equal paths
+ * separated by another context stay separate, preserving document order.
+ */
+export function groupTaskContexts(tasks: readonly OpenTask[]): TaskContext[] {
+  const contexts: TaskContext[] = []
+  for (const task of tasks) {
+    const previous = contexts.at(-1)
+    if (previous !== undefined && sameBreadcrumbs(previous.breadcrumbs, task.breadcrumbs)) {
+      previous.tasks.push(task)
+    } else {
+      contexts.push({ breadcrumbs: task.breadcrumbs, tasks: [task] })
+    }
+  }
+  return contexts
+}
+
+/** Whether a single breadcrumb is generic Tasks/TODO boilerplate. */
+export function isCommonTaskBreadcrumbs(breadcrumbs: readonly string[]): boolean {
+  if (breadcrumbs.length !== 1) {
+    return false
+  }
+  const normalized = breadcrumbs[0]!.replace(/[\s\p{P}\p{S}]/gu, '')
+  return /^(?:task|todo)s?$/i.test(normalized)
+}
+
+/** Trim breadcrumb labels and hide empty or generic single-item contexts. */
+export function taskBreadcrumbsForDisplay(breadcrumbs: readonly string[]): string[] {
+  const labels = breadcrumbs.map((breadcrumb) => breadcrumb.trim()).filter(Boolean)
+  return labels.length === 0 || isCommonTaskBreadcrumbs(labels) ? [] : labels
+}
+
 /** The date a task is bucketed by: its explicit due date, else its note's date. */
 function effectiveDate(task: OpenTask): string | null {
   return task.dueDate ?? task.dailyDate

@@ -89,6 +89,8 @@ pub(super) struct IndexedEmail {
 pub(super) struct IndexedTask {
     pub(super) marker_offset: i64,
     pub(super) text: String,
+    /// Rendered ancestor list-item text, outermost first.
+    pub(super) breadcrumbs: Vec<String>,
     pub(super) raw: String,
     pub(super) checked: bool,
     /// Explicit due date (first `[[YYYY-MM-DD]]` in the item), or None.
@@ -178,13 +180,16 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
     }
     {
         let mut stmt = conn.prepare_cached(
-            "INSERT INTO tasks(note_path, marker_offset, text, raw, checked, due_date) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO tasks(note_path, marker_offset, text, breadcrumbs_json, raw, checked, due_date) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         )?;
         for task in &note.tasks {
+            let breadcrumbs = serde_json::to_string(&task.breadcrumbs)
+                .map_err(|err| crate::error::AppError::io(err.to_string()))?;
             stmt.execute(params![
                 note.path,
                 task.marker_offset,
                 task.text,
+                breadcrumbs,
                 task.raw,
                 i64::from(task.checked),
                 task.due_date

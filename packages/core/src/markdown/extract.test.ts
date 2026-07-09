@@ -146,15 +146,15 @@ describe('parseNote — tasks', () => {
   it('extracts open and checked round task checkboxes with text, raw, marker offset', () => {
     const note = parse('+ [ ] buy milk\n+ [x] call mum\n')
     expect(note.tasks).toEqual([
-      { text: 'buy milk', raw: '[ ] buy milk', checked: false, markerOffset: 2, dueDate: null },
-      { text: 'call mum', raw: '[x] call mum', checked: true, markerOffset: 17, dueDate: null },
+      { text: 'buy milk', breadcrumbs: [], raw: '[ ] buy milk', checked: false, markerOffset: 2, dueDate: null },
+      { text: 'call mum', breadcrumbs: [], raw: '[x] call mum', checked: true, markerOffset: 17, dueDate: null },
     ])
   })
 
   it('treats an uppercase [X] marker as checked', () => {
     const note = parse('+ [X] done\n')
     expect(note.tasks).toEqual([
-      { text: 'done', raw: '[X] done', checked: true, markerOffset: 2, dueDate: null },
+      { text: 'done', breadcrumbs: [], raw: '[X] done', checked: true, markerOffset: 2, dueDate: null },
     ])
   })
 
@@ -178,16 +178,26 @@ describe('parseNote — tasks', () => {
 
   it('captures nested sub-tasks as their own rows', () => {
     const note = parse('+ [ ] parent\n  + [x] child\n')
-    expect(note.tasks.map((task) => ({ text: task.text, checked: task.checked }))).toEqual([
-      { text: 'parent', checked: false },
-      { text: 'child', checked: true },
+    expect(note.tasks.map((task) => ({ text: task.text, checked: task.checked, breadcrumbs: task.breadcrumbs }))).toEqual([
+      { text: 'parent', checked: false, breadcrumbs: [] },
+      { text: 'child', checked: true, breadcrumbs: ['parent'] },
     ])
+  })
+
+  it('captures rendered ancestor list text, outermost first', () => {
+    const note = parse('- Project **Alpha**\n  1. Release [[Desktop|app]]\n     + [ ] ship it\n')
+    expect(note.tasks[0]!.breadcrumbs).toEqual(['Project Alpha', 'Release Desktop app'])
+  })
+
+  it('does not treat headings or sibling list items as breadcrumbs', () => {
+    const note = parse('## Roadmap\n\n- Earlier sibling\n- Active context\n  + [ ] nested\n\n+ [ ] top level\n')
+    expect(note.tasks.map((task) => task.breadcrumbs)).toEqual([['Active context'], []])
   })
 
   it('ignores checkboxes inside fenced code', () => {
     const note = parse('+ [ ] real\n\n```\n+ [ ] not a task\n```\n')
     expect(note.tasks).toEqual([
-      { text: 'real', raw: '[ ] real', checked: false, markerOffset: 2, dueDate: null },
+      { text: 'real', breadcrumbs: [], raw: '[ ] real', checked: false, markerOffset: 2, dueDate: null },
     ])
   })
 

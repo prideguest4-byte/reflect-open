@@ -182,6 +182,7 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     raw: `[ ] ${text}`,
     checked: false,
     text,
+    breadcrumbs: [],
     noteTitle: 'N',
     dueDate: null,
     dailyDate: null,
@@ -257,6 +258,19 @@ describe('MobileTasks', () => {
     view.getByRole('button', { name: 'N' })
     // Date buckets show the source note's compact date on the row.
     view.getByText('6/1/2026')
+    view.unmount()
+  })
+
+  it('renders breadcrumb contexts while hiding generic task labels', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ markerOffset: 2, text: 'plan', breadcrumbs: ['Project', 'Release'] }),
+      task({ markerOffset: 20, text: 'ship', breadcrumbs: ['Project', 'Release'] }),
+      task({ markerOffset: 40, text: 'follow up', breadcrumbs: ['TODOs:'] }),
+    ])
+    const view = renderScreen()
+
+    await view.findByLabelText('Task context: Project → Release')
+    expect(view.queryByLabelText('Task context: TODOs:')).toBeNull()
     view.unmount()
   })
 

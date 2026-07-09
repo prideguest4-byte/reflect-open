@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { groupTasks, taskDateBucket } from './group-tasks'
+import {
+  groupTaskContexts,
+  groupTasks,
+  isCommonTaskBreadcrumbs,
+  taskBreadcrumbsForDisplay,
+  taskDateBucket,
+} from './group-tasks'
 import type { OpenTask } from './queries'
 
 const TODAY = '2026-06-14'
@@ -14,6 +20,7 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     raw: '[ ] do it',
     checked: false,
     text: 'do it',
+    breadcrumbs: [],
     noteTitle: 'N',
     dueDate: null,
     dailyDate: null,
@@ -23,6 +30,42 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     ...overrides,
   }
 }
+
+describe('task breadcrumb contexts', () => {
+  it('groups adjacent tasks with exactly matching breadcrumb paths', () => {
+    const rows = [
+      task({ markerOffset: 1, breadcrumbs: ['Project'], text: 'one' }),
+      task({ markerOffset: 2, breadcrumbs: ['Project'], text: 'two' }),
+      task({ markerOffset: 3, breadcrumbs: ['Project', 'Release'], text: 'three' }),
+      task({ markerOffset: 4, breadcrumbs: ['Project'], text: 'four' }),
+    ]
+
+    expect(
+      groupTaskContexts(rows).map((context) => ({
+        breadcrumbs: context.breadcrumbs,
+        tasks: context.tasks.map((entry) => entry.text),
+      })),
+    ).toEqual([
+      { breadcrumbs: ['Project'], tasks: ['one', 'two'] },
+      { breadcrumbs: ['Project', 'Release'], tasks: ['three'] },
+      { breadcrumbs: ['Project'], tasks: ['four'] },
+    ])
+  })
+
+  it('recognises common task headings without hiding real multi-level context', () => {
+    for (const label of ['Task', 'Tasks:', 'TODO', 'TODOs', 'To Do', "To Do's:"]) {
+      expect(isCommonTaskBreadcrumbs([label])).toBe(true)
+    }
+    expect(isCommonTaskBreadcrumbs(['Tasks', 'Release'])).toBe(false)
+    expect(isCommonTaskBreadcrumbs(['What I want to do today'])).toBe(false)
+  })
+
+  it('trims display labels and hides empty or common contexts', () => {
+    expect(taskBreadcrumbsForDisplay([' Project ', ' Release '])).toEqual(['Project', 'Release'])
+    expect(taskBreadcrumbsForDisplay([' ', ''])).toEqual([])
+    expect(taskBreadcrumbsForDisplay([' Tasks: '])).toEqual([])
+  })
+})
 
 describe('taskDateBucket', () => {
   it('classifies one task by the same rules as the grouping', () => {

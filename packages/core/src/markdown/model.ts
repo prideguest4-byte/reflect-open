@@ -187,6 +187,11 @@ export interface TaskMarker {
 export interface ParsedTask extends TaskMarker {
   /** Inline text of the item's marker line, markdown stripped, for display + search. */
   text: string
+  /**
+   * Rendered text of the task's ancestor list items, outermost first. A nested
+   * task includes its parent task as context; headings are not breadcrumbs.
+   */
+  breadcrumbs: string[]
   /** `[x]`/`[X]` → true, `[ ]` → false. */
   checked: boolean
   /**
@@ -202,8 +207,8 @@ export interface ParsedTask extends TaskMarker {
 /** Version of the extraction contract; bump on breaking shape changes.
  * 1 — Plan 03 baseline · 2 — `tasks: ParsedTask[]` (with `dueDate`) added (Plan 18) ·
  * 3 — tasks limited to round Meowdown `+ [ ]` / `+ [x]` syntax; square checklist
- * checkboxes are excluded. */
-export const PARSED_NOTE_VERSION = 3
+ * checkboxes are excluded · 4 — task ancestor-list breadcrumbs. */
+export const PARSED_NOTE_VERSION = 4
 
 /** The full parse of one note — the stable contract downstream plans depend on. */
 export interface ParsedNote {

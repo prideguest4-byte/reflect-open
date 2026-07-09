@@ -67,6 +67,7 @@ fn task(marker_offset: i64, text: &str, checked: bool) -> IndexedTask {
     IndexedTask {
         marker_offset,
         text: text.to_string(),
+        breadcrumbs: vec![],
         raw: format!("[{}] {text}", if checked { "x" } else { " " }),
         checked,
         due_date: None,
@@ -81,7 +82,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 16); // applied migrations (0001 through 0016)
+    assert_eq!(version, 17); // applied migrations (0001 through 0017)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -589,18 +590,23 @@ fn apply_note_inserts_tasks_and_replace_clears_them() {
     let mut seeded = note("notes/a.md", "A", vec![]);
     let mut due = task(4, "buy milk", false);
     due.due_date = Some("2026-07-01".to_string());
+    due.breadcrumbs = vec!["Project".to_string(), "Launch".to_string()];
     seeded.tasks = vec![due, task(20, "call mum", true)];
     apply_note(&conn, &seeded).unwrap();
 
     let rows = run_query(
         &conn,
-        "SELECT marker_offset, text, checked, due_date FROM tasks WHERE note_path = 'notes/a.md' ORDER BY marker_offset",
+        "SELECT marker_offset, text, breadcrumbs_json, checked, due_date FROM tasks WHERE note_path = 'notes/a.md' ORDER BY marker_offset",
         &[],
     )
     .unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0]["marker_offset"], Value::from(4));
     assert_eq!(rows[0]["text"], Value::from("buy milk"));
+    assert_eq!(
+        rows[0]["breadcrumbs_json"],
+        Value::from(r#"["Project","Launch"]"#)
+    );
     assert_eq!(rows[0]["checked"], Value::from(0));
     assert_eq!(rows[0]["due_date"], Value::from("2026-07-01"));
     assert_eq!(rows[1]["checked"], Value::from(1));
@@ -801,7 +807,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 16);
+    assert_eq!(version, 17);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();

@@ -22,6 +22,7 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     raw: `[ ] ${text}`,
     checked: false,
     text,
+    breadcrumbs: [],
     noteTitle: 'N',
     dueDate: null,
     dailyDate: null,
@@ -123,6 +124,22 @@ describe('composeVisibleTaskGroups', () => {
     })
     const rows = groups.flatMap((group) => group.tasks)
     expect(rows.map((row) => row.text)).toEqual(['buy milk'])
+  })
+
+  it('matches task source titles and breadcrumb context', () => {
+    const groups = composeVisibleTaskGroups({
+      open: [
+        task({ text: 'ship it', noteTitle: 'Desktop launch', breadcrumbs: ['Project Alpha'] }),
+        task({ text: 'buy milk', noteTitle: 'Home', breadcrumbs: ['Errands'] }),
+      ],
+      completed: undefined,
+      recentlyCompleted: [],
+      filters: ALL_ON,
+      needle: 'alpha',
+      today: TODAY,
+    })
+
+    expect(groups.flatMap((group) => group.tasks).map((row) => row.text)).toEqual(['ship it'])
   })
 })
 

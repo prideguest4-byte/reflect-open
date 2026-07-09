@@ -188,6 +188,7 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     raw: `[ ] ${text}`,
     checked: false,
     text,
+    breadcrumbs: [],
     noteTitle: 'N',
     dueDate: null,
     dailyDate: null,
@@ -321,6 +322,24 @@ describe('TasksScreen', () => {
     expect(headers).toEqual(['Current', 'Overdue', 'Project'])
     expect(view.getByText('overdue task')).toBeDefined()
     expect(view.getByText('project task')).toBeDefined()
+    view.unmount()
+  })
+
+  it('renders breadcrumb contexts, hides generic labels, and selects a context', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ markerOffset: 2, text: 'plan', breadcrumbs: ['Project', 'Release'] }),
+      task({ markerOffset: 20, text: 'ship', breadcrumbs: ['Project', 'Release'] }),
+      task({ markerOffset: 40, text: 'follow up', breadcrumbs: ['Tasks:'] }),
+    ])
+    const view = renderScreen()
+
+    const breadcrumb = await view.findByRole('button', {
+      name: 'Select tasks in Project → Release',
+    })
+    expect(view.queryByRole('button', { name: 'Select tasks in Tasks:' })).toBeNull()
+
+    await userEvent.click(breadcrumb)
+    expect(view.getByRole('button', { name: 'Schedule 2' })).toBeDefined()
     view.unmount()
   })
 

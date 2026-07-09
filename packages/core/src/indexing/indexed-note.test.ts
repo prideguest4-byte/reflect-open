@@ -3,8 +3,8 @@ import { gistBodyHash, parseNote } from '../markdown'
 import { buildIndexedNote, indexedNoteSchema, PROJECTION_VERSION } from './indexed-note'
 
 describe('buildIndexedNote', () => {
-  it('carries the projection version that backfills the derived subject-alias rows', () => {
-    expect(PROJECTION_VERSION).toBe(14)
+  it('carries the projection version that backfills task breadcrumbs', () => {
+    expect(PROJECTION_VERSION).toBe(15)
   })
 
   it('flattens a parsed note into the index payload', () => {
@@ -219,9 +219,33 @@ describe('buildIndexedNote', () => {
       source,
     })
     expect(indexed.tasks).toEqual([
-      { markerOffset: source.indexOf('[ ]'), text: 'buy milk', raw: '[ ] buy milk', checked: false, dueDate: null },
-      { markerOffset: source.indexOf('[x] call'), text: 'call mum', raw: '[x] call mum', checked: true, dueDate: null },
+      {
+        markerOffset: source.indexOf('[ ]'),
+        text: 'buy milk',
+        breadcrumbs: [],
+        raw: '[ ] buy milk',
+        checked: false,
+        dueDate: null,
+      },
+      {
+        markerOffset: source.indexOf('[x] call'),
+        text: 'call mum',
+        breadcrumbs: [],
+        raw: '[x] call mum',
+        checked: true,
+        dueDate: null,
+      },
     ])
+  })
+
+  it('maps task breadcrumbs into the index payload', () => {
+    const source = '- Project\n  - Release\n    + [ ] ship it\n'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/n.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
+    expect(indexed.tasks[0]?.breadcrumbs).toEqual(['Project', 'Release'])
   })
 
   it('maps an explicit task due date from a [[YYYY-MM-DD]] link', () => {

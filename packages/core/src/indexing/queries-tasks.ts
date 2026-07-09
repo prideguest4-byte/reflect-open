@@ -1,5 +1,8 @@
+import { z } from 'zod'
 import type { TaskMarker } from '../markdown'
 import { db } from './db'
+
+const taskBreadcrumbsSchema = z.array(z.string())
 
 /**
  * One open task plus the note context the Tasks view (Plan 18) groups and
@@ -11,6 +14,8 @@ export interface OpenTask extends TaskMarker {
   checked: boolean
   /** Display text, markdown stripped. */
   text: string
+  /** Rendered ancestor list-item text, outermost first. */
+  breadcrumbs: string[]
   noteTitle: string
   /** The task's explicit `[[YYYY-MM-DD]]` due date, or null. */
   dueDate: string | null
@@ -32,6 +37,7 @@ function taskRowsQuery() {
       'tasks.markerOffset',
       'tasks.raw',
       'tasks.text',
+      'tasks.breadcrumbsJson',
       'tasks.checked',
       'tasks.dueDate',
       'notes.title as noteTitle',
@@ -42,11 +48,25 @@ function taskRowsQuery() {
     ])
 }
 
-function toTaskRow(row: {
+function toTaskRow<Row extends {
   checked: number
   isPinned: number
-}): { checked: boolean; isPinned: boolean } {
-  return { ...row, checked: row.checked !== 0, isPinned: row.isPinned !== 0 }
+  breadcrumbsJson: string
+}>(
+  row: Row,
+): Omit<Row, 'checked' | 'isPinned' | 'breadcrumbsJson'> & {
+  checked: boolean
+  isPinned: boolean
+  breadcrumbs: string[]
+} {
+  const { checked, isPinned, breadcrumbsJson, ...task } = row
+  const parsed: unknown = JSON.parse(breadcrumbsJson)
+  return {
+    ...task,
+    checked: checked !== 0,
+    isPinned: isPinned !== 0,
+    breadcrumbs: taskBreadcrumbsSchema.parse(parsed),
+  }
 }
 
 /**
@@ -59,7 +79,7 @@ export async function getOpenTasks(): Promise<OpenTask[]> {
     .orderBy('tasks.notePath')
     .orderBy('tasks.markerOffset')
     .execute()
-  return rows.map((row) => ({ ...row, ...toTaskRow(row) }))
+  return rows.map(toTaskRow)
 }
 
 /**
@@ -72,5 +92,5 @@ export async function getCompletedTasks(): Promise<OpenTask[]> {
     .orderBy('notes.updatedAt', 'desc')
     .orderBy('tasks.markerOffset')
     .execute()
-  return rows.map((row) => ({ ...row, ...toTaskRow(row) }))
+  return rows.map(toTaskRow)
 }

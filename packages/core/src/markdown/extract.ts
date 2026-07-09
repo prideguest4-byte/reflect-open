@@ -197,6 +197,7 @@ function hasRoundTaskListMarker(body: string, markerStart: number): boolean {
 function readTask(
   body: string,
   range: Span,
+  breadcrumbs: string[],
   bodyOffset: number,
   cuts: Span[],
   literalRanges: Span[],
@@ -215,6 +216,7 @@ function readTask(
   const markerOffset = from + bodyOffset
   return {
     text: plainTextOfRange(body, from, lineEnd, cuts, literalRanges),
+    breadcrumbs,
     raw: body.slice(from, lineEnd),
     checked: marker.checked,
     markerOffset,
@@ -313,11 +315,25 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   const cuts: Span[] = [] // body coords — syntax to drop from plain text
   const tagExcluded: Span[] = [] // body coords — regions that don't yield tags
   const literalPlainText: Span[] = [] // body coords — regions that render backslashes literally
-  const taskRanges: Span[] = [] // body coords — `Task` node spans, resolved after the walk
+  const taskRanges: Array<{ range: Span; breadcrumbRanges: Span[] }> = []
+  // Each entry is one open `ListItem`. Its own first text-bearing child becomes
+  // context for nested list items, but never for the task on that same line.
+  const listItemContexts: Array<Span | null> = []
 
   tree.iterate({
     enter: (node) => {
       const { name, from, to } = node
+
+      if (name === 'ListItem') {
+        listItemContexts.push(null)
+      }
+
+      if (name === 'Paragraph' && listItemContexts.length > 0) {
+        const currentIndex = listItemContexts.length - 1
+        if (listItemContexts[currentIndex] === null) {
+          listItemContexts[currentIndex] = { from, to }
+        }
+      }
 
       if (isSyntaxNode(name)) {
         cuts.push({ from, to })
@@ -327,7 +343,17 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
         // needs to strip its text — and the `[[date]]` due-date link inside it —
         // aren't collected until their own `enter`. The node span bounds the
         // due-date search to this task.
-        taskRanges.push({ from, to })
+        taskRanges.push({
+          range: { from, to },
+          breadcrumbRanges: listItemContexts.slice(0, -1).filter((range): range is Span => range !== null),
+        })
+        // A parent task is the context for tasks nested beneath it. Record it
+        // only after capturing this task's own ancestors so it never includes
+        // itself in its breadcrumb path.
+        const currentIndex = listItemContexts.length - 1
+        if (currentIndex >= 0 && listItemContexts[currentIndex] === null) {
+          listItemContexts[currentIndex] = { from, to }
+        }
       }
       if (isTagExcludedNode(name)) {
         tagExcluded.push({ from, to })
@@ -363,14 +389,32 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
 
       return true
     },
+    leave: (node) => {
+      if (node.name === 'ListItem') {
+        listItemContexts.pop()
+      }
+    },
   })
 
   const tags = new Map<string, string>()
   collectTags(body, tagExcluded, tags)
 
   const tasks: ParsedTask[] = []
-  for (const range of taskRanges) {
-    const task = readTask(body, range, bodyOffset, cuts, literalPlainText, wikiLinks)
+  for (const { range, breadcrumbRanges } of taskRanges) {
+    const breadcrumbs = breadcrumbRanges
+      .map((breadcrumbRange) =>
+        plainTextOfRange(body, breadcrumbRange.from, breadcrumbRange.to, cuts, literalPlainText),
+      )
+      .filter(Boolean)
+    const task = readTask(
+      body,
+      range,
+      breadcrumbs,
+      bodyOffset,
+      cuts,
+      literalPlainText,
+      wikiLinks,
+    )
     if (task) {
       tasks.push(task)
     }

@@ -377,6 +377,42 @@ describe('suggestWikiTargets', () => {
 })
 
 describe('getOpenTasks', () => {
+  it('parses task breadcrumb arrays at the database boundary', async () => {
+    mockInvoke.mockResolvedValue([
+      {
+        note_path: 'notes/project.md',
+        marker_offset: 14,
+        raw: '[ ] ship it',
+        text: 'ship it',
+        breadcrumbs_json: '["Project","Release"]',
+        checked: 0,
+        due_date: null,
+        note_title: 'Project',
+        daily_date: null,
+        is_pinned: 0,
+        pinned_order: null,
+        updated_at: 123,
+      },
+    ])
+
+    await expect(getOpenTasks()).resolves.toEqual([
+      {
+        notePath: 'notes/project.md',
+        markerOffset: 14,
+        raw: '[ ] ship it',
+        text: 'ship it',
+        breadcrumbs: ['Project', 'Release'],
+        checked: false,
+        dueDate: null,
+        noteTitle: 'Project',
+        dailyDate: null,
+        isPinned: false,
+        pinnedOrder: null,
+        updatedAt: 123,
+      },
+    ])
+  })
+
   it('never surfaces template checkboxes — boilerplate, not real tasks', async () => {
     mockInvoke.mockResolvedValue([])
 
