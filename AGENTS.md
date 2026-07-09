@@ -56,6 +56,12 @@ into it for a stable release. Versions on `next` carry a prerelease suffix
 (`0.2.0-beta.1`), which the release pipeline publishes as GitHub pre-releases — see
 [docs/macos-distribution.md](docs/macos-distribution.md).
 
+PR titles must be conventional commits (`feat:` / `fix:` / `chore:` …, enforced by
+CI). The title becomes the squash-commit message, drives the release-please version
+bump, and — for `feat`/`fix`/`perf` — is the user-facing changelog entry, so write it
+as behavior, not implementation. Do not use `feat!:` or `BREAKING CHANGE:` footers;
+see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 1. Make your changes
 2. Run typecheck (`pnpm typecheck`)
 3. Run lint (`pnpm lint`) — fix any errors; `pnpm lint:fix` auto-fixes where possible
