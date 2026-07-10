@@ -61,14 +61,15 @@ export function asOpen(rows: OpenTask[] | undefined, tasks: OpenTask[]): OpenTas
 /**
  * The `raw` line a task would have after an inline edit: the indexed line's exact
  * marker kept, the content after it replaced. The marker is taken verbatim from
- * `raw` (not rebuilt from `checked`), so GitHub's `[X]` survives — otherwise the
- * cached `raw` wouldn't match disk and a follow-up edit/delete's staleness guard
- * would fail until the reindex. Empty content clears to a bare marker, matching
- * the disk edit ({@link editTaskLine}).
+ * `raw` (not rebuilt from `checked`), so GitHub's `[X]` survives; a CRLF raw line
+ * likewise keeps its trailing carriage return. Otherwise a follow-up edit/delete
+ * would fail the staleness guard until reindexing. Empty content clears to a bare
+ * marker, matching the disk edit ({@link editTaskLine}).
  */
 export function taskRawWithContent(task: OpenTask, content: string): string {
   const marker = task.raw.slice(0, 3) // `[ ]` / `[x]` / `[X]` — raw always begins with it
-  return content === '' ? marker : `${marker} ${content}`
+  const carriageReturn = task.raw.endsWith('\r') ? '\r' : ''
+  return content === '' ? `${marker}${carriageReturn}` : `${marker} ${content}${carriageReturn}`
 }
 
 /**

@@ -1,6 +1,12 @@
 import { useMutation } from '@tanstack/react-query'
 import { type OpenTask } from '@reflect/core'
-import { convertTaskToBullet, deleteTask, editTask, insertTask, toggleTask } from '@/lib/note-task'
+import {
+  convertTaskToBullet,
+  deleteTask,
+  editTask,
+  insertTask,
+  toggleTask,
+} from '@/lib/note-task'
 import { editAndToggleError, isEditAndToggleError } from '@/lib/tasks/edit-and-toggle-error'
 import {
   archiveRecentlyCompleted,
@@ -20,6 +26,7 @@ import { taskKey } from '@/lib/tasks/task-identity'
 import { insertedTaskRow, type InsertTaskTarget } from '@/lib/tasks/task-insert-target'
 import { useTaskCheckboxAction } from '@/lib/tasks/use-task-checkbox-action'
 import { useTaskCacheWriter } from '@/lib/tasks/use-task-cache'
+import { useTaskContextInsert } from '@/lib/tasks/use-task-context-insert'
 import { useGraph } from '@/providers/graph-provider'
 
 /**
@@ -58,8 +65,8 @@ export interface TaskActions {
   /**
    * Enter while editing (V1 continuous entry): persist the current row's edit
    * (when `content` isn't null), then add the next task in `target` and return it
-   * to select. The edit is **awaited before** the insert reads the note, so the
-   * new task's marker offset reflects the post-edit source and can't drift.
+   * to select. A task with breadcrumb context is continued structurally inside
+   * that context; other tasks retain the V1 bucket-target behavior.
    */
   insertAfter: (
     task: OpenTask,
@@ -102,6 +109,7 @@ export function useTaskActions(): TaskActions {
   const root = graph?.root ?? null
   const cache = useTaskCacheWriter()
   const checkboxAction = useTaskCheckboxAction()
+  const contextInsert = useTaskContextInsert()
 
   const completeMutation = useMutation({
     mutationFn: async (tasks: OpenTask[]) => {
@@ -369,6 +377,7 @@ export function useTaskActions(): TaskActions {
       editAndToggleMutation.isPending ||
       checkboxAction.isPending ||
       insertMutation.isPending ||
+      contextInsert.isPending ||
       scheduleMutation.isPending ||
       convertMutation.isPending ||
       editAndConvertMutation.isPending,
@@ -424,6 +433,9 @@ export function useTaskActions(): TaskActions {
     insertAfter: async (task, content, target) => {
       if (graph?.generation === undefined) {
         return null
+      }
+      if (task.breadcrumbs.length > 0) {
+        return contextInsert.insert(task, content)
       }
       // Resolve the current row first and *await* it, so the append reads the
       // settled source — the new offset can't drift when the line above resized.

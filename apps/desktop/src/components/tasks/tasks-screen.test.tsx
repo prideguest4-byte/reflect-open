@@ -55,12 +55,14 @@ const toggleTask = vi.hoisted(() => vi.fn())
 const deleteTask = vi.hoisted(() => vi.fn())
 const editTask = vi.hoisted(() => vi.fn())
 const insertTask = vi.hoisted(() => vi.fn())
+const continueTaskInContext = vi.hoisted(() => vi.fn())
 const convertTaskToBullet = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/note-task', () => ({
   toggleTask,
   deleteTask,
   editTask,
   insertTask,
+  continueTaskInContext,
   convertTaskToBullet,
 }))
 
@@ -207,6 +209,11 @@ beforeEach(() => {
   editTask.mockReset()
   insertTask.mockReset()
   insertTask.mockResolvedValue(0)
+  continueTaskInContext.mockReset()
+  continueTaskInContext.mockResolvedValue({
+    created: { markerOffset: 0, raw: '[ ] ' },
+    offsetChanges: [],
+  })
   convertTaskToBullet.mockReset()
   convertTaskToBullet.mockResolvedValue(undefined)
   startOperation.mockClear()
@@ -789,6 +796,81 @@ describe('TasksScreen', () => {
     // Persists this row's edit, then appends the next task in the same note.
     await waitFor(() => expect(editTask).toHaveBeenCalled())
     await waitFor(() => expect(insertTask).toHaveBeenCalledWith('notes/a.md', 1))
+    view.unmount()
+  })
+
+  it('Enter in a grouped task keeps the new row in that breadcrumb context', async () => {
+    continueTaskInContext.mockResolvedValue({
+      created: { markerOffset: 40, raw: '[ ] ' },
+      offsetChanges: [],
+    })
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/a.md',
+        markerOffset: 2,
+        raw: '[ ] first',
+        text: 'first',
+        noteTitle: 'A',
+        breadcrumbs: ['StartupToolbox', 'Reflections'],
+      }),
+      task({
+        notePath: 'notes/a.md',
+        markerOffset: 40,
+        raw: '[ ] later',
+        text: 'later',
+        noteTitle: 'A',
+        breadcrumbs: ['StartupToolbox', 'Later'],
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByRole('button', { name: 'continue-edit' }))
+
+    await waitFor(() =>
+      expect(continueTaskInContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notePath: 'notes/a.md',
+          breadcrumbs: ['StartupToolbox', 'Reflections'],
+        }),
+        'edited content',
+        1,
+      ),
+    )
+    expect(insertTask).not.toHaveBeenCalled()
+    await view.findByTestId('task-editor')
+
+    await userEvent.click(
+      view.getByRole('button', { name: 'StartupToolbox → Reflections' }),
+    )
+    expect(view.getByRole('button', { name: 'Convert to bullet 2' })).toBeDefined()
+    view.unmount()
+  })
+
+  it('Enter continues a scheduled grouped task despite its aggregate date bucket', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/a.md',
+        markerOffset: 2,
+        raw: '[ ] scheduled',
+        text: 'scheduled',
+        noteTitle: 'A',
+        breadcrumbs: ['Project'],
+        dueDate: '2026-07-01',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'scheduled' }))
+    await userEvent.click(view.getByRole('button', { name: 'continue-unchanged' }))
+
+    await waitFor(() =>
+      expect(continueTaskInContext).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/a.md', breadcrumbs: ['Project'] }),
+        null,
+        1,
+      ),
+    )
     view.unmount()
   })
 

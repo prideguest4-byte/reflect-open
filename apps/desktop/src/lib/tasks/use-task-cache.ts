@@ -20,8 +20,9 @@ export interface TaskCacheWriter {
   /** Optimistically rewrite the open and completed lists at once. */
   patch: (open: TaskListPatch, completed: TaskListPatch) => void
   /**
-   * Append one optimistic open row (Return-to-add): idempotent by task identity,
-   * so a reindex refetch that already added the real row can't double-list it.
+   * Upsert one optimistic open row (Return-to-add) and remove the same identity
+   * from completed. A contextual insert shifts later source offsets, so its real
+   * marker can temporarily collide with a stale cached row until reindexing.
    */
   addOpen: (task: OpenTask) => void
   /** Restore both lists from a snapshot and surface the failure once (single-write undo). */
@@ -69,10 +70,10 @@ export function useTaskCacheWriter(): TaskCacheWriter {
   }
 
   const addOpen = (task: OpenTask): void => {
-    queryClient.setQueryData<OpenTask[]>(openKey, (rows) => {
-      const list = rows ?? []
-      return list.some((row) => sameTask(row, task)) ? list : [...list, task]
-    })
+    patch(
+      (rows) => [...(rows ?? []).filter((row) => !sameTask(row, task)), task],
+      (rows) => rows?.filter((row) => !sameTask(row, task)),
+    )
   }
 
   const rollback = (

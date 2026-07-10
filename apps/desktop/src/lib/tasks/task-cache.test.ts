@@ -73,6 +73,10 @@ describe('taskRawWithContent', () => {
     expect(taskRawWithContent(task({ checked: true, raw: '[X] old' }), 'edited')).toBe('[X] edited')
   })
 
+  it('preserves a CRLF raw line’s carriage return', () => {
+    expect(taskRawWithContent(task({ raw: '[ ] old\r' }), 'edited')).toBe('[ ] edited\r')
+  })
+
   it('clears to a bare marker when content is empty', () => {
     expect(taskRawWithContent(task({ raw: '[ ] old' }), '')).toBe('[ ]')
   })
