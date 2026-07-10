@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import type { IndexedNote } from '@reflect/core'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  parseSearchQuery,
+  searchNotes,
+  searchWithFilters,
+  setBridge,
+  type IndexedNote,
+} from '@reflect/core'
 import { createDevIndexDb, type DevIndexDb } from '@/dev/dev-index-db'
 
 function sampleNote(overrides: Partial<IndexedNote> = {}): IndexedNote {
@@ -53,6 +59,28 @@ async function openDb(): Promise<DevIndexDb> {
   return createDevIndexDb()
 }
 
+interface CapturedQuery {
+  readonly sql: string
+  readonly params: readonly unknown[]
+}
+
+function installQueryBridge(db: DevIndexDb, captured: CapturedQuery[] = []): void {
+  setBridge({
+    invoke: async (command, args) => {
+      if (command !== 'db_query') {
+        throw new Error(`Unexpected command: ${command}`)
+      }
+      const sql = String(args['sql'])
+      const params = (args['params'] as readonly unknown[]) ?? []
+      captured.push({ sql, params })
+      return db.query(sql, params)
+    },
+    listen: async () => () => {},
+  })
+}
+
+afterEach(() => setBridge(null))
+
 describe('createDevIndexDb', () => {
   it('applies the real migrations and answers db_query-style reads', async () => {
     const db = await openDb()
@@ -83,6 +111,57 @@ describe('createDevIndexDb', () => {
 
     const hits = db.query("SELECT path FROM search_fts WHERE search_fts MATCH 'sync'", [])
     expect(hits).toEqual([{ path: 'notes/sample.md' }])
+  })
+
+  it('finds a short Japanese term inside a title as well as a note body', async () => {
+    const db = await openDb()
+    db.applyNote(
+      sampleNote({
+        path: 'notes/tokyo-trip.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n91',
+        title: '来週の東京旅行計画',
+        titleKey: '来週の東京旅行計画',
+        isPinned: false,
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        mtime: 100,
+      }),
+    )
+    db.applyNote(
+      sampleNote({
+        path: 'notes/body-hit.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n92',
+        title: '別のノート',
+        titleKey: '別のノート',
+        isPinned: true,
+        text: 'An otherwise unrelated 東京 body token.',
+        preview: 'An otherwise unrelated 東京 body token.',
+        mtime: 200,
+      }),
+    )
+    const captured: CapturedQuery[] = []
+    installQueryBridge(db, captured)
+
+    const hits = await searchWithFilters(parseSearchQuery('東京'))
+
+    expect(hits.map((hit) => hit.path)).toEqual([
+      'notes/tokyo-trip.md',
+      'notes/body-hit.md',
+    ])
+    expect(hits[0]!.snippet).toBeNull()
+    expect(hits[1]!.snippet).toContain('東京')
+    const plan = db.query(`EXPLAIN QUERY PLAN ${captured[0]!.sql}`, captured[0]!.params)
+    expect(plan.some((row) => String(row['detail']).includes('MATERIALIZE lexical'))).toBe(true)
+    await expect(searchNotes('東京')).resolves.toEqual([
+      { path: 'notes/tokyo-trip.md', title: '来週の東京旅行計画' },
+      { path: 'notes/body-hit.md', title: '別のノート' },
+    ])
+    await expect(searchWithFilters(parseSearchQuery('東京 旅行'))).resolves.toMatchObject([
+      { path: 'notes/tokyo-trip.md', title: '来週の東京旅行計画', snippet: null },
+    ])
+
+    const filtered = await searchWithFilters(parseSearchQuery('is:pinned 東京'))
+    expect(filtered.map((hit) => hit.path)).toEqual(['notes/body-hit.md'])
   })
 
   it('re-applying a note replaces its rows instead of duplicating them', async () => {

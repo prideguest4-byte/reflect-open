@@ -446,13 +446,15 @@ describe('Kysely → db_query bridge', () => {
     expect(mockInvoke.mock.calls.length).toBe(before)
   })
 
-  it('searchNotes ranks by exact title, bm25, pinned and recency', async () => {
+  it('searchNotes ranks title substrings, bm25, pinned and recency', async () => {
     await searchNotes('hello')
     const query = mockInvoke.mock.calls.find(([cmd]) => cmd === 'db_query')
     const sql = String((query![1] as { sql: string }).sql).toLowerCase()
     // Same ranked join/order contract as the palette's `searchWithFilters`.
-    expect(sql).toContain('inner join "notes"')
-    expect(sql).toContain('case when "notes"."title_key" =')
+    expect(sql).toContain('with "lexical" as materialized')
+    expect(sql).toContain('left join "lexical"')
+    expect(sql).toContain('when "notes"."title_key" =')
+    expect(sql).toContain('instr("notes"."title_key"')
     expect(sql).toContain('bm25(search_fts, 0, 10.0, 1.0)')
     expect(sql).toContain('"notes"."is_pinned" desc')
     expect(sql).toContain('"notes"."mtime" desc')

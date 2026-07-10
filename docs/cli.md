@@ -79,11 +79,13 @@ this is how editors/scripts create them).
 
 ### `reflect search <query> [--limit N] [--json]`
 
-Lexical search over the graph's FTS index, ranked with the same title-boosted
-bm25 weighting as the app's search, snippets included. Terms are matched
-literally (FTS5 operators in the query have no special meaning). Requires the
-index: if `.reflect/index.sqlite` is missing the exit code is `4` — open the
-graph in Reflect to build it; the CLI never runs the indexer. If files on disk diverge from the index (checked by mtime, then
+Search over note titles and bodies, ranked like the app: exact, prefix, and
+substring title matches lead, followed by title-boosted bm25 matches. Body
+matches include snippets. Terms are matched literally (FTS5 operators in the
+query have no special meaning); a title-substring-only JSON result has an empty
+snippet and score `0`. Requires the index: if `.reflect/index.sqlite` is missing
+the exit code is `4` — open the graph in Reflect to build it; the CLI never runs
+the indexer. If files on disk diverge from the index (checked by mtime, then
 content hash), a staleness warning goes to stderr and `"stale": true` is set —
 results still return.
 

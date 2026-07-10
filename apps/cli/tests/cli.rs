@@ -263,6 +263,35 @@ fn search_boosts_title_matches_over_body_matches() {
     );
 }
 
+/// `unicode61` treats an uninterrupted Japanese title as one token. Search
+/// therefore supplements MATCH with folded title-substring recall, including
+/// common two-character queries that a trigram-only index would miss.
+#[test]
+fn search_finds_a_short_japanese_term_inside_a_title() {
+    let fixture = graph();
+    fixture.write_note(
+        "notes/title-hit.md",
+        "# 来週の東京旅行計画\nan otherwise unrelated body\n",
+    );
+    fixture.write_note(
+        "notes/body-hit.md",
+        "# 別のノート\nan otherwise unrelated 東京 body token\n",
+    );
+    fixture.build_index();
+
+    let text = stdout(&reflect(&fixture, &["search", "東京"]));
+    let title_pos = text.find("notes/title-hit.md").unwrap();
+    let body_pos = text.find("notes/body-hit.md").unwrap();
+    assert!(
+        title_pos < body_pos,
+        "expected the title substring match before the body match:\n{text}"
+    );
+
+    let multi_term = stdout(&reflect(&fixture, &["search", "東京 旅行"]));
+    assert!(multi_term.contains("notes/title-hit.md"));
+    assert!(!multi_term.contains("notes/body-hit.md"));
+}
+
 /// The V1-style exact-title boost (`filtered-search.ts`): a note whose title
 /// *is* the query ranks ahead of a louder lexical (bm25) match whose title only
 /// contains the query among other words — exact title is promoted before bm25.
