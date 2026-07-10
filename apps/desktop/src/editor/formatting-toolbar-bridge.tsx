@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useEditor } from '@meowdown/react'
-import type { EditorExtension, MeowdownListAttrs, TypedEditor } from '@meowdown/core'
+import type { EditorExtension, TypedEditor } from '@meowdown/core'
 import { isTouchEditorSurface } from '@/lib/platform-surface'
 import {
   clearFormattingToolbar,
@@ -9,6 +9,8 @@ import {
   type FormattingToolbarCommands,
   type FormattingTriggerText,
 } from './formatting-toolbar-store'
+
+const CIRCLE_TASK_MARKER = '+'
 
 /**
  * Publishes this editor's formatting-toolbar surface while it holds focus
@@ -143,9 +145,20 @@ function isSquareChecklistAtSelection(editor: TypedEditor): boolean {
   for (let depth = $from.depth; depth > 0; depth -= 1) {
     const node = $from.node(depth)
     if (node.type.name === 'list') {
-      const attrs = node.attrs as MeowdownListAttrs
-      return attrs.kind === 'task' && attrs.marker !== '+'
+      return isSquareChecklistAttrs(node.attrs)
     }
   }
   return false
+}
+
+function isSquareChecklistAttrs(value: unknown): boolean {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('kind' in value) ||
+    !('marker' in value)
+  ) {
+    return false
+  }
+  return value.kind === 'task' && value.marker !== CIRCLE_TASK_MARKER
 }
