@@ -152,8 +152,15 @@ async function queryWikiTargetCandidates(
  * authoritative one-winner-per-key address map. The canonical title is the
  * preferred target for alias rows; if that title lost a collision but the
  * selected alias itself resolves to the note, the alias remains a truthful
- * fallback address. Candidates with no safe textual address are omitted.
+ * fallback address. A pathless generated date is reattached to an existing
+ * daily even when its custom title kept it out of the search rows. Candidates
+ * with no safe textual address are omitted.
  */
+interface WikiAddressWinner {
+  path: string
+  dailyDate: string | null
+}
+
 async function verifyWikiSuggestionAddresses(
   candidates: readonly WikiSuggestion[],
   limit: number,
@@ -167,16 +174,20 @@ async function verifyWikiSuggestionAddresses(
   }
   keys.delete('')
 
-  const winners = new Map<string, string>()
+  const winners = new Map<string, WikiAddressWinner>()
   for (const chunk of inClauseChunks([...keys])) {
     const rows = await db
       .selectFrom('noteKeys')
+      .innerJoin('notes', 'notes.path', 'noteKeys.notePath')
       .where('key', 'in', chunk)
-      .select(['key', 'notePath'])
+      .select(['key', 'notePath', 'notes.dailyDate'])
       .execute()
     for (const row of rows) {
       if (row.key !== null && row.notePath !== null) {
-        winners.set(row.key, row.notePath)
+        winners.set(row.key, {
+          path: row.notePath,
+          dailyDate: row.dailyDate,
+        })
       }
     }
   }
@@ -184,25 +195,43 @@ async function verifyWikiSuggestionAddresses(
   const verified: WikiLinkSuggestion[] = []
   for (const candidate of candidates) {
     const canonicalKey = normalizeWikiTarget(candidate.target).key
+    const canonicalWinner = winners.get(canonicalKey)
     if (candidate.path === null) {
-      const insertText =
-        winners.has(canonicalKey)
-          ? null
-          : serializeWikiSuggestionAddress(candidate.target, candidate.alias)
+      const insertText = serializeWikiSuggestionAddress(
+        candidate.target,
+        candidate.alias,
+      )
       if (insertText !== null) {
-        verified.push({ ...candidate, insertText })
+        if (canonicalWinner === undefined) {
+          verified.push({ ...candidate, insertText })
+        } else if (
+          candidate.date !== null &&
+          canonicalWinner.dailyDate === candidate.date
+        ) {
+          verified.push({
+            ...candidate,
+            path: canonicalWinner.path,
+            insertText,
+          })
+        }
       }
     } else {
       const canonicalInsert = serializeWikiSuggestionAddress(
         candidate.target,
         candidate.alias,
       )
-      if (winners.get(canonicalKey) === candidate.path && canonicalInsert !== null) {
+      if (
+        canonicalWinner?.path === candidate.path &&
+        canonicalInsert !== null
+      ) {
         verified.push({ ...candidate, insertText: canonicalInsert })
       } else if (candidate.alias !== null) {
         const aliasKey = normalizeWikiTarget(candidate.alias).key
         const aliasInsert = serializeWikiSuggestionAddress(candidate.alias, null)
-        if (winners.get(aliasKey) === candidate.path && aliasInsert !== null) {
+        if (
+          winners.get(aliasKey)?.path === candidate.path &&
+          aliasInsert !== null
+        ) {
           verified.push({ ...candidate, insertText: aliasInsert })
         }
       }
