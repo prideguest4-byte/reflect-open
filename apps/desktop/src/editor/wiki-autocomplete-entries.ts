@@ -1,4 +1,5 @@
 import {
+  foldFallbackTitleKey,
   foldKey,
   serializeWikiSuggestionAddress,
   type ContactMatch,
@@ -57,17 +58,24 @@ export function buildAutocompleteEntries<Suggestion extends WikiSuggestion>(
     suggestion,
   }))
 
-  // Folding here matches link resolution (case only): a contact row shows
-  // whenever selecting it would NOT resolve to an existing note as typed.
+  // Exact folding matches ordinary link resolution. The fallback set also
+  // prevents a contact action from creating through the same leading-emoji
+  // collision this menu protects for bare Create rows.
   const resolvable = new Set<string>()
+  const fallbackResolvable = new Set<string>()
   for (const suggestion of suggestions) {
     resolvable.add(foldKey(suggestion.target))
+    fallbackResolvable.add(foldFallbackTitleKey(suggestion.target))
     if (suggestion.alias !== null) {
       resolvable.add(foldKey(suggestion.alias))
+      fallbackResolvable.add(foldFallbackTitleKey(suggestion.alias))
     }
   }
   const contacts = (options.contacts ?? []).filter((contact) => {
-    if (resolvable.has(foldKey(contact.fullName))) {
+    if (
+      resolvable.has(foldKey(contact.fullName)) ||
+      fallbackResolvable.has(foldFallbackTitleKey(contact.fullName))
+    ) {
       return false
     }
     return (
@@ -98,8 +106,15 @@ export function buildAutocompleteEntries<Suggestion extends WikiSuggestion>(
   const canSerializeCreate =
     !options.requireSerializableWikiText ||
     serializeWikiSuggestionAddress(title, null) !== null
+  // A leading-emoji/whitespace fallback candidate is either the existing note
+  // to reuse or an ambiguity to leave unresolved. Neither case may offer a
+  // duplicate-creating row.
+  const fallbackKey = foldFallbackTitleKey(title)
+  const hasFallbackCollision =
+    fallbackKey !== '' && fallbackResolvable.has(fallbackKey)
   if (
     !resolvesAsTyped &&
+    !hasFallbackCollision &&
     !hasDateSuggestion &&
     !contactCoversQuery &&
     canSerializeCreate
