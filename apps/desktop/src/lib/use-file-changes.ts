@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { hasBridge, subscribeFileChanges, type FileChange } from '@reflect/core'
 
 /**
@@ -14,11 +14,17 @@ import { hasBridge, subscribeFileChanges, type FileChange } from '@reflect/core'
  *
  * The subscription follows the handler's identity: memoize the handler over
  * its real dependencies and the hook resubscribes exactly when they change.
- * Pass `null` to disable.
+ * Pass `null` to disable. The return value becomes true once the current
+ * handler's native subscription is installed (and is immediately true when
+ * disabled or running without a bridge), so consumers that cannot tolerate a
+ * pre-subscription race can wait before starting their work.
  */
-export function useFileChanges(handler: ((changes: FileChange[]) => void) | null): void {
+export function useFileChanges(handler: ((changes: FileChange[]) => void) | null): boolean {
+  const bridgeAvailable = hasBridge()
+  const [readyHandler, setReadyHandler] = useState<typeof handler>(null)
+
   useEffect(() => {
-    if (handler === null || !hasBridge()) {
+    if (handler === null || !bridgeAvailable) {
       return
     }
     let active = true
@@ -31,6 +37,7 @@ export function useFileChanges(handler: ((changes: FileChange[]) => void) | null
       .then((stop) => {
         if (active) {
           unlisten = stop
+          setReadyHandler(() => handler)
         } else {
           stop()
         }
@@ -44,5 +51,7 @@ export function useFileChanges(handler: ((changes: FileChange[]) => void) | null
       active = false
       unlisten?.()
     }
-  }, [handler])
+  }, [bridgeAvailable, handler])
+
+  return handler === null || !bridgeAvailable || readyHandler === handler
 }

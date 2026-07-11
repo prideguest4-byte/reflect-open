@@ -28,7 +28,14 @@ interface CapturedEditorProps {
   onFileClick?: (payload: { href: string; name: string; event: MouseEvent | KeyboardEvent }) => void
 }
 
-const captured = vi.hoisted(() => ({ props: null as CapturedEditorProps | null }))
+interface HoverRenderContext {
+  target: string
+  dismiss: () => void
+}
+
+const captured = vi.hoisted(() => ({
+  props: null as CapturedEditorProps | null,
+}))
 
 /** The stub editor `useEditor` hands `EditorInputTraits` (see the mock below). */
 const editorStub = vi.hoisted(() => ({
@@ -55,6 +62,17 @@ vi.mock('@/lib/windows/open-in-new-window', async (importOriginal) => ({
 // `useEditor` backs `EditorInputTraits` (mounted inside the editor).
 vi.mock('@meowdown/react', () => ({
   useEditor: () => editorStub,
+  WikilinkHoverCard: ({
+    children,
+  }: {
+    children: (context: HoverRenderContext) => ReactNode
+  }) => {
+    return (
+      <div data-testid="wikilink-hover-card">
+        {children({ target: 'Alpha', dismiss: vi.fn() })}
+      </div>
+    )
+  },
   MeowdownEditor: (props: CapturedEditorProps) => {
     captured.props = props
     return (
@@ -161,6 +179,32 @@ describe('NoteEditor markdown syntax mode', () => {
   it('passes an explicit markdown syntax mode to meowdown', () => {
     render(<NoteEditor initialContent="" markMode="show" />)
     expect(captured.props?.mode).toBe('show')
+  })
+})
+
+describe('NoteEditor wiki-link hover card', () => {
+  it('does not mount the optional card without a host renderer', () => {
+    render(<NoteEditor initialContent="" />)
+    expect(screen.queryByTestId('wikilink-hover-card')).toBeNull()
+  })
+
+  it('renders the latest host renderer after a prop change', () => {
+    const view = render(
+      <NoteEditor
+        initialContent=""
+        renderWikilinkHoverCard={({ target }) => <span>First {target}</span>}
+      />,
+    )
+    expect(screen.getByText('First Alpha')).not.toBeNull()
+
+    view.rerender(
+      <NoteEditor
+        initialContent=""
+        renderWikilinkHoverCard={({ target }) => <span>Second {target}</span>}
+      />,
+    )
+
+    expect(screen.getByText('Second Alpha')).not.toBeNull()
   })
 })
 

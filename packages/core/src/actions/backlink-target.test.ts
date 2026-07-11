@@ -49,4 +49,17 @@ describe('ensureBacklinkTarget', () => {
     })
     expect(readNoteMock).not.toHaveBeenCalled()
   })
+
+  it('refuses an unavailable target instead of treating it as ambiguity', async () => {
+    resolveOrCreateMock.mockResolvedValue({
+      kind: 'unavailable',
+      paths: ['notes/links.md'],
+    })
+
+    await expect(ensureBacklinkTarget('Links', 3)).rejects.toMatchObject({
+      kind: 'io',
+      message: expect.stringContaining('notes are unavailable'),
+    })
+    expect(readNoteMock).not.toHaveBeenCalled()
+  })
 })

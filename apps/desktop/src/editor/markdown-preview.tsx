@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, type ReactElement } from 'react'
 import { MarkdownView } from '@meowdown/react'
 import { useOpenExternalLink } from '@/editor/open-external-link'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,10 @@ interface MarkdownPreviewProps {
    * originating click so handlers can honor ⌘-click (open in new window).
    */
   onWikiLinkClick?: (target: string, event?: MouseEvent | KeyboardEvent) => void
+  /** Whether rendered links and controls can be activated (default true). */
+  interactive?: boolean
+  /** Whether rich embeds may create remote media frames (default true). */
+  renderEmbeds?: boolean
   /** Extra classes for the rendered root. */
   className?: string
 }
@@ -33,6 +37,8 @@ export function MarkdownPreview({
   content,
   resolveImageUrl,
   onWikiLinkClick,
+  interactive = true,
+  renderEmbeds = true,
   className,
 }: MarkdownPreviewProps): ReactElement {
   const openExternalLink = useOpenExternalLink()
@@ -50,7 +56,7 @@ export function MarkdownPreview({
   // either always pass the handler (chat) or never do (palette preview). An
   // inert preview omits the handler so a chip click is a no-op rather than a
   // dead navigation.
-  const [navigates] = useState(() => onWikiLinkClick != null)
+  const navigates = interactive && onWikiLinkClick != null
 
   const resolveImageUrlStable = useCallback(
     (src: string) => resolveRef.current?.(src) ?? undefined,
@@ -66,8 +72,10 @@ export function MarkdownPreview({
     <MarkdownView
       markdown={content}
       markMode="hide"
+      interactive={interactive}
+      renderEmbeds={renderEmbeds}
       resolveImageUrl={resolveImageUrlStable}
-      onLinkClick={openExternalLink}
+      {...(interactive ? { onLinkClick: openExternalLink } : {})}
       {...(navigates ? { onWikilinkClick: onWikilinkClickStable } : {})}
       className={cn('reflect-editor', className)}
     />

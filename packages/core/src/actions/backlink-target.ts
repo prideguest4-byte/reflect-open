@@ -19,6 +19,12 @@ export async function ensureBacklinkTarget(title: string, generation: number): P
       `The [[${title}]] backlink matches multiple notes: ${outcome.paths.join(', ')}`,
     )
   }
+  if (outcome.kind === 'unavailable') {
+    throw new ReflectError(
+      'io',
+      `The [[${title}]] backlink cannot be resolved while these notes are unavailable: ${outcome.paths.join(', ')}`,
+    )
+  }
   const source = await readNote(outcome.path, generation)
   const currentTitle = parseNote({ path: outcome.path, source }).title
   return wikiLinkSafe(currentTitle) === currentTitle ? currentTitle : title

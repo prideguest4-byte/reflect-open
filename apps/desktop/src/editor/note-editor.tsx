@@ -20,12 +20,14 @@ import {
 } from '@meowdown/core'
 import {
   MeowdownEditor,
+  WikilinkHoverCard,
   type EditorHandle,
   type PendingReplacementResolveHandler,
   type SelectionMenuSearchHandler,
   type SlashMenuSearchHandler,
   type TagSearchHandler,
   type WikilinkSearchHandler,
+  type WikilinkHoverCardRenderContext,
 } from '@meowdown/react'
 import { EditorInputTraits } from '@/editor/editor-input-traits'
 import { FormattingToolbarBridge } from '@/editor/formatting-toolbar-bridge'
@@ -40,6 +42,8 @@ import { useLightboxTransition } from '@/editor/use-lightbox-transition'
 import { isDeepLinkUrl } from '@/lib/deep-links/parse'
 import { useFollowDeepLink } from '@/lib/deep-links/use-follow-deep-link'
 import { cn } from '@/lib/utils'
+
+type WikilinkHoverRenderer = (context: WikilinkHoverCardRenderContext) => ReactNode
 
 /**
  * Reflect's note editor: a thin wrapper over `@meowdown/react`'s
@@ -152,6 +156,8 @@ interface NoteEditorProps {
    * modifiers, e.g. ⌘-click opens the target in a new window.
    */
   onWikiLinkClick?: (target: string, event?: MouseEvent | KeyboardEvent) => void
+  /** Render the passive body of Meowdown's editor-scoped wiki-link hover card. */
+  renderWikilinkHoverCard?: WikilinkHoverRenderer
   /** Click on an inline `#tag`. The tag name arrives without the leading `#`. */
   onTagClick?: (tag: string) => void
   /** Search notes for the `[[` autocomplete menu. */
@@ -207,6 +213,7 @@ export function NoteEditor({
   resolveFileLink,
   resolveFileInfo,
   onWikiLinkClick,
+  renderWikilinkHoverCard,
   onTagClick,
   onWikilinkSearch,
   onTagSearch,
@@ -422,6 +429,9 @@ export function NoteEditor({
       >
         <EditorInputTraits />
         <FormattingToolbarBridge />
+        {renderWikilinkHoverCard !== undefined ? (
+          <WikilinkHoverCard>{renderWikilinkHoverCard}</WikilinkHoverCard>
+        ) : null}
         {children}
       </MeowdownEditor>
       <ImageLightbox

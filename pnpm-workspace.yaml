@@ -20,7 +20,7 @@ minimumReleaseAgeExclude:
   - prosemirror-flat-list
   - prosemirror-view
 
-# overrides:
-#   '@meowdown/core': https://pkg.pr.new/prosekit/meowdown/@meowdown/core@623bc43
-#   '@meowdown/react': https://pkg.pr.new/prosekit/meowdown/@meowdown/react@623bc43
-# blockExoticSubdeps: false
+overrides:
+  '@meowdown/core': https://pkg.pr.new/prosekit/meowdown/@meowdown/core@834b053
+  '@meowdown/react': https://pkg.pr.new/prosekit/meowdown/@meowdown/react@834b053
+blockExoticSubdeps: false

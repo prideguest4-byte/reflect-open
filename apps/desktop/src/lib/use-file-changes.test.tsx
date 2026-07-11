@@ -38,9 +38,9 @@ function stubSubscription(): Subscription {
   }
 }
 
-function Host({ handler }: { handler: ((changes: FileChange[]) => void) | null }): null {
-  useFileChanges(handler)
-  return null
+function Host({ handler }: { handler: ((changes: FileChange[]) => void) | null }) {
+  const ready = useFileChanges(handler)
+  return <output data-testid="ready">{String(ready)}</output>
 }
 
 const UPSERT: FileChange[] = [{ path: 'notes/a.md', kind: 'upsert' }]
@@ -55,7 +55,9 @@ describe('useFileChanges', () => {
     const subscription = stubSubscription()
     const handler = vi.fn()
     const view = render(<Host handler={handler} />)
+    expect(view.getByTestId('ready').textContent).toBe('false')
     await subscription.resolve()
+    expect(view.getByTestId('ready').textContent).toBe('true')
     subscription.emit(UPSERT)
     expect(handler).toHaveBeenCalledWith(UPSERT)
     view.unmount()
@@ -89,7 +91,9 @@ describe('useFileChanges', () => {
     const second = stubSubscription()
     const nextHandler = vi.fn()
     view.rerender(<Host handler={nextHandler} />)
+    expect(view.getByTestId('ready').textContent).toBe('false')
     await second.resolve()
+    expect(view.getByTestId('ready').textContent).toBe('true')
     expect(subscribeFileChanges).toHaveBeenCalledTimes(2)
     expect(first.unlisten).toHaveBeenCalledOnce()
 
@@ -101,11 +105,13 @@ describe('useFileChanges', () => {
   it('does nothing when disabled or without a bridge', () => {
     const view = render(<Host handler={null} />)
     expect(subscribeFileChanges).not.toHaveBeenCalled()
+    expect(view.getByTestId('ready').textContent).toBe('true')
     view.unmount()
 
     hasBridge.mockReturnValue(false)
     const bridgeless = render(<Host handler={vi.fn()} />)
     expect(subscribeFileChanges).not.toHaveBeenCalled()
+    expect(bridgeless.getByTestId('ready').textContent).toBe('true')
     bridgeless.unmount()
   })
 
