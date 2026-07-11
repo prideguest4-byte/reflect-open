@@ -383,6 +383,16 @@ fn alias_collisions_choose_the_first_path_for_backlinks() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["target_path"], Value::from("notes/alpha.md"));
 
+    let keys = run_query(
+        &conn,
+        "SELECT note_path, claim_count FROM note_keys WHERE key = 'shared name'",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys[0]["note_path"], Value::from("notes/alpha.md"));
+    assert_eq!(keys[0]["claim_count"], Value::from(2));
+
     conn.execute("DELETE FROM notes WHERE path = ?1", ["notes/alpha.md"])
         .unwrap();
     let fallback = run_query(
@@ -393,6 +403,14 @@ fn alias_collisions_choose_the_first_path_for_backlinks() {
     .unwrap();
     assert_eq!(fallback.len(), 1);
     assert_eq!(fallback[0]["target_path"], Value::from("notes/zeta.md"));
+    let fallback_key = run_query(
+        &conn,
+        "SELECT note_path, claim_count FROM note_keys WHERE key = 'shared name'",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(fallback_key[0]["note_path"], Value::from("notes/zeta.md"));
+    assert_eq!(fallback_key[0]["claim_count"], Value::from(1));
 }
 
 #[test]

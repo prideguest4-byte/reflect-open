@@ -899,7 +899,7 @@ describe('useNoteDocument', () => {
       })
       act(() => hook.result.current.bindEditor(editor))
 
-      // Changing an IO option recreates the session without unmounting the
+      // Changing a session option recreates the session without unmounting the
       // editor. The outgoing session must remain discoverable while Meowdown
       // synchronously reports reconciled native input from getMarkdown().
       hook.rerender({ createIfMissing: true })

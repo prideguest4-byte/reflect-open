@@ -39,9 +39,10 @@ export interface WikiSuggestion {
 
 /**
  * A selectable `[[` autocomplete suggestion. `insertText` is present only after
- * the query layer has verified that its parsed target resolves back to `path`
- * through the canonical `note_keys` address map. Consequently, an existing
- * note that has lost every textual key collision is not offered as selectable.
+ * the query layer has verified that clicking its parsed target opens `path`:
+ * non-date targets have exactly one claimant in the winning resolution tier,
+ * while valid ISO dates follow the deterministic date-link path. Consequently,
+ * a note with no safe, unambiguous textual address is not selectable.
  */
 export interface WikiLinkSuggestion extends WikiSuggestion {
   /** Validated text to place inside `[[…]]`. */

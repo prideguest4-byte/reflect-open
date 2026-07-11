@@ -3,7 +3,8 @@ import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 import { load as loadSqliteVec } from 'sqlite-vec'
 import { describe, expect, it } from 'vitest'
-import { parseNote } from '../markdown'
+import { resolveOrCreateNoteWithTitle } from '../graph/create-note'
+import { normalizeWikiTarget, parseNote } from '../markdown'
 import { setBridge } from '../ipc/bridge'
 import { buildIndexedNote, type IndexedNote } from './indexed-note'
 import {
@@ -156,7 +157,7 @@ function connectIndex(database: Database.Database): void {
   })
 }
 
-async function expectSuggestionAddressesItsPath(
+async function expectSuggestionOpensItsPath(
   suggestion: Awaited<ReturnType<typeof suggestWikiLinkTargets>>[number],
 ): Promise<void> {
   expect(suggestion.path).not.toBeNull()
@@ -166,10 +167,18 @@ async function expectSuggestionAddressesItsPath(
     source: `[[${insertText}]]`,
   }).wikiLinks
   expect(parsed).toHaveLength(1)
-  await expect(resolveWikiTarget(parsed[0]!.target)).resolves.toEqual({
-    kind: 'resolved',
-    ref: suggestion.path,
-  })
+  const target = parsed[0]!.target
+  if (normalizeWikiTarget(target).date !== undefined) {
+    await expect(resolveWikiTarget(target)).resolves.toEqual({
+      kind: 'resolved',
+      ref: suggestion.path,
+    })
+  } else {
+    await expect(resolveOrCreateNoteWithTitle(target, 1)).resolves.toEqual({
+      kind: 'resolved',
+      path: suggestion.path,
+    })
+  }
 }
 
 describe('v1 subject alias flow', () => {
@@ -259,7 +268,7 @@ describe('v1 subject alias flow', () => {
       expect(wikiSuggestionInsertText(collidedSuggestions[1]!)).toBe(
         'Tim MacCaw // Dad|Dad',
       )
-      await Promise.all(collidedSuggestions.map(expectSuggestionAddressesItsPath))
+      await Promise.all(collidedSuggestions.map(expectSuggestionOpensItsPath))
     } finally {
       setBridge(null)
       database.close()
@@ -280,12 +289,16 @@ describe('v1 subject alias flow', () => {
       // claimant. Its daily_date projection must not block the real title.
       project('daily/2026-02-31.md', '# Invalid date file\n', 15),
       project('notes/invalid-date-title.md', '# 2026-02-31\n', 95),
-      // Duplicate titles use the first graph-relative path as their only
-      // canonical textual winner, irrespective of menu recency.
+      // Ordinary duplicate titles are ambiguous for writable navigation, so
+      // neither title-only candidate is selectable irrespective of recency.
       project('notes/a-roadmap.md', '# Roadmap\n', 20),
       project('notes/z-roadmap.md', '# Roadmap\n', 100),
-      // A losing duplicate title can still be addressed through its own unique
-      // alias. The verified insertion must fall back to that alias, not Shared.
+      // Valid ISO dates follow deterministic read resolution even when their
+      // winning title tier is ambiguous; only the note_keys winner is offered.
+      project('notes/a-date-twin.md', '# 2026-07-12\n', 25),
+      project('notes/z-date-twin.md', '# 2026-07-12\n', 105),
+      // A duplicate-title candidate can still be addressed through its own
+      // unique alias. The verified insertion must use that alias, not Shared.
       project('notes/a-shared.md', '# Shared\n', 30),
       project(
         'notes/z-shared.md',
@@ -337,13 +350,16 @@ describe('v1 subject alias flow', () => {
       ])
 
       const duplicateSuggestions = await suggestWikiLinkTargets('Roadmap')
-      expect(duplicateSuggestions.map((suggestion) => suggestion.path)).toEqual([
-        'notes/a-roadmap.md',
-      ])
+      expect(duplicateSuggestions).toEqual([])
       const navigationSuggestions = await suggestWikiTargets('Roadmap')
       expect(navigationSuggestions.map((suggestion) => suggestion.path)).toEqual([
         'notes/z-roadmap.md',
         'notes/a-roadmap.md',
+      ])
+
+      const duplicateDateSuggestions = await suggestWikiLinkTargets('2026-07-12')
+      expect(duplicateDateSuggestions.map((suggestion) => suggestion.path)).toEqual([
+        'notes/a-date-twin.md',
       ])
 
       const aliasSuggestions = await suggestWikiLinkTargets('Second Shared')
@@ -355,9 +371,8 @@ describe('v1 subject alias flow', () => {
         insertText: 'Second Shared',
       })
 
-      // Matching the duplicate *title* must not hide the losing note either:
-      // its ranked spelling fails verification, so it is rescued through the
-      // unique alias it still wins. Recency keeps it above the title winner.
+      // Matching the duplicate *title* must not hide a uniquely addressable
+      // note: its ambiguous ranked spelling is rescued through its unique alias.
       const sharedTitleSuggestions = await suggestWikiLinkTargets('Shared')
       expect(sharedTitleSuggestions).toMatchObject([
         {
@@ -366,12 +381,6 @@ describe('v1 subject alias flow', () => {
           alias: 'Second Shared',
           insertText: 'Second Shared',
         },
-        {
-          path: 'notes/a-shared.md',
-          target: 'Shared',
-          alias: null,
-          insertText: 'Shared',
-        },
       ])
 
       await Promise.all(
@@ -379,10 +388,10 @@ describe('v1 subject alias flow', () => {
           ...dateSuggestions,
           ...fuzzyDateSuggestions,
           ...invalidDateSuggestions,
-          ...duplicateSuggestions,
+          ...duplicateDateSuggestions,
           ...aliasSuggestions,
           ...sharedTitleSuggestions,
-        ].map(expectSuggestionAddressesItsPath),
+        ].map(expectSuggestionOpensItsPath),
       )
       await expect(suggestWikiLinkTargets('Unsafe | Title')).resolves.toEqual([])
       await expect(suggestWikiLinkTargets('Escape \\. Title')).resolves.toEqual([])

@@ -134,7 +134,7 @@ export function useNoteDocument(
             setSnapshot(next)
           },
           applyContent: (markdown) => editorRef.current?.setMarkdown(markdown),
-          reconcileEditorInput: () => {
+          reconcilePendingEditorInput: () => {
             // Meowdown 0.43.1 synchronously emits onDocChange only when this
             // reconciliation changes the document. Discarding the always-
             // returned snapshot avoids dirtying files whose serialization is

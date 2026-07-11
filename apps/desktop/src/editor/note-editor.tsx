@@ -58,7 +58,11 @@ import { cn } from '@/lib/utils'
 
 /** Imperative surface for note switching, reload, and save flushes. */
 export interface NoteEditorHandle {
-  /** Serialize the current, settled document to Markdown. */
+  /**
+   * Reconcile pending native input, then serialize the current document to
+   * Markdown. If reconciliation changes the document, `onChange` may run
+   * synchronously before this method returns.
+   */
   getMarkdown(): string
   /** Replace the document (note switch / external reload). */
   setMarkdown(markdown: string): void

@@ -44,11 +44,14 @@ aliases:
   alias itself is used when it uniquely resolves to the selected note. A note
   with no winning textual key is omitted from `[[` autocomplete rather than
   inserting a link to a different note.
-- Wiki-link resolution is deterministic: a calendar-valid daily date wins,
-  then an exact title, then an alias; collisions within one tier choose the
-  first graph-relative path alphabetically. The `note_keys` view contains the
-  single resolved winner for each folded textual address, and navigation,
-  verified autocomplete insertion, and backlinks all read that same mapping.
+- Read-only wiki-link resolution and backlinks are deterministic: a
+  calendar-valid daily date wins, then an exact title, then an alias; collisions
+  within one tier choose the first graph-relative path alphabetically. The
+  `note_keys` view contains that winner plus the winning tier's claim count.
+  Writable non-date navigation refuses an ambiguous winning tier, and `[[`
+  autocomplete omits the same ambiguous address unless a unique alias can
+  address the selected note. Valid ISO-date clicks keep deterministic date
+  resolution.
 - Renames are **stronger than v1**: the rename coordinator
   (`apps/desktop/src/editor/rename-coordinator.ts`) rewrites known
   `[[old title]]` links across the graph, then records the old title as an
@@ -72,7 +75,7 @@ aliases:
 | Existing links keep working by stable target ID  | Textual links are rewritten; old title is preserved as alias    |
 | No alias UI beyond the title bar                 | `//` remains available; frontmatter aliases are also editable   |
 | Daily links target the note's stable identity    | Date wins its key; daily notes may also project aliases         |
-| Alias collisions: first match wins, silently     | Deterministic winner; losing keys are not text-addressable      |
+| Alias collisions: first match wins, silently     | Read winner is deterministic; writable ambiguity is refused    |
 
 ## Diagnosing an alias report
 
@@ -87,13 +90,13 @@ aliases:
 3. If both notes are intentional, use the canonical target explicitly — for
    example `[[Tim MacCaw // Dad|Dad]]` when that full title resolves to the
    intended note. Otherwise rename or remove the accidental standalone note so
-   bare `[[Dad]]` resolves through the alias. Duplicate complete titles cannot
-   both be addressed by that title; give the losing note a unique alias — `[[`
-   autocomplete then offers the losing note through that alias even when the
-   search matched its title.
+   bare `[[Dad]]` resolves through the alias. Duplicate complete titles are
+   ambiguous for writable navigation; give the intended note a unique alias —
+   `[[` autocomplete then offers it through that alias even when the search
+   matched its title.
 
 ## Open porting task
 
-- **Collision surfacing.** Neither v1 nor v2 warns when two notes claim the
-  same alias. Worth a lint-style indicator eventually, but not a porting
-  blocker.
+- **Collision surfacing.** Writable navigation reports ambiguity, but there is
+  no persistent lint-style indicator showing every title or alias collision.
+  Worth adding eventually, but not a porting blocker.

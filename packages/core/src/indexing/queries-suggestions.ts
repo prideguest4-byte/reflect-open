@@ -149,12 +149,11 @@ async function queryWikiTargetCandidates(
 
 /**
  * Turn ranked candidates into selectable suggestions using `note_keys` as the
- * authoritative one-winner-per-key address map. The canonical title is the
- * preferred target for alias rows; if that title lost a collision but the
- * selected alias itself resolves to the note, the alias remains a truthful
- * fallback address. A candidate whose ranked spellings all fail is rescued
- * through any other alias the note still wins (a duplicate-title loser matched
- * by its title must not hide the unique alias that addresses it). A pathless
+ * authoritative one-winner-per-key address map. Non-date targets must also have
+ * exactly one claimant in their winning tier, matching writable navigation's
+ * ambiguity guard; valid ISO dates remain deterministic because clicks route
+ * through the read resolver. The canonical title is preferred for alias rows;
+ * when it is ambiguous or lost, a unique alias can rescue the note. A pathless
  * generated date is reattached to an existing daily even when its custom title
  * kept it out of the search rows. Candidates with no safe textual address are
  * omitted.
@@ -162,6 +161,18 @@ async function queryWikiTargetCandidates(
 interface WikiAddressWinner {
   path: string
   dailyDate: string | null
+  claimCount: number
+}
+
+function winnerAddressesTarget(
+  target: string,
+  path: string,
+  winner: WikiAddressWinner | undefined,
+): boolean {
+  if (winner?.path !== path) {
+    return false
+  }
+  return normalizeWikiTarget(target).date !== undefined || winner.claimCount === 1
 }
 
 /**
@@ -173,18 +184,27 @@ function addressableAsRanked(
   candidate: WikiSuggestion,
   winners: ReadonlyMap<string, WikiAddressWinner>,
 ): WikiLinkSuggestion | null {
+  if (candidate.path === null) {
+    return null
+  }
   const canonicalWinner = winners.get(normalizeWikiTarget(candidate.target).key)
   const canonicalInsert = serializeWikiSuggestionAddress(
     candidate.target,
     candidate.alias,
   )
-  if (canonicalWinner?.path === candidate.path && canonicalInsert !== null) {
+  if (
+    winnerAddressesTarget(candidate.target, candidate.path, canonicalWinner) &&
+    canonicalInsert !== null
+  ) {
     return { ...candidate, insertText: canonicalInsert }
   }
   if (candidate.alias !== null) {
     const aliasKey = normalizeWikiTarget(candidate.alias).key
     const aliasInsert = serializeWikiSuggestionAddress(candidate.alias, null)
-    if (winners.get(aliasKey)?.path === candidate.path && aliasInsert !== null) {
+    if (
+      winnerAddressesTarget(candidate.alias, candidate.path, winners.get(aliasKey)) &&
+      aliasInsert !== null
+    ) {
       return { ...candidate, insertText: aliasInsert }
     }
   }
@@ -192,9 +212,10 @@ function addressableAsRanked(
 }
 
 /**
- * For each path, the aliases (declaration order) that the note itself wins in
- * `note_keys` — the truthful fallback addresses for notes whose ranked
- * spellings all lost their key or cannot be serialized.
+ * For each path, the aliases (declaration order) that safely address the note:
+ * the note wins `note_keys`, and a non-date alias is uniquely claimed in its
+ * winning tier. These rescue notes whose ranked spellings are ambiguous, lost,
+ * or cannot be serialized.
  */
 async function winningAliasesByPath(
   paths: ReadonlySet<string>,
@@ -209,10 +230,16 @@ async function winningAliasesByPath(
           .onRef('noteKeys.notePath', '=', 'aliases.notePath'),
       )
       .where('aliases.notePath', 'in', chunk)
-      .select(['aliases.notePath', 'aliases.alias'])
+      .select(['aliases.notePath', 'aliases.alias', 'noteKeys.claimCount'])
       .orderBy(sql`"aliases"."rowid"`)
       .execute()
     for (const row of rows) {
+      if (
+        normalizeWikiTarget(row.alias).date === undefined &&
+        Number(row.claimCount) !== 1
+      ) {
+        continue
+      }
       const aliases = winning.get(row.notePath) ?? []
       aliases.push(row.alias)
       winning.set(row.notePath, aliases)
@@ -240,13 +267,14 @@ async function verifyWikiSuggestionAddresses(
       .selectFrom('noteKeys')
       .innerJoin('notes', 'notes.path', 'noteKeys.notePath')
       .where('key', 'in', chunk)
-      .select(['key', 'notePath', 'notes.dailyDate'])
+      .select(['key', 'notePath', 'notes.dailyDate', 'noteKeys.claimCount'])
       .execute()
     for (const row of rows) {
       if (row.key !== null && row.notePath !== null) {
         winners.set(row.key, {
           path: row.notePath,
           dailyDate: row.dailyDate,
+          claimCount: Number(row.claimCount),
         })
       }
     }
