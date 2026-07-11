@@ -69,12 +69,32 @@ describe('router', () => {
     const revision = result.current.navigationRevision
     const initial = revision()
 
+    // Even a same-route re-arrival is an intent (initial route is today).
     act(() => result.current.navigate({ kind: 'today' }))
     expect(revision()).toBe(initial + 1)
-    act(() => result.current.back())
+    act(() => result.current.navigate({ kind: 'tasks' }))
     expect(revision()).toBe(initial + 2)
-    act(() => result.current.forward())
+    act(() => result.current.back())
     expect(revision()).toBe(initial + 3)
+    act(() => result.current.forward())
+    expect(revision()).toBe(initial + 4)
+  })
+
+  it('boundary back/forward no-ops leave the navigation revision alone', () => {
+    const { result } = routerHook()
+    const revision = result.current.navigationRevision
+    act(() => result.current.navigate({ kind: 'tasks' }))
+    const settled = revision()
+
+    // Nothing ahead: a stray ⌘] must not cancel a pending link fallback.
+    act(() => result.current.forward())
+    expect(revision()).toBe(settled)
+
+    act(() => result.current.back())
+    expect(revision()).toBe(settled + 1)
+    // Nothing behind either — same rule for ⌘[ at the history start.
+    act(() => result.current.back())
+    expect(revision()).toBe(settled + 1)
   })
 
   it('restores a saved scroll offset on back/forward, per entry', () => {

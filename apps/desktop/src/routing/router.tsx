@@ -44,7 +44,8 @@ interface RouterValue {
    * route state, this advances before `navigate`, `back`, or `forward` enqueue
    * an update (and before the current note follows a rename), so async link
    * fallbacks can detect even a same-route arrival or a back/forward round trip
-   * that returned to the same history entry.
+   * that returned to the same history entry. A back/forward at a history
+   * boundary changes nothing and does not advance it.
    */
   navigationRevision: () => number
   /**
@@ -166,6 +167,14 @@ export function RouterProvider({
   currentId.current = history.stack[history.index]!.id
   // eslint-disable-next-line react-hooks/refs
   currentRoute.current = history.stack[history.index]!.route
+  /**
+   * History position, readable from the stable back/forward callbacks. A
+   * boundary press must be a true no-op — advancing the navigation revision
+   * for it would silently cancel an unrelated pending link fallback.
+   */
+  const historyPosition = useRef({ index: 0, length: 1 })
+  // eslint-disable-next-line react-hooks/refs
+  historyPosition.current = { index: history.index, length: history.stack.length }
 
   const navigate = useCallback((route: Route, options?: NavigateOptions) => {
     navigationRevisionRef.current += 1
@@ -215,6 +224,9 @@ export function RouterProvider({
   }, [])
 
   const back = useCallback(() => {
+    if (historyPosition.current.index === 0) {
+      return // nothing behind us — must not advance the navigation revision
+    }
     navigationRevisionRef.current += 1
     setArrivalFocusEditor(false) // history moves are never focus arrivals
     setHistory((current) =>
@@ -223,6 +235,9 @@ export function RouterProvider({
   }, [])
 
   const forward = useCallback(() => {
+    if (historyPosition.current.index >= historyPosition.current.length - 1) {
+      return
+    }
     navigationRevisionRef.current += 1
     setArrivalFocusEditor(false)
     setHistory((current) =>

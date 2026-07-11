@@ -13,7 +13,7 @@ interface ConflictedNoteLinkProps {
 }
 
 function ConflictedNoteLink({ note }: ConflictedNoteLinkProps): ReactElement {
-  const navigateNoteLink = useNoteLinkNavigation(note.path)
+  const navigateNoteLink = useNoteLinkNavigation()
 
   return (
     <li>

@@ -1,13 +1,9 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback } from 'react'
 import { createNoteWithTitle, dailyPath, resolveWikiTarget } from '@reflect/core'
 import { useNoteLinkNavigation } from '@/hooks/use-note-link-navigation'
 import { isIsoDate } from '@/lib/dates'
-import {
-  beginLinkNavigationIntent,
-  isCurrentLinkNavigationIntent,
-} from '@/lib/windows/link-navigation-intent'
+import { useLinkIntentGuard } from '@/lib/windows/use-link-intent-guard'
 import { routeForPath, type NoteRoute } from '@/routing/route'
-import { useNavigationRevision } from '@/routing/router'
 
 /**
  * Navigation for a clicked `[[wiki link]]`: resolve via the index, then open
@@ -23,10 +19,10 @@ import { useNavigationRevision } from '@/routing/router'
  * the modifier never makes a link do nothing. Keyboard follows (Mod-Enter)
  * deliberately stay in-window: their modifier is held by definition.
  *
- * Resolution is async, and the host pane can unmount while it's in flight
- * (route change, graph switch) — a late navigate would yank the user somewhere
- * they've already left, so the hook guards every navigation on its own
- * lifetime.
+ * Resolution is async, and the host pane can unmount or the user can act
+ * again while it's in flight — a late navigate would yank the user somewhere
+ * they've already left, so every navigation is gated on the shared link
+ * intent ({@link useLinkIntentGuard}).
  *
  * @param generation the open graph's write generation (`GraphInfo.generation`),
  *   or `null` when no graph is writable.
@@ -37,24 +33,11 @@ export function useWikiLinkNavigation(
   generation: number | null,
 ): (target: string, event?: MouseEvent | KeyboardEvent) => void {
   const navigateNoteLink = useNoteLinkNavigation()
-  const navigationRevision = useNavigationRevision()
-
-  const unmountedRef = useRef(false)
-  useEffect(() => {
-    unmountedRef.current = false
-    return () => {
-      unmountedRef.current = true
-    }
-  }, [])
+  const beginLinkIntent = useLinkIntentGuard()
 
   return useCallback(
     (target: string, event?: MouseEvent | KeyboardEvent) => {
-      const intent = beginLinkNavigationIntent()
-      const startedAtRevision = navigationRevision?.() ?? null
-      const isStale = (): boolean =>
-        unmountedRef.current ||
-        !isCurrentLinkNavigationIntent(intent) ||
-        (navigationRevision !== null && navigationRevision() !== startedAtRevision)
+      const isStale = beginLinkIntent()
       const open = (route: NoteRoute): void => {
         navigateNoteLink(route, event)
       }
@@ -83,6 +66,6 @@ export function useWikiLinkNavigation(
         }
       })()
     },
-    [generation, navigateNoteLink, navigationRevision],
+    [beginLinkIntent, generation, navigateNoteLink],
   )
 }

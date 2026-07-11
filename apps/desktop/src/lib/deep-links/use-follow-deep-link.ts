@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useCallback } from 'react'
 import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { parseDeepLink } from '@/lib/deep-links/parse'
 import {
@@ -6,11 +6,7 @@ import {
   openDeepLinkInNewWindow,
   type NewWindowClickEvent,
 } from '@/lib/windows/open-in-new-window'
-import {
-  beginLinkNavigationIntent,
-  isCurrentLinkNavigationIntent,
-} from '@/lib/windows/link-navigation-intent'
-import { useNavigationRevision } from '@/routing/router'
+import { useLinkIntentGuard } from '@/lib/windows/use-link-intent-guard'
 
 /** Follow one in-app `reflect://` link. */
 export type FollowDeepLink = (href: string, event?: NewWindowClickEvent) => void
@@ -18,24 +14,11 @@ export type FollowDeepLink = (href: string, event?: NewWindowClickEvent) => void
 /**
  * Follow an in-app deep link, applying the note-link modifier convention to
  * address-like links while leaving capture links as writes in this window.
- * A failed window open falls back only while its host and router intent are
- * still current.
+ * A failed window open falls back only while the shared link intent
+ * ({@link useLinkIntentGuard}) is still current.
  */
 export function useFollowDeepLink(): FollowDeepLink {
-  const navigationRevision = useNavigationRevision()
-  const navigationRevisionRef = useRef(navigationRevision)
-  const mountedRef = useRef(false)
-
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
-
-  useLayoutEffect(() => {
-    navigationRevisionRef.current = navigationRevision
-  }, [navigationRevision])
+  const beginLinkIntent = useLinkIntentGuard()
 
   return useCallback(
     (href, event) => {
@@ -47,27 +30,19 @@ export function useFollowDeepLink(): FollowDeepLink {
         return
       }
 
-      const intent = beginLinkNavigationIntent()
+      const isStale = beginLinkIntent()
       if (!isNewWindowClick(event)) {
         dispatchDeepLink(href)
         return
       }
 
-      const revision = navigationRevisionRef.current
-      const startedAtRevision = revision?.() ?? null
       void openDeepLinkInNewWindow(href).then((opened) => {
-        if (
-          opened ||
-          !mountedRef.current ||
-          !isCurrentLinkNavigationIntent(intent) ||
-          navigationRevisionRef.current !== revision ||
-          (revision !== null && revision() !== startedAtRevision)
-        ) {
+        if (opened || isStale()) {
           return
         }
         dispatchDeepLink(href)
       })
     },
-    [],
+    [beginLinkIntent],
   )
 }
