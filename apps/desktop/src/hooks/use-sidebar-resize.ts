@@ -144,15 +144,22 @@ export function useSidebarResize(panel: ResizableSidebarPanel): SidebarResize {
       } catch {
         // Synthetic tests do not have a live pointer to capture.
       }
+      // Rebase on the aside's rendered width, not the persisted one: the
+      // shell's viewport cap (`max-w-[40vw]`) can render the rail narrower
+      // than the setting, and seeding from the setting would leave the
+      // divider lagging the pointer by the difference. Layoutless test
+      // environments measure zero and fall back to the setting.
+      const rendered = event.currentTarget.parentElement?.getBoundingClientRect().width
+      const startWidth = rendered ? clampSidebarWidth(range, rendered) : settingsWidth
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
-        startWidth: settingsWidth,
+        startWidth,
       }
-      setDragWidth(settingsWidth)
+      setDragWidth(startWidth)
       setDragChrome(true)
     },
-    [settingsWidth],
+    [range, settingsWidth],
   )
 
   const onPointerMove = useCallback(

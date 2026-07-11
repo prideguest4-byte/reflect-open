@@ -98,6 +98,24 @@ describe('SidebarResizeHandle', () => {
     expect(rootVariable('--sidebar-width')).toBe('')
   })
 
+  it('rebases the drag on the rendered width when the rail is capped narrower', () => {
+    const handle = renderHandle('workspace')
+    settingsState.settings.sidebarWidth = 480
+    const aside = handle.parentElement
+    if (aside === null) {
+      throw new Error('handle parent missing')
+    }
+    // A narrow window: the 40vw cap renders the 480px setting at 400px.
+    vi.spyOn(aside, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 800))
+
+    firePointer(handle, 'pointerdown', { pointerId: 7, button: 0, clientX: 400 })
+    firePointer(handle, 'pointermove', { pointerId: 7, clientX: 420 })
+    expect(rootVariable('--sidebar-width')).toBe('420px')
+
+    firePointer(handle, 'pointerup', { pointerId: 7, clientX: 420 })
+    expect(settingsState.updateSettings).toHaveBeenCalledWith({ sidebarWidth: 420 })
+  })
+
   it('reverts an unmount-interrupted drag to the persisted width', () => {
     const handle = renderHandle('workspace')
 
