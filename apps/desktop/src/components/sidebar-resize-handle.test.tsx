@@ -98,6 +98,20 @@ describe('SidebarResizeHandle', () => {
     expect(rootVariable('--sidebar-width')).toBe('')
   })
 
+  it('reverts an unmount-interrupted drag to the persisted width', () => {
+    const handle = renderHandle('workspace')
+
+    firePointer(handle, 'pointerdown', { pointerId: 7, button: 0, clientX: 300 })
+    firePointer(handle, 'pointermove', { pointerId: 7, clientX: 380 })
+    expect(rootVariable('--sidebar-width')).toBe('340px')
+
+    cleanup()
+
+    expect(settingsState.updateSettings).not.toHaveBeenCalled()
+    expect(rootVariable('--sidebar-width')).toBe('260px')
+    expect(rootVariable('cursor')).toBe('')
+  })
+
   it('resets to the default width on double-click', () => {
     settingsState.settings.sidebarWidth = 333
     const handle = renderHandle('workspace')

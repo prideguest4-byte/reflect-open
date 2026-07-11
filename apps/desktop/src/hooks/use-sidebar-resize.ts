@@ -101,6 +101,12 @@ export function useSidebarResize(panel: ResizableSidebarPanel): SidebarResize {
   const dragRef = useRef<DragState | null>(null)
   const [dragWidth, setDragWidth] = useState<number | null>(null)
 
+  // The persisted width, readable from the unmount cleanup below.
+  const settingsWidthRef = useRef(settingsWidth)
+  useEffect(() => {
+    settingsWidthRef.current = settingsWidth
+  }, [settingsWidth])
+
   const applyWidth = useCallback(
     (width: number): void => {
       document.documentElement.style.setProperty(cssVariable, `${width}px`)
@@ -213,15 +219,19 @@ export function useSidebarResize(panel: ResizableSidebarPanel): SidebarResize {
     [side, range, settingsWidth, applyWidth, commitWidth],
   )
 
-  // A drag interrupted by unmount (sidebar collapsed mid-drag) must not leave
-  // the app-wide cursor and selection overrides behind.
+  // A drag interrupted by unmount (sidebar collapsed mid-drag, context route
+  // left) never commits, so it must not leave anything behind: the app-wide
+  // cursor and selection overrides come off, and the CSS variable reverts to
+  // the persisted width — otherwise the rail would reopen at the abandoned
+  // in-drag value until the next settings change.
   useEffect(() => {
     return () => {
       if (dragRef.current !== null) {
         setDragChrome(false)
+        applyWidth(settingsWidthRef.current)
       }
     }
-  }, [])
+  }, [applyWidth])
 
   return {
     width: dragWidth ?? settingsWidth,
