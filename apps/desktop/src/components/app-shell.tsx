@@ -1,4 +1,5 @@
 import type { ReactElement, ReactNode } from 'react'
+import { SidebarResizeHandle } from '@/components/sidebar-resize-handle'
 import { cn } from '@/lib/utils'
 
 interface AppShellProps {
@@ -15,9 +16,13 @@ interface AppShellProps {
  * The application frame, in the original app's shape: a sunken sidebar beside
  * the raised note pane, no header bar — the document is the chrome. Layout
  * and landmark regions only; what fills the slots (and whether the sidebar
- * shows at all) is the workspace's business. The frame never scrolls: every
- * route mounts its own scroll container, so the center region clips instead
- * of growing a second scrollbar around a route's own.
+ * shows at all) is the workspace's business. Each aside carries a resize
+ * handle on its inner edge; the widths come from the `--sidebar-width` /
+ * `--context-sidebar-width` root variables (persisted via settings, applied
+ * by `SidebarWidthEffect`), capped so neither rail can crush the note pane on
+ * a small window. The frame never scrolls: every route mounts its own scroll
+ * container, so the center region clips instead of growing a second scrollbar
+ * around a route's own.
  */
 export function AppShell({ sidebar, context, children, className }: AppShellProps): ReactElement {
   return (
@@ -30,9 +35,10 @@ export function AppShell({ sidebar, context, children, className }: AppShellProp
       {sidebar ? (
         <aside
           aria-label="Workspace"
-          className="flex w-[var(--sidebar-width)] shrink-0 flex-col overflow-hidden border-r border-border bg-surface-sunken"
+          className="relative flex w-[var(--sidebar-width)] max-w-[40vw] shrink-0 flex-col overflow-hidden border-r border-border bg-surface-sunken"
         >
           {sidebar}
+          <SidebarResizeHandle panel="workspace" />
         </aside>
       ) : null}
 
@@ -41,9 +47,10 @@ export function AppShell({ sidebar, context, children, className }: AppShellProp
       {context ? (
         <aside
           aria-label="Context"
-          className="hidden w-80 shrink-0 overflow-auto border-l border-border bg-surface-sunken lg:block"
+          className="relative hidden w-[var(--context-sidebar-width)] max-w-[40vw] shrink-0 border-l border-border bg-surface-sunken lg:block"
         >
-          {context}
+          <div className="h-full overflow-auto">{context}</div>
+          <SidebarResizeHandle panel="context" />
         </aside>
       ) : null}
     </div>

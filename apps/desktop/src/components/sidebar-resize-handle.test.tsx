@@ -1,0 +1,155 @@
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { SidebarResizeHandle } from './sidebar-resize-handle'
+
+const settingsState = vi.hoisted(() => ({
+  settings: { sidebarWidth: 260, contextSidebarWidth: 320 },
+  updateSettings: vi.fn(),
+}))
+
+vi.mock('@/providers/settings-provider', () => ({
+  useSettings: () => settingsState,
+}))
+
+function rootVariable(name: string): string {
+  return document.documentElement.style.getPropertyValue(name)
+}
+
+function firePointer(element: Element, type: string, init: Record<string, unknown>): void {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.assign(event, init)
+  act(() => {
+    element.dispatchEvent(event)
+  })
+}
+
+function renderHandle(panel: 'workspace' | 'context'): HTMLElement {
+  render(<SidebarResizeHandle panel={panel} />)
+  return screen.getByRole('separator')
+}
+
+afterEach(() => {
+  cleanup()
+  const style = document.documentElement.style
+  for (const property of [
+    '--sidebar-width',
+    '--context-sidebar-width',
+    'cursor',
+    'user-select',
+    '-webkit-user-select',
+  ]) {
+    style.removeProperty(property)
+  }
+  settingsState.settings = { sidebarWidth: 260, contextSidebarWidth: 320 }
+  settingsState.updateSettings.mockReset()
+})
+
+describe('SidebarResizeHandle', () => {
+  it('drags the workspace sidebar wider and commits once on release', () => {
+    const handle = renderHandle('workspace')
+
+    firePointer(handle, 'pointerdown', { pointerId: 7, button: 0, clientX: 300 })
+    expect(rootVariable('cursor')).toBe('col-resize')
+
+    firePointer(handle, 'pointermove', { pointerId: 7, clientX: 380 })
+    expect(rootVariable('--sidebar-width')).toBe('340px')
+    expect(handle.getAttribute('aria-valuenow')).toBe('340')
+    expect(settingsState.updateSettings).not.toHaveBeenCalled()
+
+    firePointer(handle, 'pointerup', { pointerId: 7, clientX: 380 })
+    expect(settingsState.updateSettings).toHaveBeenCalledTimes(1)
+    expect(settingsState.updateSettings).toHaveBeenCalledWith({ sidebarWidth: 340 })
+    expect(rootVariable('--sidebar-width')).toBe('340px')
+    expect(rootVariable('cursor')).toBe('')
+  })
+
+  it('clamps a drag past the range to its bounds', () => {
+    const handle = renderHandle('workspace')
+
+    firePointer(handle, 'pointerdown', { pointerId: 7, button: 0, clientX: 300 })
+    firePointer(handle, 'pointermove', { pointerId: 7, clientX: 1200 })
+    expect(rootVariable('--sidebar-width')).toBe('480px')
+
+    firePointer(handle, 'pointermove', { pointerId: 7, clientX: -1200 })
+    firePointer(handle, 'pointerup', { pointerId: 7, clientX: -1200 })
+    expect(settingsState.updateSettings).toHaveBeenCalledWith({ sidebarWidth: 200 })
+  })
+
+  it('widens the context panel when dragged leftward', () => {
+    const handle = renderHandle('context')
+
+    firePointer(handle, 'pointerdown', { pointerId: 3, button: 0, clientX: 700 })
+    firePointer(handle, 'pointermove', { pointerId: 3, clientX: 640 })
+    expect(rootVariable('--context-sidebar-width')).toBe('380px')
+
+    firePointer(handle, 'pointerup', { pointerId: 3, clientX: 640 })
+    expect(settingsState.updateSettings).toHaveBeenCalledWith({ contextSidebarWidth: 380 })
+  })
+
+  it('ignores secondary-button presses and foreign pointer ids', () => {
+    const handle = renderHandle('workspace')
+
+    firePointer(handle, 'pointerdown', { pointerId: 7, button: 2, clientX: 300 })
+    firePointer(handle, 'pointermove', { pointerId: 7, clientX: 380 })
+    expect(rootVariable('--sidebar-width')).toBe('')
+
+    firePointer(handle, 'pointerdown', { pointerId: 7, button: 0, clientX: 300 })
+    firePointer(handle, 'pointermove', { pointerId: 8, clientX: 380 })
+    expect(rootVariable('--sidebar-width')).toBe('')
+  })
+
+  it('resets to the default width on double-click', () => {
+    settingsState.settings.sidebarWidth = 333
+    const handle = renderHandle('workspace')
+
+    fireEvent.doubleClick(handle)
+
+    expect(settingsState.updateSettings).toHaveBeenCalledWith({ sidebarWidth: 260 })
+    expect(rootVariable('--sidebar-width')).toBe('260px')
+  })
+
+  it('moves the divider with arrow keys, following separator semantics', () => {
+    const workspaceHandle = renderHandle('workspace')
+
+    fireEvent.keyDown(workspaceHandle, { key: 'ArrowRight' })
+    expect(settingsState.updateSettings).toHaveBeenCalledWith({ sidebarWidth: 276 })
+
+    // The mocked provider never re-renders, so each keystroke steps from the
+    // same 260px base.
+    fireEvent.keyDown(workspaceHandle, { key: 'ArrowLeft' })
+    expect(settingsState.updateSettings).toHaveBeenLastCalledWith({ sidebarWidth: 244 })
+
+    cleanup()
+    const contextHandle = renderHandle('context')
+
+    // For the right panel, moving the divider left widens it.
+    fireEvent.keyDown(contextHandle, { key: 'ArrowLeft' })
+    expect(settingsState.updateSettings).toHaveBeenLastCalledWith({ contextSidebarWidth: 336 })
+  })
+
+  it('jumps to the range bounds with Home and End', () => {
+    const workspaceHandle = renderHandle('workspace')
+
+    fireEvent.keyDown(workspaceHandle, { key: 'Home' })
+    expect(settingsState.updateSettings).toHaveBeenLastCalledWith({ sidebarWidth: 200 })
+
+    fireEvent.keyDown(workspaceHandle, { key: 'End' })
+    expect(settingsState.updateSettings).toHaveBeenLastCalledWith({ sidebarWidth: 480 })
+
+    cleanup()
+    const contextHandle = renderHandle('context')
+
+    // The divider's leftmost position is the right panel's maximum width.
+    fireEvent.keyDown(contextHandle, { key: 'Home' })
+    expect(settingsState.updateSettings).toHaveBeenLastCalledWith({ contextSidebarWidth: 480 })
+  })
+
+  it('exposes the clamp range through the separator value attributes', () => {
+    const handle = renderHandle('workspace')
+
+    expect(handle.getAttribute('aria-orientation')).toBe('vertical')
+    expect(handle.getAttribute('aria-valuemin')).toBe('200')
+    expect(handle.getAttribute('aria-valuemax')).toBe('480')
+    expect(handle.getAttribute('aria-valuenow')).toBe('260')
+  })
+})
