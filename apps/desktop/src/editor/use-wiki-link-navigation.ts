@@ -1,19 +1,24 @@
 import { useCallback } from 'react'
-import { resolveOrCreateNoteWithTitle, resolveWikiTarget } from '@reflect/core'
+import {
+  errorMessage,
+  normalizeWikiTarget,
+  resolveOrCreateNoteWithTitle,
+  resolveWikiTarget,
+} from '@reflect/core'
 import { reportAmbiguousNoteTitle } from '@/editor/ambiguous-note-feedback'
 import { useNoteLinkNavigation } from '@/hooks/use-note-link-navigation'
-import { isIsoDate } from '@/lib/dates'
+import { startOperation } from '@/lib/operations'
 import { useLinkIntentGuard } from '@/lib/windows/use-link-intent-guard'
 import { routeForPath, type NoteRoute } from '@/routing/route'
 
 /**
- * Navigation for a clicked `[[wiki link]]`: resolve via the index, then open
- * the target. An unresolved ISO date is still a valid daily target (created
- * lazily on first write). An unresolved non-empty title is rechecked against
- * the index and its on-disk slug family before it can be created and opened —
- * Plan 07's create-from-unresolved with a guard for a lagging device index and
- * title/path mismatch. With no graph generation available, unresolved titles
- * are a no-op (nothing can be written).
+ * Navigation for a clicked `[[wiki link]]`. Calendar-valid ISO dates preserve
+ * ordinary resolution precedence, then open their lazy daily route on a miss.
+ * Every other writable title goes through the ambiguity-preserving index +
+ * disk resolver before it opens or creates, so an indexed duplicate cannot
+ * bypass the same guard used for an index miss. With no graph generation
+ * available, existing titles still use the read-only index resolver and
+ * unresolved titles are a no-op.
  *
  * A ⌘-click (the originating `event`, when the caller passes it) opens the
  * resolved target in a secondary note window instead — falling back to
@@ -45,31 +50,48 @@ export function useWikiLinkNavigation(
       }
       void (async () => {
         try {
-          const resolution = await resolveWikiTarget(target)
-          if (isStale()) {
+          const normalized = normalizeWikiTarget(target)
+          if (normalized.raw === '') {
             return
           }
-          if (resolution.kind === 'resolved') {
-            const route = routeForPath(resolution.ref)
-            // Deliberately no focus request: on mobile, focusing mid-arrival
-            // raises the keyboard through the stack animation. Desktop
-            // autofocuses note arrivals on its own.
-            open(route)
-          } else if (isIsoDate(resolution.text)) {
-            open({ kind: 'daily', date: resolution.text })
-          } else if (generation !== null && resolution.text.trim() !== '') {
-            const outcome = await resolveOrCreateNoteWithTitle(resolution.text, generation)
+          if (normalized.date !== undefined) {
+            const resolution = await resolveWikiTarget(normalized.raw)
+            if (isStale()) {
+              return
+            }
+            open(
+              resolution.kind === 'resolved'
+                ? routeForPath(resolution.ref)
+                : { kind: 'daily', date: normalized.date },
+            )
+            return
+          }
+          if (generation !== null) {
+            const outcome = await resolveOrCreateNoteWithTitle(normalized.raw, generation)
             if (isStale()) {
               return
             }
             if (outcome.kind === 'ambiguous') {
-              reportAmbiguousNoteTitle('Opening link', resolution.text)
+              reportAmbiguousNoteTitle('Opening link', normalized.raw)
             } else {
-              open({ kind: 'note', path: outcome.path })
+              open(routeForPath(outcome.path))
             }
+            return
+          }
+
+          const resolution = await resolveWikiTarget(normalized.raw)
+          if (isStale()) {
+            return
+          }
+          if (resolution.kind === 'resolved') {
+            // Deliberately no focus request: on mobile, focusing mid-arrival
+            // raises the keyboard through the stack animation. Desktop
+            // autofocuses note arrivals on its own.
+            open(routeForPath(resolution.ref))
           }
         } catch (err) {
           console.error('wiki-link resolution failed:', err)
+          startOperation('Opening link').fail(errorMessage(err))
         }
       })()
     },

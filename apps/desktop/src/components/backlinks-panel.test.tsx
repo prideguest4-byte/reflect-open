@@ -7,13 +7,13 @@ import { RouterProvider, useRouter } from '@/routing/router'
 import { BacklinksPanel } from './backlinks-panel'
 
 const getBacklinksWithContext = vi.hoisted(() => vi.fn())
-const resolveWikiTarget = vi.hoisted(() => vi.fn())
+const resolveOrCreateNoteWithTitle = vi.hoisted(() => vi.fn())
 const openRouteInNewWindow = vi.hoisted(() => vi.fn<() => Promise<boolean>>())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   getBacklinksWithContext,
-  resolveWikiTarget,
+  resolveOrCreateNoteWithTitle,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
@@ -47,7 +47,7 @@ function renderPanel(path: string) {
 beforeEach(() => {
   window.sessionStorage.clear()
   getBacklinksWithContext.mockReset()
-  resolveWikiTarget.mockReset()
+  resolveOrCreateNoteWithTitle.mockReset()
   openRouteInNewWindow.mockReset().mockResolvedValue(true)
 })
 
@@ -93,7 +93,10 @@ describe('BacklinksPanel', () => {
         tasks: [],
       },
     ])
-    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/roadmap.md' })
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'resolved',
+      path: 'notes/roadmap.md',
+    })
     const view = renderPanel('notes/source.md')
 
     // The [[Roadmap]] source renders as a chip whose label is the bare target,

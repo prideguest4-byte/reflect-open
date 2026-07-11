@@ -1,5 +1,5 @@
 import { ulid } from 'ulidx'
-import { resolveWikiTarget } from '../indexing/queries'
+import { findExactWikiTargetMatches } from '../indexing/queries'
 import { foldFallbackTitleKey, foldKey } from '../markdown/keys'
 import { parseNote } from '../markdown/extract'
 import { upsertFrontmatter } from '../markdown/frontmatter'
@@ -101,8 +101,10 @@ export type ResolveOrCreateNoteResult =
 type ExistingTitleResolution = Exclude<ResolveOrCreateNoteResult, { kind: 'created' }>
 
 interface DiskTitleMatch {
-  exactPaths: string[]
-  fallbackPaths: string[]
+  exactTitlePaths: string[]
+  exactAliasPaths: string[]
+  fallbackTitlePaths: string[]
+  fallbackAliasPaths: string[]
   unreadablePaths: string[]
 }
 
@@ -140,8 +142,10 @@ async function matchTitleOnDisk(title: string, generation: number): Promise<Disk
     .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0))
   const targetKey = foldKey(title)
   const fallbackKey = foldFallbackTitleKey(title)
-  const exactPaths: string[] = []
-  const fallbackPaths: string[] = []
+  const exactTitlePaths: string[] = []
+  const exactAliasPaths: string[] = []
+  const fallbackTitlePaths: string[] = []
+  const fallbackAliasPaths: string[] = []
   const unreadablePaths: string[] = []
 
   for (const candidate of candidates) {
@@ -159,50 +163,84 @@ async function matchTitleOnDisk(title: string, generation: number): Promise<Disk
       continue
     }
     const parsed = parseNote({ path: candidate.path, source })
-    const spellings = [
-      parsed.title,
-      ...parsed.frontmatter.aliases,
-      ...subjectAliases(parsed.title),
-    ]
-    if (spellings.some((spelling) => foldKey(spelling) === targetKey)) {
-      exactPaths.push(candidate.path)
+    const aliases = [...parsed.frontmatter.aliases, ...subjectAliases(parsed.title)]
+    if (foldKey(parsed.title) === targetKey) {
+      exactTitlePaths.push(candidate.path)
+      continue
+    }
+    if (aliases.some((alias) => foldKey(alias) === targetKey)) {
+      exactAliasPaths.push(candidate.path)
+      continue
+    }
+    if (fallbackKey !== '' && foldFallbackTitleKey(parsed.title) === fallbackKey) {
+      fallbackTitlePaths.push(candidate.path)
       continue
     }
     if (
       fallbackKey !== '' &&
-      spellings.some((spelling) => foldFallbackTitleKey(spelling) === fallbackKey)
+      aliases.some((alias) => foldFallbackTitleKey(alias) === fallbackKey)
     ) {
-      fallbackPaths.push(candidate.path)
+      fallbackAliasPaths.push(candidate.path)
     }
   }
 
-  return { exactPaths, fallbackPaths, unreadablePaths }
+  return {
+    exactTitlePaths,
+    exactAliasPaths,
+    fallbackTitlePaths,
+    fallbackAliasPaths,
+    unreadablePaths,
+  }
 }
 
-async function indexedPathForTitle(title: string): Promise<string | null> {
-  const resolution = await resolveWikiTarget(title)
-  return resolution.kind === 'resolved' ? resolution.ref : null
+function resolutionForPaths(paths: readonly string[]): ExistingTitleResolution | null {
+  if (paths.length === 1) {
+    return { kind: 'resolved', path: paths[0]! }
+  }
+  if (paths.length > 1) {
+    return { kind: 'ambiguous', paths: [...paths].sort() }
+  }
+  return null
+}
+
+async function indexedTargetResolution(
+  title: string,
+): Promise<ExistingTitleResolution | null> {
+  const match = await findExactWikiTargetMatches(title)
+  return resolutionForPaths(match.paths)
 }
 
 function diskTitleResolution(disk: DiskTitleMatch): ExistingTitleResolution | null {
-  if (disk.exactPaths.length === 1) {
-    return { kind: 'resolved', path: disk.exactPaths[0]! }
-  }
-  // Several files claiming the identical title/alias (the historic duplicate
-  // bug's own output) is a guess too: sorted-first would even prefer the
-  // `-2.md` dupe over the original (`-` sorts before `.`). Refuse, same as an
-  // ambiguous fallback.
-  if (disk.exactPaths.length > 1) {
-    return { kind: 'ambiguous', paths: [...disk.exactPaths].sort() }
-  }
-  if (disk.unreadablePaths.length > 0 || disk.fallbackPaths.length > 1) {
+  // An unreadable candidate could claim any higher-precedence spelling. Do
+  // not choose a readable sibling until the whole collision family is known.
+  if (disk.unreadablePaths.length > 0) {
     return {
       kind: 'ambiguous',
-      paths: [...disk.fallbackPaths, ...disk.unreadablePaths].sort(),
+      paths: [
+        ...new Set([
+          ...disk.exactTitlePaths,
+          ...disk.exactAliasPaths,
+          ...disk.fallbackTitlePaths,
+          ...disk.fallbackAliasPaths,
+          ...disk.unreadablePaths,
+        ]),
+      ].sort(),
     }
   }
-  if (disk.fallbackPaths.length === 1) {
-    return { kind: 'resolved', path: disk.fallbackPaths[0]! }
+
+  // Mirror indexed wiki resolution: an exact title outranks an exact alias.
+  // Only after both exact tiers miss do the conservative fallback tiers run,
+  // again preferring a title to an alias.
+  for (const paths of [
+    disk.exactTitlePaths,
+    disk.exactAliasPaths,
+    disk.fallbackTitlePaths,
+    disk.fallbackAliasPaths,
+  ]) {
+    const resolution = resolutionForPaths(paths)
+    if (resolution !== null) {
+      return resolution
+    }
   }
   return null
 }
@@ -211,21 +249,22 @@ function diskTitleResolution(disk: DiskTitleMatch): ExistingTitleResolution | nu
  * Resolve a wiki-link title while guarding its title-derived creation path
  * against a stale per-device index.
  *
- * Exact index resolution always wins. On a miss, the title's on-disk slug
- * family is parsed for exact title/alias matches and then for the conservative
- * leading-emoji fallback. Either tier is accepted only when exactly one file
- * claims it; multiple (or unreadable) candidates are ambiguous and no file is
- * written. The index is queried once more immediately before creation. The
- * native path claim is atomic and no-clobber; if it loses to a concurrent sync
- * checkout or creator, the winner is resolved before trying a suffix.
+ * A unique exact index match wins; multiple indexed claims are ambiguous. On
+ * a miss, the title's on-disk slug family is parsed with the same precedence
+ * (title before alias), then the conservative leading-emoji fallback. A tier is
+ * accepted only when exactly one file claims it; multiple or unreadable
+ * candidates are ambiguous and no file is written. The index is queried once
+ * more immediately before creation. The native path claim is atomic and
+ * no-clobber; if it loses to a concurrent sync checkout or creator, the winner
+ * is resolved before trying a suffix.
  */
 export async function resolveOrCreateNoteWithTitle(
   title: string,
   generation: number,
 ): Promise<ResolveOrCreateNoteResult> {
-  const indexed = await indexedPathForTitle(title)
+  const indexed = await indexedTargetResolution(title)
   if (indexed !== null) {
-    return { kind: 'resolved', path: indexed }
+    return indexed
   }
 
   const diskResolution = diskTitleResolution(await matchTitleOnDisk(title, generation))
@@ -233,9 +272,9 @@ export async function resolveOrCreateNoteWithTitle(
     return diskResolution
   }
 
-  const reResolved = await indexedPathForTitle(title)
+  const reResolved = await indexedTargetResolution(title)
   if (reResolved !== null) {
-    return { kind: 'resolved', path: reResolved }
+    return reResolved
   }
 
   const slug = slugForTitle(title)
@@ -249,9 +288,9 @@ export async function resolveOrCreateNoteWithTitle(
 
     // The claim lost after our checks. Re-resolve both projections before
     // considering a suffix: the winner may be the note this link meant.
-    const collisionIndex = await indexedPathForTitle(title)
+    const collisionIndex = await indexedTargetResolution(title)
     if (collisionIndex !== null) {
-      return { kind: 'resolved', path: collisionIndex }
+      return collisionIndex
     }
     const collisionDisk = diskTitleResolution(await matchTitleOnDisk(title, generation))
     if (collisionDisk !== null) {

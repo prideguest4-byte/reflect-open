@@ -19,6 +19,8 @@ interface BridgeBehavior {
   files?: Record<string, string>
   /** Evicted files whose title cannot currently be inspected. */
   placeholders?: string[]
+  /** Listed files whose contents fail to read. */
+  readErrors?: string[]
   /** Optional exact control over an index query's result rows. */
   query?: (sql: string, params: unknown[]) => Array<Record<string, unknown>>
   /** Override an atomic create attempt (for collision-race tests). */
@@ -33,10 +35,12 @@ function bindBridge({
   occupied = [],
   files = {},
   placeholders = [],
+  readErrors = [],
   query,
   create,
 }: BridgeBehavior = {}): ReturnType<typeof vi.fn> {
-  const taken = new Set([...occupied, ...Object.keys(files), ...placeholders])
+  const taken = new Set([...occupied, ...Object.keys(files), ...placeholders, ...readErrors])
+  const unreadable = new Set(readErrors)
   const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
     if (command === 'db_query') {
       const sql = String(args?.['sql'] ?? '')
@@ -61,10 +65,14 @@ function bindBridge({
           modifiedMs: 1,
           placeholder: true,
         })),
+        ...readErrors.map((path) => ({ path, size: 1, modifiedMs: 1 })),
       ]
     }
     if (command === 'note_read') {
       const path = String(args?.['path'])
+      if (unreadable.has(path)) {
+        throw { kind: 'io', message: `${path} is temporarily unreadable` }
+      }
       const source = files[path]
       if (source === undefined) {
         throw { kind: 'notFound', message: `${path} not found` }
@@ -155,6 +163,92 @@ describe('resolveOrCreateNoteWithTitle', () => {
     expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
   })
 
+  it('preserves indexed daily-date precedence over a regular title', async () => {
+    const invoke = bindBridge({
+      query: (sql) => {
+        if (sql.includes('"daily_date" = ?')) {
+          return [{ path: 'daily/2026-06-09.md' }]
+        }
+        if (sql.includes('"title_key" = ?')) {
+          return [{ path: 'notes/date-title.md' }]
+        }
+        return []
+      },
+    })
+
+    await expect(resolveOrCreateNoteWithTitle('2026-06-09', 7)).resolves.toEqual({
+      kind: 'resolved',
+      path: 'daily/2026-06-09.md',
+    })
+    expect(
+      invoke.mock.calls.some(
+        ([command, args]) =>
+          command === 'db_query' && String(args?.['sql']).includes('"title_key" = ?'),
+      ),
+    ).toBe(false)
+  })
+
+  it('refuses multiple indexed notes claiming the same exact title', async () => {
+    const invoke = bindBridge({
+      query: (sql, params) =>
+        sql.includes('"title_key" = ?') && params[0] === 'business ideas'
+          ? [{ path: 'notes/business-ideas-2.md' }, { path: 'notes/business-ideas.md' }]
+          : [],
+    })
+
+    await expect(resolveOrCreateNoteWithTitle('Business ideas', 7)).resolves.toEqual({
+      kind: 'ambiguous',
+      paths: ['notes/business-ideas-2.md', 'notes/business-ideas.md'],
+    })
+    expect(invoke.mock.calls.some(([command]) => command === 'list_files')).toBe(false)
+    expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
+  })
+
+  it('prefers indexed title matches over aliases', async () => {
+    const titleInvoke = bindBridge({
+      query: (sql) => {
+        if (sql.includes('"title_key" = ?')) {
+          return [{ path: 'notes/titled.md' }]
+        }
+        if (sql.includes('from "aliases"')) {
+          return [
+            { note_path: 'notes/alias-a.md' },
+            { note_path: 'notes/alias-b.md' },
+          ]
+        }
+        return []
+      },
+    })
+
+    await expect(resolveOrCreateNoteWithTitle('Business ideas', 7)).resolves.toEqual({
+      kind: 'resolved',
+      path: 'notes/titled.md',
+    })
+    expect(
+      titleInvoke.mock.calls.some(
+        ([command, args]) =>
+          command === 'db_query' && String(args?.['sql']).includes('from "aliases"'),
+      ),
+    ).toBe(false)
+  })
+
+  it('refuses multiple indexed notes claiming the same exact alias', async () => {
+    const aliasInvoke = bindBridge({
+      query: (sql) =>
+        sql.includes('from "aliases"')
+          ? [
+              { note_path: 'notes/alias-b.md' },
+              { note_path: 'notes/alias-a.md' },
+            ]
+          : [],
+    })
+    await expect(resolveOrCreateNoteWithTitle('Business ideas', 7)).resolves.toEqual({
+      kind: 'ambiguous',
+      paths: ['notes/alias-a.md', 'notes/alias-b.md'],
+    })
+    expect(aliasInvoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
+  })
+
   it('reuses an exact title or alias from the on-disk slug family', async () => {
     const invoke = bindBridge({
       files: {
@@ -170,10 +264,42 @@ describe('resolveOrCreateNoteWithTitle', () => {
     expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
   })
 
+  it('prefers an exact on-disk title over an exact alias', async () => {
+    const invoke = bindBridge({
+      files: {
+        'notes/business-ideas.md': '# Business ideas\n',
+        'notes/business-ideas-2.md':
+          '---\naliases: [Business ideas]\n---\n# Incubator\n',
+      },
+    })
+
+    await expect(resolveOrCreateNoteWithTitle('Business ideas', 7)).resolves.toEqual({
+      kind: 'resolved',
+      path: 'notes/business-ideas.md',
+    })
+    expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
+  })
+
   it('reuses exactly one leading-emoji fallback match', async () => {
     const invoke = bindBridge({
       files: {
         'notes/business-ideas.md': '# 🧠Business ideas\n',
+      },
+    })
+
+    await expect(resolveOrCreateNoteWithTitle('Business ideas', 7)).resolves.toEqual({
+      kind: 'resolved',
+      path: 'notes/business-ideas.md',
+    })
+    expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
+  })
+
+  it('prefers an on-disk fallback title over a fallback alias', async () => {
+    const invoke = bindBridge({
+      files: {
+        'notes/business-ideas.md': '# 🧠 Business ideas\n',
+        'notes/business-ideas-2.md':
+          '---\naliases: ["💡 Business ideas"]\n---\n# Incubator\n',
       },
     })
 
@@ -232,6 +358,28 @@ describe('resolveOrCreateNoteWithTitle', () => {
         'notes/business-ideas-3.md',
         'notes/business-ideas.md',
       ],
+    })
+    expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
+  })
+
+  it.each([
+    {
+      label: 'eviction placeholder',
+      unavailable: { placeholders: ['notes/business-ideas-2.md'] },
+    },
+    {
+      label: 'read failure',
+      unavailable: { readErrors: ['notes/business-ideas-2.md'] },
+    },
+  ])('refuses an exact disk match beside an unreadable $label', async ({ unavailable }) => {
+    const invoke = bindBridge({
+      files: { 'notes/business-ideas.md': '# Business ideas\n' },
+      ...unavailable,
+    })
+
+    await expect(resolveOrCreateNoteWithTitle('Business ideas', 7)).resolves.toEqual({
+      kind: 'ambiguous',
+      paths: ['notes/business-ideas-2.md', 'notes/business-ideas.md'],
     })
     expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
   })

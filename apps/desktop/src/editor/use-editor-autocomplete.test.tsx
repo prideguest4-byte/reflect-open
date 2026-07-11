@@ -54,7 +54,22 @@ describe('useEditorAutocomplete', () => {
     )
     expect(startOperation).toHaveBeenCalledWith('Creating note')
     expect(operationFail).toHaveBeenCalledWith(
-      'Couldn’t safely choose one note matching “Business ideas”. Choose the intended note from autocomplete.',
+      'Couldn’t safely choose one note matching “Business ideas”. Rename conflicting notes or wait for unavailable notes to become available, then try again.',
     )
+  })
+
+  it('surfaces a failed background create instead of silently doing nothing', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    resolveOrCreateNoteWithTitle.mockRejectedValue(new Error('graph changed'))
+    const { result } = renderHook(() => useEditorAutocomplete())
+    const items = await result.current.onWikilinkSearch('Business ideas')
+
+    act(() => {
+      items[0]!.onSelect?.()
+    })
+
+    await waitFor(() => expect(operationFail).toHaveBeenCalledWith('graph changed'))
+    expect(startOperation).toHaveBeenCalledWith('Creating note')
+    consoleError.mockRestore()
   })
 })

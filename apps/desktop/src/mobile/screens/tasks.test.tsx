@@ -21,14 +21,14 @@ import { MobileTasks } from './tasks'
 
 const getOpenTasks = vi.hoisted(() => vi.fn())
 const getCompletedTasks = vi.hoisted(() => vi.fn())
-const resolveWikiTarget = vi.hoisted(() => vi.fn())
+const resolveOrCreateNoteWithTitle = vi.hoisted(() => vi.fn())
 const hapticImpactLight = vi.hoisted(() => vi.fn())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   getOpenTasks,
   getCompletedTasks,
-  resolveWikiTarget,
+  resolveOrCreateNoteWithTitle,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
@@ -213,8 +213,11 @@ beforeEach(() => {
   convertTaskToBullet.mockResolvedValue(undefined)
   startOperation.mockClear()
   fail.mockReset()
-  resolveWikiTarget.mockReset()
-  resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/other.md' })
+  resolveOrCreateNoteWithTitle.mockReset()
+  resolveOrCreateNoteWithTitle.mockResolvedValue({
+    kind: 'resolved',
+    path: 'notes/other.md',
+  })
   hapticImpactLight.mockClear()
   editorProbe.focusCalls = 0
   resetRecentlyCompleted()

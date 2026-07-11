@@ -74,10 +74,12 @@ export interface SyncEngineOptions {
   /**
    * Files a pull's merge changed on disk. The caller reindexes them directly:
    * pull-applied writes must reach the index even when the file watcher isn't
-   * up yet (the launch pull can race the watcher start). The cycle waits for
-   * async work here before proceeding or reporting idle, so consumers see a
-   * converged index when sync settles. A throw or rejection fails the cycle
-   * and surfaces as an `error` status.
+   * up yet (the launch pull can race the watcher start). Invoked synchronously
+   * at the merge boundary so immediate notifications cannot lag a later merge;
+   * any returned promise runs alongside required Git convergence and push. A
+   * successful cycle waits for every returned task before reporting idle. A
+   * throw or rejection surfaces as an `error` only after that Git work has had
+   * its chance to make the Markdown source of truth durable.
    */
   onRemoteChanges?: (changes: ChangedFile[]) => void | Promise<void>
   /** Quiet period after the last edit before a backup commit. */
@@ -156,29 +158,58 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   /**
-   * Await one cycle step; while the engine is still alive, await any result-side
-   * notification, then bail if the engine stopped or the owner suppressed
-   * further cycles meanwhile. An already-issued Git command cannot be recalled,
-   * but no later command starts.
+   * Await one cycle step, preserve any result-side notification, then bail if
+   * the engine stopped or the owner suppressed further cycles meanwhile. An
+   * already-issued Git command cannot be recalled, but no later command starts.
    */
-  async function step<T>(
-    promise: Promise<T>,
-    onResult?: (result: T) => void | Promise<void>,
-  ): Promise<T> {
+  async function step<T>(promise: Promise<T>, onResult?: (result: T) => void): Promise<T> {
     const result = await promise
     signal.throwIfAborted()
-    const resultNotification = onResult?.(result)
-    if (resultNotification !== undefined) {
-      await resultNotification
-    }
-    // An async result observer can outlive the engine just like a Git command.
-    // Re-check before the caller is allowed to issue its next command or emit
-    // idle; stop() remains terminal even when it lands during reindexing.
+    onResult?.(result)
+    // A synchronous result notification can itself tear down the owner (for
+    // example, a file-change subscriber closing the graph). Preserve stop's
+    // command boundary before the caller is allowed to issue later Git work.
     signal.throwIfAborted()
     if (options.canStartCycle?.() === false) {
       throw new CycleSuppressedError()
     }
     return result
+  }
+
+  /** Start one merge notification now, without making later Git commands wait. */
+  function startRemoteChanges(changes: ChangedFile[]): Promise<void> {
+    let task: Promise<void>
+    try {
+      task = Promise.resolve(options.onRemoteChanges?.(changes))
+    } catch (error) {
+      task = Promise.reject(error)
+    }
+    // Attach a handler immediately: a synchronous throw or fast rejection can
+    // happen well before the successful cycle joins this task at its idle
+    // boundary, and must never become an unhandled rejection in between.
+    void task.catch(() => {})
+    return task
+  }
+
+  /** Join this cycle's observer tasks and rethrow the first error. */
+  async function settleRemoteChanges(
+    tasks: readonly Promise<void>[],
+    checkSuppression = true,
+  ): Promise<void> {
+    if (tasks.length === 0) {
+      return
+    }
+    const outcomes = await Promise.allSettled(tasks)
+    signal.throwIfAborted()
+    const failed = outcomes.find(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected',
+    )
+    if (failed !== undefined) {
+      throw failed.reason
+    }
+    if (checkSuppression && options.canStartCycle?.() === false) {
+      throw new CycleSuppressedError()
+    }
   }
 
   function schedule(delayMs: number): void {
@@ -216,6 +247,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       return running
     }
     running = (async () => {
+      const remoteChangeTasks: Promise<void>[] = []
       // This cycle commits everything dirty so far — a pending debounce pass
       // (e.g. queued before a launch/focus/manual sync) would only duplicate it.
       if (timer !== null) {
@@ -225,11 +257,24 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       deadline = null
       emit({ state: 'syncing' })
       try {
-        await cycle(mode)
+        await cycle(mode, (changes) => {
+          remoteChangeTasks.push(startRemoteChanges(changes))
+        })
+        await settleRemoteChanges(remoteChangeTasks)
         emit({ state: 'idle' })
       } catch (error) {
         if (error instanceof CycleSuppressedError) {
-          emit({ state: 'idle' })
+          // A merge can land and queue its changed files just before the owner
+          // suppresses later Git commands. Preserve the old boundary: finish
+          // that notification before the suppressed cycle settles to idle.
+          try {
+            await settleRemoteChanges(remoteChangeTasks, false)
+            emit({ state: 'idle' })
+          } catch (notificationError) {
+            if (!signal.aborted) {
+              emit(statusForError(notificationError))
+            }
+          }
         } else if (!signal.aborted) {
           emit(statusForError(error))
         }
@@ -245,7 +290,10 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     return running
   }
 
-  async function cycle(mode: 'push' | 'full'): Promise<void> {
+  async function cycle(
+    mode: 'push' | 'full',
+    remoteChanges: (changes: ChangedFile[]) => void,
+  ): Promise<void> {
     const token = options.localOnly === true ? null : await step(options.getToken())
     const commit = await step(gitCommitAll('Update notes', options.generation))
     if (commit.skippedLargeFiles.length > 0) {
@@ -265,7 +313,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     } else {
       // Launch/focus: pick up other devices' changes even with nothing to push.
       const delta = await step(gitFetch(token, options.generation))
-      const merged = await merge()
+      const merged = await merge(remoteChanges)
       const localOnly = commit.committed || delta.ahead > 0
       if (!localOnly && (merged.kind === 'upToDate' || merged.kind === 'fastForward')) {
         return // pulled cleanly and have nothing of our own — no push needed
@@ -282,20 +330,20 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       // The normal two-device race: another device pushed first. Converge and
       // retry — a conflicted merge still commits (markers in the note).
       await step(gitFetch(token, options.generation))
-      await merge()
+      await merge(remoteChanges)
     }
     throw new PushRejectedError(
       'the backup repo kept changing while syncing; will retry on the next edit',
     )
   }
 
-  /** Merge the fetched remote and hand any changed files to the reindexer. */
-  async function merge(): Promise<{ kind: string }> {
+  /** Merge fetched changes and start any changed-file notification. */
+  async function merge(remoteChanges: (changes: ChangedFile[]) => void): Promise<{ kind: string }> {
     return step(gitMergeRemote(options.generation), (outcome) => {
       // The command may already have rewritten files before suspension. Fan
       // those changes out before the boundary gate stops subsequent Git work.
       if (outcome.changedFiles.length > 0) {
-        return options.onRemoteChanges?.(outcome.changedFiles)
+        remoteChanges(outcome.changedFiles)
       }
     }) // upToDate is a no-op
   }

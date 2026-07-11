@@ -64,16 +64,23 @@ beforeEach(() => {
 
 describe('useWikiLinkNavigation', () => {
   it('navigates to the resolved note', async () => {
-    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'resolved',
+      path: 'notes/target.md',
+    })
     const view = renderHost()
     lastHandler?.('Target')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/target.md'))
-    expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
+    expect(resolveOrCreateNoteWithTitle).toHaveBeenCalledWith('Target', 1)
+    expect(resolveWikiTarget).not.toHaveBeenCalled()
     view.unmount()
   })
 
   it('arrives at a resolved note without a focus intent (no keyboard on navigation)', async () => {
-    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'resolved',
+      path: 'notes/target.md',
+    })
     const view = renderHost()
     lastHandler?.('Target')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/target.md'))
@@ -92,8 +99,32 @@ describe('useWikiLinkNavigation', () => {
     view.unmount()
   })
 
+  it('preserves an existing regular note titled as an ISO date', async () => {
+    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/2026-06-09.md' })
+    const view = renderHost()
+
+    lastHandler?.('2026-06-09')
+
+    await waitFor(() => expect(currentRoute(view)).toContain('"note"'))
+    expect(currentRoute(view)).toContain('notes/2026-06-09.md')
+    view.unmount()
+  })
+
+  it('routes a resolved daily alias through the daily view', async () => {
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'resolved',
+      path: 'daily/2026-06-09.md',
+    })
+    const view = renderHost()
+
+    lastHandler?.('Project log')
+
+    await waitFor(() => expect(currentRoute(view)).toContain('"daily"'))
+    expect(currentRoute(view)).toContain('2026-06-09')
+    view.unmount()
+  })
+
   it('creates and opens an unresolved title, without a focus intent', async () => {
-    resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: 'Brand New' })
     resolveOrCreateNoteWithTitle.mockResolvedValue({
       kind: 'created',
       path: 'notes/created.md',
@@ -117,17 +148,20 @@ describe('useWikiLinkNavigation', () => {
   })
 
   it('ignores an unresolved empty target', async () => {
-    resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: '   ' })
     const view = renderHost()
     lastHandler?.('   ')
-    await waitFor(() => expect(resolveWikiTarget).toHaveBeenCalled())
+    await new Promise((tick) => setTimeout(tick, 0))
+    expect(resolveWikiTarget).not.toHaveBeenCalled()
     expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
     expect(currentRoute(view)).toContain('"today"')
     view.unmount()
   })
 
   it('⌘-click opens the resolved note in a new window instead of navigating', async () => {
-    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'resolved',
+      path: 'notes/target.md',
+    })
     const view = renderHost()
     lastHandler?.('Target', new MouseEvent('click', { metaKey: true }))
     await waitFor(() =>
@@ -138,7 +172,6 @@ describe('useWikiLinkNavigation', () => {
   })
 
   it('⌘-click on an unresolved title still creates, then opens the new window', async () => {
-    resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: 'Brand New' })
     resolveOrCreateNoteWithTitle.mockResolvedValue({
       kind: 'created',
       path: 'notes/created.md',
@@ -153,8 +186,7 @@ describe('useWikiLinkNavigation', () => {
     view.unmount()
   })
 
-  it('does not navigate when the on-disk fallback is ambiguous', async () => {
-    resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: 'Business ideas' })
+  it('does not navigate when indexed or on-disk title resolution is ambiguous', async () => {
     resolveOrCreateNoteWithTitle.mockResolvedValue({
       kind: 'ambiguous',
       paths: ['notes/business-ideas.md', 'notes/business-ideas-2.md'],
@@ -163,15 +195,33 @@ describe('useWikiLinkNavigation', () => {
     lastHandler?.('Business ideas')
     await waitFor(() => expect(resolveOrCreateNoteWithTitle).toHaveBeenCalled())
     expect(currentRoute(view)).toContain('"today"')
+    expect(resolveWikiTarget).not.toHaveBeenCalled()
     expect(startOperation).toHaveBeenCalledWith('Opening link')
     expect(operationFail).toHaveBeenCalledWith(
-      'Couldn’t safely choose one note matching “Business ideas”. Choose the intended note from autocomplete.',
+      'Couldn’t safely choose one note matching “Business ideas”. Rename conflicting notes or wait for unavailable notes to become available, then try again.',
     )
     view.unmount()
   })
 
+  it('surfaces a resolution failure instead of silently doing nothing', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    resolveOrCreateNoteWithTitle.mockRejectedValue(new Error('index unavailable'))
+    const view = renderHost()
+
+    lastHandler?.('Business ideas')
+
+    await waitFor(() => expect(operationFail).toHaveBeenCalledWith('index unavailable'))
+    expect(startOperation).toHaveBeenCalledWith('Opening link')
+    expect(currentRoute(view)).toContain('"today"')
+    consoleError.mockRestore()
+    view.unmount()
+  })
+
   it('a declined new-window open falls back to in-window navigation', async () => {
-    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'resolved',
+      path: 'notes/target.md',
+    })
     openRouteInNewWindow.mockResolvedValue(false)
     const view = renderHost()
     lastHandler?.('Target', new MouseEvent('click', { metaKey: true }))
@@ -180,7 +230,10 @@ describe('useWikiLinkNavigation', () => {
   })
 
   it('a Mod-Enter keyboard follow stays in-window despite the held modifier', async () => {
-    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'resolved',
+      path: 'notes/target.md',
+    })
     const view = renderHost()
     lastHandler?.('Target', new KeyboardEvent('keydown', { metaKey: true }))
     await waitFor(() => expect(currentRoute(view)).toContain('notes/target.md'))
@@ -189,8 +242,8 @@ describe('useWikiLinkNavigation', () => {
   })
 
   it('drops a resolution that lands after the host unmounts', async () => {
-    let resolve: (value: { kind: 'resolved'; ref: string }) => void = () => {}
-    resolveWikiTarget.mockReturnValue(
+    let resolve: (value: { kind: 'resolved'; path: string }) => void = () => {}
+    resolveOrCreateNoteWithTitle.mockReturnValue(
       new Promise((promiseResolve) => {
         resolve = promiseResolve
       }),
@@ -202,7 +255,9 @@ describe('useWikiLinkNavigation', () => {
       </RouterProvider>,
     )
     lastHandler?.('Target')
-    await waitFor(() => expect(resolveWikiTarget).toHaveBeenCalledWith('Target'))
+    await waitFor(() =>
+      expect(resolveOrCreateNoteWithTitle).toHaveBeenCalledWith('Target', 1),
+    )
     // Unmount only the host; the router (and probe) live on, so a navigate
     // slipping through the guard would be visible as a route change.
     view.rerender(
@@ -210,29 +265,31 @@ describe('useWikiLinkNavigation', () => {
         <RouteProbe key="probe" />
       </RouterProvider>,
     )
-    resolve({ kind: 'resolved', ref: 'notes/target.md' })
+    resolve({ kind: 'resolved', path: 'notes/target.md' })
     await new Promise((tick) => setTimeout(tick, 0))
     expect(view.getByTestId('route').textContent).toContain('"today"')
     view.unmount()
   })
 
   it('drops an older resolution after a newer wiki-link click', async () => {
-    let finishOlder: (value: { kind: 'resolved'; ref: string }) => void = () => {}
-    resolveWikiTarget.mockImplementation((target: string) => {
+    let finishOlder: (value: { kind: 'resolved'; path: string }) => void = () => {}
+    resolveOrCreateNoteWithTitle.mockImplementation((target: string) => {
       if (target === 'Older') {
         return new Promise((resolve) => {
           finishOlder = resolve
         })
       }
-      return Promise.resolve({ kind: 'resolved', ref: 'notes/newer.md' })
+      return Promise.resolve({ kind: 'resolved', path: 'notes/newer.md' })
     })
     const view = renderHost()
 
     lastHandler?.('Older')
-    await waitFor(() => expect(resolveWikiTarget).toHaveBeenCalledWith('Older'))
+    await waitFor(() =>
+      expect(resolveOrCreateNoteWithTitle).toHaveBeenCalledWith('Older', 1),
+    )
     lastHandler?.('Newer')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/newer.md'))
-    finishOlder({ kind: 'resolved', ref: 'notes/older.md' })
+    finishOlder({ kind: 'resolved', path: 'notes/older.md' })
     await new Promise((tick) => setTimeout(tick, 0))
 
     expect(currentRoute(view)).toContain('notes/newer.md')
@@ -241,8 +298,8 @@ describe('useWikiLinkNavigation', () => {
   })
 
   it('drops a pending resolution after unrelated router navigation', async () => {
-    let finishResolution: (value: { kind: 'resolved'; ref: string }) => void = () => {}
-    resolveWikiTarget.mockReturnValue(
+    let finishResolution: (value: { kind: 'resolved'; path: string }) => void = () => {}
+    resolveOrCreateNoteWithTitle.mockReturnValue(
       new Promise((resolve) => {
         finishResolution = resolve
       }),
@@ -250,11 +307,13 @@ describe('useWikiLinkNavigation', () => {
     const view = renderHost()
 
     lastHandler?.('Target')
-    await waitFor(() => expect(resolveWikiTarget).toHaveBeenCalledWith('Target'))
+    await waitFor(() =>
+      expect(resolveOrCreateNoteWithTitle).toHaveBeenCalledWith('Target', 1),
+    )
     navigate?.({ kind: 'settings' })
     await waitFor(() => expect(currentRoute(view)).toContain('"settings"'))
 
-    finishResolution({ kind: 'resolved', ref: 'notes/target.md' })
+    finishResolution({ kind: 'resolved', path: 'notes/target.md' })
     await new Promise((tick) => setTimeout(tick, 0))
 
     expect(currentRoute(view)).toContain('"settings"')
@@ -264,7 +323,6 @@ describe('useWikiLinkNavigation', () => {
 
   it('drops a pending note creation after unrelated router navigation', async () => {
     let finishCreation: (outcome: { kind: 'created'; path: string }) => void = () => {}
-    resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: 'Brand New' })
     resolveOrCreateNoteWithTitle.mockReturnValue(
       new Promise((resolve) => {
         finishCreation = resolve

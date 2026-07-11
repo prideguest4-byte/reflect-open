@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
 import {
   dailyDatesInRange,
+  findExactWikiTargetMatches,
   getBacklinksWithContext,
   getDuplicateNoteIds,
   getNoteIdsByPath,
@@ -75,6 +76,67 @@ describe('noteTitleOwningEmail', () => {
   it('short-circuits a blank address before touching the bridge', async () => {
     await expect(noteTitleOwningEmail('   ')).resolves.toBeNull()
     expect(mockInvoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('findExactWikiTargetMatches', () => {
+  it('returns every exact title in path order without querying aliases', async () => {
+    mockInvoke.mockResolvedValue([
+      { path: 'notes/business-ideas-2.md' },
+      { path: 'notes/business-ideas.md' },
+    ])
+
+    await expect(findExactWikiTargetMatches('Business ideas')).resolves.toEqual({
+      kind: 'title',
+      paths: ['notes/business-ideas-2.md', 'notes/business-ideas.md'],
+    })
+
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
+    const [, args] = mockInvoke.mock.calls[0]!
+    const sql = String(args['sql'])
+    expect(sql).toContain('title_key')
+    expect(sql).toContain('distinct')
+    expect(sql).toContain('order by "path"')
+    expect(sql).toContain('"kind" != ?')
+    expect(args['params']).toEqual(['business ideas', 'template'])
+  })
+
+  it('queries exact aliases only after titles miss', async () => {
+    mockInvoke
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { note_path: 'notes/alias-a.md' },
+        { note_path: 'notes/alias-b.md' },
+      ])
+
+    await expect(findExactWikiTargetMatches('Business ideas')).resolves.toEqual({
+      kind: 'alias',
+      paths: ['notes/alias-a.md', 'notes/alias-b.md'],
+    })
+
+    expect(mockInvoke).toHaveBeenCalledTimes(2)
+    const [, args] = mockInvoke.mock.calls[1]!
+    const sql = String(args['sql'])
+    expect(sql).toContain('from "aliases"')
+    expect(sql).toContain('inner join "notes"')
+    expect(sql).toContain('distinct')
+    expect(sql).toContain('order by "note_path"')
+    expect(sql).toContain('"notes"."kind" != ?')
+    expect(args['params']).toEqual(['business ideas', 'template'])
+  })
+
+  it('preserves daily-date precedence before titles and aliases', async () => {
+    mockInvoke.mockResolvedValue([{ path: 'daily/2026-06-09.md' }])
+
+    await expect(findExactWikiTargetMatches('2026-06-09')).resolves.toEqual({
+      kind: 'date',
+      paths: ['daily/2026-06-09.md'],
+    })
+
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
+    const [, args] = mockInvoke.mock.calls[0]!
+    expect(String(args['sql'])).toContain('daily_date')
+    expect(args['params']).toEqual(['2026-06-09', 'template'])
   })
 })
 
