@@ -450,6 +450,55 @@ mod tests {
     }
 
     #[test]
+    fn atomic_create_allows_exactly_one_concurrent_claim() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let dir = tempdir().unwrap();
+        bootstrap(dir.path()).unwrap();
+        let root = Arc::new(dir.path().to_path_buf());
+        let barrier = Arc::new(Barrier::new(2));
+
+        let claim = |contents: &'static str| {
+            let root = Arc::clone(&root);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                let target = root.join("notes/business-ideas.md");
+                barrier.wait();
+                (contents, atomic_create(&root, &target, contents).unwrap())
+            })
+        };
+        let first = claim("# First\n");
+        let second = claim("# Second\n");
+        let outcomes = [first.join().unwrap(), second.join().unwrap()];
+
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|(_, outcome)| matches!(outcome, AtomicCreateOutcome::Created(_)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|(_, outcome)| matches!(outcome, AtomicCreateOutcome::Collision))
+                .count(),
+            1
+        );
+        let winner = outcomes
+            .iter()
+            .find_map(|(contents, outcome)| {
+                matches!(outcome, AtomicCreateOutcome::Created(_)).then_some(*contents)
+            })
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("notes/business-ideas.md")).unwrap(),
+            winner
+        );
+    }
+
+    #[test]
     fn atomic_create_treats_an_eviction_placeholder_as_a_collision() {
         let dir = tempdir().unwrap();
         bootstrap(dir.path()).unwrap();

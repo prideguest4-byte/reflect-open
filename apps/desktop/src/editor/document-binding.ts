@@ -82,10 +82,10 @@ export function createDocumentBinding(): DocumentBinding {
     // rename tracker via onContent('saved'); settle after it so a just-edited
     // title still renames on the way out.
     const settled = target.flush()
-    // `flush()` synchronously asks the live editor to reconcile native input;
-    // Meowdown reports a resulting document change through onDocChange. Keep
-    // the target discoverable for that callback, then release ownership before
-    // any asynchronous write settles or a replacement session binds.
+    // `flush()` may synchronously report reconciled editor input through the
+    // change callback. Keep the target discoverable for that re-entry, then
+    // release ownership before any asynchronous write settles or a replacement
+    // session binds.
     if (session === target) {
       session = null
       coordinator = null

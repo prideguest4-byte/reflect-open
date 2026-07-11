@@ -2,6 +2,7 @@ import { sql } from 'kysely'
 import {
   foldEmail,
   foldTag,
+  normalizeWikiTarget,
   resolveWikiLinkAsync,
   type Resolution,
 } from '../markdown'
@@ -336,6 +337,69 @@ export async function noteTitleOwningEmail(email: string): Promise<string | null
     .orderBy('notes.path')
     .executeTakeFirst()
   return owner?.title ?? null
+}
+
+/** Exact indexed date/title/alias candidates, preserving ambiguity within the winning tier. */
+export type ExactWikiTargetMatch =
+  | { readonly kind: 'date'; readonly paths: readonly string[] }
+  | { readonly kind: 'title'; readonly paths: readonly string[] }
+  | { readonly kind: 'alias'; readonly paths: readonly string[] }
+  | { readonly kind: 'missing'; readonly paths: readonly [] }
+
+/**
+ * Find every indexed path that exactly claims `target`, with ordinary wiki
+ * resolution precedence: calendar date, then title, then alias. Unlike
+ * {@link resolveWikiTarget}, this does not collapse a tier to its first path;
+ * callers that may create on a miss need to distinguish one existing note
+ * from several notes claiming the same spelling.
+ */
+export async function findExactWikiTargetMatches(
+  target: string,
+): Promise<ExactWikiTargetMatch> {
+  const normalized = normalizeWikiTarget(target)
+  if (normalized.key === '') {
+    return { kind: 'missing', paths: [] }
+  }
+
+  if (normalized.date !== undefined) {
+    const dateRows = await db
+      .selectFrom('notes')
+      .where('dailyDate', '=', normalized.date)
+      .where('kind', '!=', 'template')
+      .select('path')
+      .distinct()
+      .orderBy('path')
+      .execute()
+    if (dateRows.length > 0) {
+      return { kind: 'date', paths: dateRows.map((row) => row.path) }
+    }
+  }
+
+  const titleRows = await db
+    .selectFrom('notes')
+    .where('titleKey', '=', normalized.key)
+    .where('kind', '!=', 'template')
+    .select('path')
+    .distinct()
+    .orderBy('path')
+    .execute()
+  if (titleRows.length > 0) {
+    return { kind: 'title', paths: titleRows.map((row) => row.path) }
+  }
+
+  const aliasRows = await db
+    .selectFrom('aliases')
+    .innerJoin('notes', 'notes.path', 'aliases.notePath')
+    .where('aliasKey', '=', normalized.key)
+    .where('notes.kind', '!=', 'template')
+    .select('notePath')
+    .distinct()
+    .orderBy('notePath')
+    .execute()
+  if (aliasRows.length > 0) {
+    return { kind: 'alias', paths: aliasRows.map((row) => row.notePath) }
+  }
+  return { kind: 'missing', paths: [] }
 }
 
 /**
