@@ -39,8 +39,8 @@ function stubSubscription(): Subscription {
 }
 
 function Host({ handler }: { handler: ((changes: FileChange[]) => void) | null }) {
-  const ready = useFileChanges(handler)
-  return <output data-testid="ready">{String(ready)}</output>
+  const subscription = useFileChanges(handler)
+  return <output data-testid="ready">{String(subscription.settled)}</output>
 }
 
 const UPSERT: FileChange[] = [{ path: 'notes/a.md', kind: 'upsert' }]
@@ -140,17 +140,19 @@ describe('useFileChanges', () => {
 
   // The hook doesn't catch handler throws (the contract only covers the
   // subscription lifecycle), so only the rejected-subscription path is tested.
-  it('logs and stays inert when the subscription itself fails', async () => {
+  it('logs and settles into degraded mode when the subscription fails', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     subscribeFileChanges.mockRejectedValue(new Error('bridge gone'))
     const handler = vi.fn()
     const view = render(<Host handler={handler} />)
+    expect(view.getByTestId('ready').textContent).toBe('false')
     await act(async () => {})
 
     expect(consoleError).toHaveBeenCalledWith(
       'file-change subscription failed:',
       expect.any(Error),
     )
+    expect(view.getByTestId('ready').textContent).toBe('true')
     expect(handler).not.toHaveBeenCalled()
     expect(() => view.unmount()).not.toThrow()
     consoleError.mockRestore()

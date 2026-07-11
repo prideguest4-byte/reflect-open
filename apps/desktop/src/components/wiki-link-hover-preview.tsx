@@ -35,6 +35,7 @@ interface PreviewScope {
 
 interface PreviewLoad {
   scope: PreviewScope
+  watcherCycle: object
   path: string
   body: string | null
 }
@@ -81,7 +82,6 @@ export function WikiLinkHoverPreview({
   const resolvedPath = useRef<string | null>(null)
   const currentScope =
     generation === null || graphKey === null ? null : { target, generation, graphKey }
-  const visibleLoad = load !== null && sameScope(load, currentScope) ? load : null
 
   const handleFileChanges = useCallback(
     (changes: FileChange[]) => {
@@ -103,14 +103,21 @@ export function WikiLinkHoverPreview({
     },
     [dismiss],
   )
-  const watcherReady = useFileChanges(handleFileChanges)
+  const { cycle: watcherCycle, settled: watcherSettled } = useFileChanges(handleFileChanges)
+  const visibleLoad =
+    watcherSettled &&
+    load !== null &&
+    load.watcherCycle === watcherCycle &&
+    sameScope(load, currentScope)
+      ? load
+      : null
 
   useEffect(() => {
     const epoch = ++requestEpoch.current
     let active = true
     resolvedPath.current = null
 
-    if (!watcherReady) {
+    if (!watcherSettled) {
       return () => {
         active = false
         requestEpoch.current += 1
@@ -154,7 +161,12 @@ export function WikiLinkHoverPreview({
         }
 
         resolvedPath.current = resolution.path
-        setLoad({ scope: requestScope, path: resolution.path, body: null })
+        setLoad({
+          scope: requestScope,
+          watcherCycle,
+          path: resolution.path,
+          body: null,
+        })
         const source = await readExistingNoteSource(
           resolution.path,
           requestScope.generation,
@@ -170,6 +182,7 @@ export function WikiLinkHoverPreview({
         }
         setLoad({
           scope: requestScope,
+          watcherCycle,
           path: resolution.path,
           body: splitFrontmatter(source).body,
         })
@@ -185,7 +198,7 @@ export function WikiLinkHoverPreview({
       requestEpoch.current += 1
       resolvedPath.current = null
     }
-  }, [dismiss, generation, graphKey, target, watcherReady])
+  }, [dismiss, generation, graphKey, target, watcherCycle, watcherSettled])
 
   const resolveLocalImageUrl = useCallback(
     (source: string): string | null => {

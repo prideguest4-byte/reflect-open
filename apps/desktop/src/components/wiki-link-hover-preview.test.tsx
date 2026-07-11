@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
 }))
 
 let fileChangeHandler: ((changes: FileChange[]) => void) | null = null
+let fileChangesReady = true
+let fileChangeCycle: object = {}
 
 vi.mock('@reflect/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@reflect/core')>()
@@ -26,7 +28,7 @@ vi.mock('@/lib/read-existing-note-source', () => ({
 vi.mock('@/lib/use-file-changes', () => ({
   useFileChanges: (handler: ((changes: FileChange[]) => void) | null) => {
     fileChangeHandler = handler
-    return true
+    return { cycle: fileChangeCycle, settled: fileChangesReady }
   },
 }))
 
@@ -81,6 +83,8 @@ describe('WikiLinkHoverPreview', () => {
 
   beforeEach(() => {
     fileChangeHandler = null
+    fileChangesReady = true
+    fileChangeCycle = {}
     mocks.resolveExistingWikiTarget.mockReset()
     mocks.readExistingNoteSource.mockReset()
     mocks.markdownPreview.mockReset()
@@ -212,6 +216,56 @@ describe('WikiLinkHoverPreview', () => {
 
     expect(mocks.resolveExistingWikiTarget).toHaveBeenCalledOnce()
     expect(mocks.readExistingNoteSource).toHaveBeenCalledOnce()
+  })
+
+  it('hides the old body until a resubscribed watcher reloads it', async () => {
+    const dismiss = vi.fn()
+    mocks.resolveExistingWikiTarget.mockResolvedValue({
+      kind: 'resolved',
+      path: 'notes/alpha.md',
+    })
+    mocks.readExistingNoteSource.mockResolvedValue('# Original')
+    const view = renderPreview('Alpha', { dismiss })
+    expect((await screen.findByTestId('markdown-preview')).textContent).toBe('# Original')
+
+    fileChangesReady = false
+    fileChangeCycle = {}
+    view.rerender(
+      <WikiLinkHoverPreview
+        target="Alpha"
+        dismiss={dismiss}
+        generation={7}
+        graphKey="/graph"
+        dateFormat="mdy"
+        resolveAssetOpenPath={() => null}
+        resolveImageUrl={() => null}
+      />,
+    )
+    expect(screen.queryByTestId('wiki-link-hover-preview')).toBeNull()
+
+    const resolution = deferred<{ kind: 'resolved'; path: string }>()
+    mocks.resolveExistingWikiTarget.mockReturnValue(resolution.promise)
+    fileChangesReady = true
+    view.rerender(
+      <WikiLinkHoverPreview
+        target="Alpha"
+        dismiss={dismiss}
+        generation={7}
+        graphKey="/graph"
+        dateFormat="mdy"
+        resolveAssetOpenPath={() => null}
+        resolveImageUrl={() => null}
+      />,
+    )
+    expect(screen.queryByTestId('wiki-link-hover-preview')).toBeNull()
+
+    await act(async () => {
+      resolution.resolve({ kind: 'resolved', path: 'notes/alpha.md' })
+      await resolution.promise
+    })
+    expect((await screen.findByTestId('markdown-preview')).textContent).toBe('# Original')
+    expect(mocks.resolveExistingWikiTarget).toHaveBeenCalledTimes(2)
+    expect(mocks.readExistingNoteSource).toHaveBeenCalledTimes(2)
   })
 
   it('dismisses when the resolved target is updated or removed', async () => {
