@@ -435,7 +435,9 @@ export function NoteEditor({
         <EditorInputTraits />
         <FormattingToolbarBridge />
         {renderWikilinkHoverCard !== undefined ? (
-          <WikilinkHoverCard>{renderWikilinkHoverCard}</WikilinkHoverCard>
+          <WikilinkHoverCard className="reflect-hover-card">
+            {renderWikilinkHoverCard}
+          </WikilinkHoverCard>
         ) : null}
         {children}
       </MeowdownEditor>
