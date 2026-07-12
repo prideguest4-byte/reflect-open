@@ -58,6 +58,7 @@ export const AI_PROVIDERS: NonEmptyArray<AiProviderInfo> = [
     models: [
       { id: 'claude-fable-5', label: 'Claude Fable 5', contextWindow: 1_000_000 },
       { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', contextWindow: 1_000_000 },
+      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', contextWindow: 1_000_000 },
       { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', contextWindow: 1_000_000 },
       { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', contextWindow: 200_000 },
     ],

@@ -16,7 +16,7 @@ interface RecordedCall {
 const ANTHROPIC_CONFIG: AiProviderConfig = {
   id: 'cfg-anthropic',
   provider: 'anthropic',
-  model: 'claude-opus-4-8',
+  model: 'claude-sonnet-5',
   keyHint: 'wxyz1',
 }
 
@@ -126,7 +126,7 @@ describe('languageModel', () => {
     expect(calls[0]!.body).toContain('"model":"gpt-5.6-terra"')
   })
 
-  it('adds Anthropic direct-browser access to model calls', async () => {
+  it('routes Claude Sonnet 5 through Anthropic Messages with direct-browser access', async () => {
     const calls: RecordedCall[] = []
 
     await generateText({
@@ -137,6 +137,8 @@ describe('languageModel', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]!.url).toBe('https://api.anthropic.com/v1/messages')
+    expect(calls[0]!.body).toContain('"model":"claude-sonnet-5"')
+    expect(calls[0]!.body).toContain('"max_tokens":128000')
     expect(calls[0]!.headers.get(ANTHROPIC_DIRECT_BROWSER_ACCESS_HEADER)).toBe(
       ANTHROPIC_DIRECT_BROWSER_ACCESS_VALUE,
     )
