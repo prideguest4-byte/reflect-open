@@ -1,9 +1,9 @@
 # Porting backlink hover previews
 
-**Status: planned.** Reflect v1 showed a compact preview when the pointer
-rested on an inline backlink. V2 already has local note resolution, reads, and
-read-only markdown rendering, but Meowdown does not yet expose the wiki-link
-hover UI needed to join them.
+**Status: ported.** Resting the pointer on a wiki link in a primary desktop
+note pane now opens a compact, passive preview of the existing local target.
+Meowdown owns the editor hover lifecycle and overlay; Reflect owns
+side-effect-free resolution, generation-pinned reads, and local-only content.
 
 This is separate from both the `[[` autocomplete menu documented in
 [Reflect v1: Backlink Menu & Date Generator](../reflect-v1-backlink-menu.md)
@@ -86,7 +86,7 @@ being edited. Preserve that value while adopting v2's boundaries:
 Do not add a mobile long-press as part of this work. A touch preview gesture
 would need its own interaction design.
 
-## Recommended v2 shape
+## Implemented v2 shape
 
 The split follows [Editor architecture](../contributing/editor-architecture.md),
 [Plan 05](../plans/05-markdown-editor.md), and the porting convention that
@@ -196,16 +196,28 @@ changing the guarantees in [Privacy](../privacy.md).
   optimize later with a markdown-aware preview projection if needed, never by
   cutting raw markdown mid-token.
 
-## UX decisions to make before implementation
+## Implementation decisions
 
-- **Timing:** v1 opened immediately; Meowdown's Markdown-link menu currently
-  uses a 400ms open delay and 300ms close grace. Choose deliberately and test
-  rapid pointer travel.
-- **Interactivity:** the v1 book markup contained a real external anchor, but
-  leaving the source link initiated dismissal with no close grace. Decide
-  whether a later v2 card can be entered or scrolled; keep the first port
-  passive.
-- **Viewport:** v1 clipped at `350 × 200px`. Preserve that compact baseline or
-  choose a tokenized max size and fade.
-- **Unavailable state:** decide whether missing, ambiguous, empty, and failed
-  targets show nothing or a small explicit state. None may trigger creation.
+- **Timing:** a target-aware 300ms dwell avoids flashes while the pointer
+  crosses prose. Reflect resolves the body asynchronously, so the card opens
+  once both the dwell and the local read have finished. Moving to another
+  wiki link switches without a new dwell and keeps the previous body until
+  the next one is ready; leaving closes after a 200ms grace.
+- **Interactivity:** the card is pointer-transparent and inert. Its links,
+  checkboxes, images, and embeds cannot navigate, mutate content, take focus,
+  or trigger remote loads.
+- **Viewport:** Meowdown owns the card chrome and its compact clipped
+  surface (`320 × 192px` with an 8px collision margin); Reflect renders only
+  the content inside it.
+- **Unavailable state:** missing, ambiguous, locally unavailable, deleted, and
+  failed targets resolve the body to nothing, so no card ever opens for them.
+  A successfully read note with an empty body shows `Empty note`; daily notes
+  keep their separately formatted date heading.
+- **Freshness:** the body is a snapshot read when the hover begins. Deleting
+  or rewriting the hovered link inside the editor closes the card through
+  Meowdown's transaction-aware hover tracking; external file changes during
+  the few seconds a card is open are not tracked.
+- **Resolution:** the shared existing-target resolver has a distinct
+  `unavailable` outcome in addition to resolved / ambiguous / missing. This
+  prevents hover or navigation from treating a placeholder or transient read
+  failure as permission to create a duplicate note.
