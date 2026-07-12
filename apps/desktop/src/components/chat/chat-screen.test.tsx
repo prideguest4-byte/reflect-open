@@ -345,7 +345,16 @@ describe('ChatScreen', () => {
     expect(await screen.findByText('OpenAI')).toBeDefined()
     const labels = screen.getAllByRole('option').map((option) => option.textContent)
     // The full curated catalog plus the entry's custom configured model.
-    expect(labels).toEqual(['GPT-5.5', 'GPT-5.4', 'GPT-5.4 mini', 'GPT-5.4 nano', 'gpt-5.1'])
+    expect(labels).toEqual([
+      'GPT-5.6 Sol',
+      'GPT-5.6 Terra',
+      'GPT-5.6 Luna',
+      'GPT-5.5',
+      'GPT-5.4',
+      'GPT-5.4 mini',
+      'GPT-5.4 nano',
+      'gpt-5.1',
+    ])
   })
 
   it('routes the turn to the picked catalog model', async () => {
@@ -357,23 +366,23 @@ describe('ChatScreen', () => {
     const view = renderChat()
 
     fireEvent.keyDown(view.getByRole('combobox', { name: 'Model' }), { key: 'ArrowDown' })
-    fireEvent.keyDown(await screen.findByRole('option', { name: 'GPT-5.5' }), { key: 'Enter' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'GPT-5.6 Terra' }), { key: 'Enter' })
 
     await userEvent.type(view.getByLabelText('Chat message'), 'hi{Enter}')
 
     await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1))
     // Same entry (id → keychain key), with the picked model applied.
-    expect(streamChat.mock.lastCall?.[0].config).toEqual({ ...MODEL, model: 'gpt-5.5' })
+    expect(streamChat.mock.lastCall?.[0].config).toEqual({ ...MODEL, model: 'gpt-5.6-terra' })
   })
 
   it('starts the picker on the model persisted from the last session', async () => {
     configureModel()
-    settingsState.selection = { configId: 'm1', modelId: 'gpt-5.5' }
+    settingsState.selection = { configId: 'm1', modelId: 'gpt-5.6-luna' }
     const view = renderChat()
 
     fireEvent.keyDown(view.getByRole('combobox', { name: 'Model' }), { key: 'ArrowDown' })
 
-    const picked = await screen.findByRole('option', { name: 'GPT-5.5' })
+    const picked = await screen.findByRole('option', { name: 'GPT-5.6 Luna' })
     expect(picked.getAttribute('aria-selected')).toBe('true')
   })
 

@@ -7,6 +7,14 @@ import {
 } from './provider-catalog'
 
 describe('AI_PROVIDERS', () => {
+  it('offers the GPT-5.6 family in capability order', () => {
+    expect(aiProvider('openai').models.slice(0, 3)).toEqual([
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', contextWindow: 1_000_000 },
+      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', contextWindow: 1_000_000 },
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', contextWindow: 1_000_000 },
+    ])
+  })
+
   it('includes OpenRouter in the settings catalog', () => {
     expect(aiProvider('openrouter')).toMatchObject({
       id: 'openrouter',

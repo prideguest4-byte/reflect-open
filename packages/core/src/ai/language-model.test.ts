@@ -10,12 +10,20 @@ import { languageModel } from './language-model'
 interface RecordedCall {
   readonly url: string
   readonly headers: Headers
+  readonly body: string | null
 }
 
 const ANTHROPIC_CONFIG: AiProviderConfig = {
   id: 'cfg-anthropic',
   provider: 'anthropic',
   model: 'claude-opus-4-8',
+  keyHint: 'wxyz1',
+}
+
+const OPENAI_CONFIG: AiProviderConfig = {
+  id: 'cfg-openai',
+  provider: 'openai',
+  model: 'gpt-5.6-terra',
   keyHint: 'wxyz1',
 }
 
@@ -31,6 +39,7 @@ function recordingAnthropicFetch(calls: RecordedCall[]): typeof fetch {
     calls.push({
       url: String(input),
       headers: new Headers(init?.headers),
+      body: typeof init?.body === 'string' ? init.body : null,
     })
     return new Response(
       JSON.stringify({
@@ -48,11 +57,38 @@ function recordingAnthropicFetch(calls: RecordedCall[]): typeof fetch {
   }
 }
 
+function recordingOpenAiFetch(calls: RecordedCall[]): typeof fetch {
+  return async (input, init) => {
+    calls.push({
+      url: String(input),
+      headers: new Headers(init?.headers),
+      body: typeof init?.body === 'string' ? init.body : null,
+    })
+    return new Response(
+      JSON.stringify({
+        id: 'resp_123',
+        created_at: 0,
+        model: OPENAI_CONFIG.model,
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            id: 'msg_123',
+            content: [{ type: 'output_text', text: 'ok', annotations: [] }],
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+}
+
 function recordingOpenRouterFetch(calls: RecordedCall[]): typeof fetch {
   return async (input, init) => {
     calls.push({
       url: String(input),
       headers: new Headers(init?.headers),
+      body: typeof init?.body === 'string' ? init.body : null,
     })
     return new Response(
       JSON.stringify({
@@ -75,6 +111,21 @@ function recordingOpenRouterFetch(calls: RecordedCall[]): typeof fetch {
 }
 
 describe('languageModel', () => {
+  it('routes a GPT-5.6 model through OpenAI Responses', async () => {
+    const calls: RecordedCall[] = []
+
+    await generateText({
+      model: languageModel(OPENAI_CONFIG, 'sk-test', recordingOpenAiFetch(calls)),
+      prompt: 'hello',
+      maxRetries: 0,
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.url).toBe('https://api.openai.com/v1/responses')
+    expect(calls[0]!.headers.get('Authorization')).toBe('Bearer sk-test')
+    expect(calls[0]!.body).toContain('"model":"gpt-5.6-terra"')
+  })
+
   it('adds Anthropic direct-browser access to model calls', async () => {
     const calls: RecordedCall[] = []
 
