@@ -218,6 +218,7 @@ export {
   type PinnedNote,
   type SearchHit,
   type TagSuggestion,
+  type WikiLinkSuggestionResult,
   type FileChange,
   type WikiSuggestion,
   type WikiLinkSuggestion,

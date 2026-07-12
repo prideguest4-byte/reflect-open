@@ -46,17 +46,25 @@ export interface EntryOptions {
    * itself (its key can be owned by a non-daily note).
    */
   queryReadsAsDate?: boolean
+  /**
+   * Folded targets already owned by indexed notes, including claims whose
+   * suggestion rows were filtered as ambiguous or unsafe.
+   */
+  claimedTargetKeys?: readonly string[]
 }
 
 export function buildAutocompleteEntries<Suggestion extends WikiSuggestion>(
   query: string,
-  suggestions: Suggestion[],
+  suggestions: readonly Suggestion[],
   options: EntryOptions = { offerCreate: true },
 ): AutocompleteEntry<Suggestion>[] {
   const entries: AutocompleteEntry<Suggestion>[] = suggestions.map((suggestion) => ({
     kind: 'suggestion',
     suggestion,
   }))
+  const title = query.trim()
+  const key = foldKey(title)
+  const claimedTargetKeys = new Set(options.claimedTargetKeys ?? [])
 
   // Exact folding matches ordinary link resolution. The fallback set also
   // prevents a contact action from creating through the same leading-emoji
@@ -73,6 +81,7 @@ export function buildAutocompleteEntries<Suggestion extends WikiSuggestion>(
   }
   const contacts = (options.contacts ?? []).filter((contact) => {
     if (
+      claimedTargetKeys.has(foldKey(contact.fullName)) ||
       resolvable.has(foldKey(contact.fullName)) ||
       fallbackResolvable.has(foldFallbackTitleKey(contact.fullName))
     ) {
@@ -85,11 +94,9 @@ export function buildAutocompleteEntries<Suggestion extends WikiSuggestion>(
   })
   entries.push(...contacts.map((contact) => ({ kind: 'contact' as const, contact })))
 
-  const title = query.trim()
   if (title === '' || !options.offerCreate) {
     return entries
   }
-  const key = foldKey(title)
   // An exact title, alias, or date hit means the link would resolve as typed —
   // nothing to create. (A full `YYYY-MM-DD` query always has its daily
   // suggestion injected by the query layer, so dates never offer a create.)
@@ -114,6 +121,7 @@ export function buildAutocompleteEntries<Suggestion extends WikiSuggestion>(
     fallbackKey !== '' && fallbackResolvable.has(fallbackKey)
   if (
     !resolvesAsTyped &&
+    !claimedTargetKeys.has(key) &&
     !hasFallbackCollision &&
     !hasDateSuggestion &&
     !contactCoversQuery &&

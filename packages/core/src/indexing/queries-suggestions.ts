@@ -19,6 +19,24 @@ export interface TagSuggestion {
   count: number
 }
 
+/** Verified editor rows plus facts that remain true when rows are filtered. */
+export interface WikiLinkSuggestionResult {
+  readonly suggestions: readonly WikiLinkSuggestion[]
+  /**
+   * Folded candidate/query keys owned in `note_keys`, including ambiguous or
+   * unsafe claims that could not become selectable rows.
+   */
+  readonly claimedTargetKeys: readonly string[]
+  /** Whether the raw query produced at least one generated date candidate. */
+  readonly queryReadsAsDate: boolean
+}
+
+interface WikiTargetCandidateResult {
+  readonly candidates: readonly WikiSuggestion[]
+  readonly candidateTargetKeys: readonly string[]
+  readonly queryReadsAsDate: boolean
+}
+
 /**
  * `#` autocomplete candidates for `query` (Plan 18): tags whose folded key
  * contains the query, most-used first, deduped on the stored `tag_key`.
@@ -54,7 +72,8 @@ export async function suggestWikiTargets(
   if (limit <= 0) {
     return []
   }
-  return (await queryWikiTargetCandidates(query, dateGen)).slice(0, limit)
+  const result = await queryWikiTargetCandidates(query, dateGen)
+  return result.candidates.slice(0, limit)
 }
 
 /**
@@ -67,20 +86,24 @@ export async function suggestWikiLinkTargets(
   query: string,
   limit = 8,
   dateGen?: DateSuggestionContext,
-): Promise<WikiLinkSuggestion[]> {
+): Promise<WikiLinkSuggestionResult> {
   if (limit <= 0) {
-    return []
+    return { suggestions: [], claimedTargetKeys: [], queryReadsAsDate: false }
   }
+  const result = await queryWikiTargetCandidates(query, dateGen)
   return verifyWikiSuggestionAddresses(
-    await queryWikiTargetCandidates(query, dateGen),
+    result.candidates,
+    result.candidateTargetKeys,
     limit,
+    normalizeWikiTarget(query).key,
+    result.queryReadsAsDate,
   )
 }
 
 async function queryWikiTargetCandidates(
   query: string,
   dateGen?: DateSuggestionContext,
-): Promise<WikiSuggestion[]> {
+): Promise<WikiTargetCandidateResult> {
   const normalized = normalizeWikiTarget(query)
   const key = normalized.key
 
@@ -122,9 +145,22 @@ async function queryWikiTargetCandidates(
   // a collision loser must not prevent a lower-ranked, addressable note from
   // filling the requested menu capacity.
   const ranked = rankWikiSuggestions(key, titles, aliases, titles.length + aliases.length)
+  const dates =
+    dateGen === undefined ? [] : generateDateSuggestions(query, dateGen)
+  const candidateTargetKeys = new Set<string>()
+  for (const title of titles) {
+    candidateTargetKeys.add(title.titleKey)
+  }
+  for (const alias of aliases) {
+    candidateTargetKeys.add(alias.titleKey)
+    candidateTargetKeys.add(alias.aliasKey)
+  }
+  for (const date of dates) {
+    candidateTargetKeys.add(normalizeWikiTarget(date.date).key)
+  }
+  candidateTargetKeys.delete('')
   let candidates: WikiSuggestion[]
   if (dateGen !== undefined) {
-    const dates = generateDateSuggestions(query, dateGen)
     candidates = mergeDateSuggestions(ranked, dates, {
       key,
       limit: ranked.length + dates.length,
@@ -144,7 +180,11 @@ async function queryWikiTargetCandidates(
     candidates = ranked
   }
 
-  return candidates
+  return {
+    candidates,
+    candidateTargetKeys: [...candidateTargetKeys],
+    queryReadsAsDate: dates.length > 0,
+  }
 }
 
 /**
@@ -250,9 +290,13 @@ async function winningAliasesByPath(
 
 async function verifyWikiSuggestionAddresses(
   candidates: readonly WikiSuggestion[],
+  candidateTargetKeys: readonly string[],
   limit: number,
-): Promise<WikiLinkSuggestion[]> {
-  const keys = new Set<string>()
+  queryKey: string,
+  queryReadsAsDate: boolean,
+): Promise<WikiLinkSuggestionResult> {
+  const keys = new Set(candidateTargetKeys)
+  keys.add(queryKey)
   for (const candidate of candidates) {
     keys.add(normalizeWikiTarget(candidate.target).key)
     if (candidate.alias !== null) {
@@ -290,6 +334,12 @@ async function verifyWikiSuggestionAddresses(
     unaddressedPaths.size > 0
       ? await winningAliasesByPath(unaddressedPaths)
       : new Map<string, string[]>()
+  const claimedTargetKeys = new Set(winners.keys())
+  for (const aliases of rescueAliases.values()) {
+    for (const alias of aliases) {
+      claimedTargetKeys.add(normalizeWikiTarget(alias).key)
+    }
+  }
 
   const verified: WikiLinkSuggestion[] = []
   for (const candidate of candidates) {
@@ -332,5 +382,9 @@ async function verifyWikiSuggestionAddresses(
       break
     }
   }
-  return verified
+  return {
+    suggestions: verified,
+    claimedTargetKeys: [...claimedTargetKeys].sort(),
+    queryReadsAsDate,
+  }
 }

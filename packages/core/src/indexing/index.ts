@@ -93,6 +93,7 @@ export {
   type OpenTask,
   type PinnedNote,
   type TagSuggestion,
+  type WikiLinkSuggestionResult,
 } from './queries'
 export { resolveNoteTarget } from './resolve-target'
 export {

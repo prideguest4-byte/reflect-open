@@ -8,7 +8,6 @@ import {
 import {
   contactLinkSuggestions,
   errorMessage,
-  generateDateSuggestions,
   hasBridge,
   isContactsReadable,
   resolveOrCreateNoteWithTitle,
@@ -84,7 +83,7 @@ export function useEditorAutocomplete(): EditorAutocomplete {
         dateFormat: settings.dateFormat,
         weekStartDay: settings.weekStartDay,
       }
-      const [suggestions, contacts] = await Promise.all([
+      const [wikiLinks, contacts] = await Promise.all([
         suggestWikiLinkTargets(query, 8, dateContext),
         // A contacts hiccup (permission revoked mid-session, store error)
         // must cost only its own rows, never the note suggestions.
@@ -95,11 +94,12 @@ export function useEditorAutocomplete(): EditorAutocomplete {
             })
           : Promise.resolve([]),
       ])
-      return buildAutocompleteEntries(query, suggestions, {
+      return buildAutocompleteEntries(query, wikiLinks.suggestions, {
         offerCreate: true,
         contacts,
         requireSerializableWikiText: true,
-        queryReadsAsDate: generateDateSuggestions(query, dateContext).length > 0,
+        queryReadsAsDate: wikiLinks.queryReadsAsDate,
+        claimedTargetKeys: wikiLinks.claimedTargetKeys,
       }).map((entry) => {
         if (entry.kind === 'create') {
           return {

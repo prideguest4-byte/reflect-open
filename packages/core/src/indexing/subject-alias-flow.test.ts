@@ -139,7 +139,9 @@ function connectIndex(database: DatabaseSync): void {
 }
 
 async function expectSuggestionOpensItsPath(
-  suggestion: Awaited<ReturnType<typeof suggestWikiLinkTargets>>[number],
+  suggestion: Awaited<
+    ReturnType<typeof suggestWikiLinkTargets>
+  >['suggestions'][number],
 ): Promise<void> {
   expect(suggestion.path).not.toBeNull()
   const insertText = wikiSuggestionInsertText(suggestion)
@@ -186,7 +188,7 @@ describe('v1 subject alias flow', () => {
         { sourcePath: 'notes/family.md', targetRaw: 'Dad' },
       ])
 
-      const suggestions = await suggestWikiLinkTargets('Dad')
+      const { suggestions } = await suggestWikiLinkTargets('Dad')
       expect(suggestions[0]).toMatchObject({
         target: 'Tim MacCaw // Dad',
         path: 'notes/tim-maccaw-dad.md',
@@ -240,7 +242,8 @@ describe('v1 subject alias flow', () => {
         { sourcePath: 'notes/family.md', targetRaw: 'Dad' },
       ])
 
-      const collidedSuggestions = await suggestWikiLinkTargets('Dad')
+      const { suggestions: collidedSuggestions } =
+        await suggestWikiLinkTargets('Dad')
       expect(collidedSuggestions.map((suggestion) => suggestion.path)).toEqual([
         'notes/dad.md',
         'notes/tim-maccaw-dad.md',
@@ -286,6 +289,13 @@ describe('v1 subject alias flow', () => {
         '---\naliases:\n  - Second Shared\n---\n# Shared\n',
         110,
       ),
+      // Raw alias keys survive ranking even when the same note's stronger
+      // title candidate wins deduplication.
+      project(
+        'notes/ada-project.md',
+        '---\naliases:\n  - Ada Lovelace\n---\n# Ada Project\n',
+        115,
+      ),
       // Unsafe syntax is never silently cleaned into a different key.
       project('notes/unsafe.md', '# Unsafe | Title\n', 120),
       project(
@@ -305,15 +315,13 @@ describe('v1 subject alias flow', () => {
         dateFormat: 'dmy' as const,
         weekStartDay: 'monday' as const,
       }
-      const dateSuggestions = await suggestWikiLinkTargets('2026-07-10')
+      const { suggestions: dateSuggestions } =
+        await suggestWikiLinkTargets('2026-07-10')
       expect(dateSuggestions.map((suggestion) => suggestion.path)).toEqual([
         'daily/2026-07-10.md',
       ])
-      const fuzzyDateSuggestions = await suggestWikiLinkTargets(
-        'today',
-        8,
-        dateContext,
-      )
+      const { suggestions: fuzzyDateSuggestions } =
+        await suggestWikiLinkTargets('today', 8, dateContext)
       expect(fuzzyDateSuggestions).toMatchObject([
         {
           target: '2026-07-10',
@@ -324,26 +332,42 @@ describe('v1 subject alias flow', () => {
       ])
       await expect(
         suggestWikiLinkTargets('tomorrow', 8, dateContext),
-      ).resolves.toEqual([])
-      const invalidDateSuggestions = await suggestWikiLinkTargets('2026-02-31')
+      ).resolves.toEqual({
+        suggestions: [],
+        claimedTargetKeys: ['2026-07-11'],
+        queryReadsAsDate: true,
+      })
+      const { suggestions: invalidDateSuggestions } =
+        await suggestWikiLinkTargets('2026-02-31')
       expect(invalidDateSuggestions.map((suggestion) => suggestion.path)).toEqual([
         'notes/invalid-date-title.md',
       ])
 
-      const duplicateSuggestions = await suggestWikiLinkTargets('Roadmap')
-      expect(duplicateSuggestions).toEqual([])
+      const duplicateResult = await suggestWikiLinkTargets('Roadmap')
+      expect(duplicateResult).toEqual({
+        suggestions: [],
+        claimedTargetKeys: ['roadmap'],
+        queryReadsAsDate: false,
+      })
+      await expect(suggestWikiLinkTargets('Road')).resolves.toEqual({
+        suggestions: [],
+        claimedTargetKeys: ['roadmap'],
+        queryReadsAsDate: false,
+      })
       const navigationSuggestions = await suggestWikiTargets('Roadmap')
       expect(navigationSuggestions.map((suggestion) => suggestion.path)).toEqual([
         'notes/z-roadmap.md',
         'notes/a-roadmap.md',
       ])
 
-      const duplicateDateSuggestions = await suggestWikiLinkTargets('2026-07-12')
+      const { suggestions: duplicateDateSuggestions } =
+        await suggestWikiLinkTargets('2026-07-12')
       expect(duplicateDateSuggestions.map((suggestion) => suggestion.path)).toEqual([
         'notes/a-date-twin.md',
       ])
 
-      const aliasSuggestions = await suggestWikiLinkTargets('Second Shared')
+      const { suggestions: aliasSuggestions } =
+        await suggestWikiLinkTargets('Second Shared')
       expect(aliasSuggestions).toHaveLength(1)
       expect(aliasSuggestions[0]).toMatchObject({
         path: 'notes/z-shared.md',
@@ -354,7 +378,12 @@ describe('v1 subject alias flow', () => {
 
       // Matching the duplicate *title* must not hide a uniquely addressable
       // note: its ambiguous ranked spelling is rescued through its unique alias.
-      const sharedTitleSuggestions = await suggestWikiLinkTargets('Shared')
+      const sharedTitleResult = await suggestWikiLinkTargets('Shared')
+      const { suggestions: sharedTitleSuggestions } = sharedTitleResult
+      expect(sharedTitleResult.claimedTargetKeys).toEqual([
+        'second shared',
+        'shared',
+      ])
       expect(sharedTitleSuggestions).toMatchObject([
         {
           path: 'notes/z-shared.md',
@@ -362,6 +391,15 @@ describe('v1 subject alias flow', () => {
           alias: 'Second Shared',
           insertText: 'Second Shared',
         },
+      ])
+
+      const adaResult = await suggestWikiLinkTargets('Ada')
+      expect(adaResult.claimedTargetKeys).toEqual([
+        'ada lovelace',
+        'ada project',
+      ])
+      expect(adaResult.suggestions).toMatchObject([
+        { path: 'notes/ada-project.md', target: 'Ada Project' },
       ])
 
       await Promise.all(
@@ -372,10 +410,15 @@ describe('v1 subject alias flow', () => {
           ...duplicateDateSuggestions,
           ...aliasSuggestions,
           ...sharedTitleSuggestions,
+          ...adaResult.suggestions,
         ].map(expectSuggestionOpensItsPath),
       )
-      await expect(suggestWikiLinkTargets('Unsafe | Title')).resolves.toEqual([])
-      await expect(suggestWikiLinkTargets('Escape \\. Title')).resolves.toEqual([])
+      await expect(suggestWikiLinkTargets('Unsafe | Title')).resolves.toMatchObject({
+        suggestions: [],
+      })
+      await expect(suggestWikiLinkTargets('Escape \\. Title')).resolves.toMatchObject({
+        suggestions: [],
+      })
     } finally {
       setBridge(null)
       database.close()

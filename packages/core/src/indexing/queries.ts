@@ -24,6 +24,7 @@ export {
   suggestWikiLinkTargets,
   suggestWikiTargets,
   type TagSuggestion,
+  type WikiLinkSuggestionResult,
 } from './queries-suggestions'
 
 /**

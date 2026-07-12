@@ -128,6 +128,44 @@ describe('buildAutocompleteEntries', () => {
     ).toEqual([])
   })
 
+  it('does not offer create when an existing claim was filtered from suggestions', () => {
+    expect(
+      buildAutocompleteEntries('Roadmap', [], {
+        offerCreate: true,
+        claimedTargetKeys: ['roadmap'],
+      }),
+    ).toEqual([])
+  })
+
+  it('drops an exact-name contact when the query already has an existing claim', () => {
+    expect(
+      buildAutocompleteEntries('Ada Lovelace', [], {
+        offerCreate: true,
+        contacts: [contact({})],
+        claimedTargetKeys: ['ada lovelace'],
+      }),
+    ).toEqual([])
+  })
+
+  it('drops a claimed contact found by a partial query', () => {
+    const entries = buildAutocompleteEntries('Road', [], {
+      offerCreate: true,
+      contacts: [contact({ fullName: 'Roadmap' })],
+      claimedTargetKeys: ['roadmap'],
+    })
+    expect(entries).toEqual([{ kind: 'create', title: 'Road' }])
+  })
+
+  it('keeps an unclaimed contact when another candidate key is claimed', () => {
+    const ada = contact({})
+    const entries = buildAutocompleteEntries('Ada Lovelace', [], {
+      offerCreate: true,
+      contacts: [ada],
+      claimedTargetKeys: ['roadmap'],
+    })
+    expect(entries).toEqual([{ kind: 'contact', contact: ada }])
+  })
+
   it('never offers create from unsettled (in-flight) suggestions', () => {
     // The visible list belongs to the previous query while fetching — a match
     // for the current text may be about to arrive.
