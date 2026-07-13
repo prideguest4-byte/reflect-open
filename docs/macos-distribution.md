@@ -211,7 +211,8 @@ file both channels write is `apps/desktop/package.json` (`version`); on a merge
 conflict, take either side — the next Release PR rewrites it. Do not hand-edit the
 changelogs or manifests outside the flows above.
 
-All human version interventions go through the manifest files. **Never use
+In normal release-please flows, human version interventions go through the manifest
+files; the no-Release-PR fallback below is the explicit exception. **Never use
 `Release-As:` commit footers**: they stay in `next`'s history and leak into `master`'s
 version calculation at the next promote. The promotion workflow does supply an
 ephemeral `release-as` CLI override derived from the approved beta tag; it does not
@@ -221,7 +222,8 @@ first beta of a new cycle is tagged without a number (`v0.6.0-beta`, then `-beta
 
 ### Manual fallback (no Release PR)
 
-Merge a PR that sets `version` in `apps/desktop/package.json`, then run
+For this exceptional recovery path, merge a PR that sets `version` in
+`apps/desktop/package.json`, then run
 **Actions → Release → Run workflow** on that branch. The workflow derives the tag from
 the version, and publish creates the release (and its tag) itself via
 `gh release create`. Afterwards, sync that channel's manifest file with a follow-up PR
