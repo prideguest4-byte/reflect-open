@@ -103,6 +103,7 @@ describe('streamChatTurn', () => {
         messages: [{ role: 'user', content: 'where is the launch plan?' }],
         today: '2026-06-11',
         semanticSearchEnabled: true,
+        customSystemPrompt: '',
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
@@ -142,6 +143,7 @@ describe('streamChatTurn', () => {
         messages: [{ role: 'user', content: 'what do my notes say?' }],
         today: '2026-06-11',
         semanticSearchEnabled: true,
+        customSystemPrompt: '',
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
@@ -163,6 +165,7 @@ describe('streamChatTurn', () => {
         messages: [{ role: 'user', content: 'hi' }],
         today: '2026-06-11',
         semanticSearchEnabled: true,
+        customSystemPrompt: 'Challenge my assumptions before answering.',
         context: cloudSafeGraphContext({
           graphName: 'atlas-graph',
           noteCount: 7,
@@ -179,6 +182,7 @@ describe('streamChatTurn', () => {
     expect(outbound).toContain('atlas-graph')
     expect(outbound).toContain('#book (2)')
     expect(outbound).toContain('Daily notes span 2026-06-01 to 2026-06-10.')
+    expect(outbound).toContain('Challenge my assumptions before answering.')
   })
 
   it('yields a terminal error event when the stream errors', async () => {
@@ -195,6 +199,7 @@ describe('streamChatTurn', () => {
         messages: [{ role: 'user', content: 'hi' }],
         today: '2026-06-11',
         semanticSearchEnabled: true,
+        customSystemPrompt: '',
         context: null,
       }),
     )
@@ -219,6 +224,7 @@ describe('streamChatTurn', () => {
         messages: [{ role: 'user', content: 'where is the launch plan?' }],
         today: '2026-06-11',
         semanticSearchEnabled: true,
+        customSystemPrompt: '',
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
@@ -257,6 +263,7 @@ describe('streamChatTurn', () => {
         messages: [{ role: 'user', content: 'plan and budget?' }],
         today: '2026-06-11',
         semanticSearchEnabled: true,
+        customSystemPrompt: '',
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
@@ -293,6 +300,7 @@ describe('streamChatTurn', () => {
         messages: [{ role: 'user', content: 'summarize everything' }],
         today: '2026-06-11',
         semanticSearchEnabled: true,
+        customSystemPrompt: '',
         context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'body\n' },
       }),
