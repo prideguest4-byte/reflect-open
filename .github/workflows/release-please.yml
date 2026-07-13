@@ -544,6 +544,7 @@ jobs:
       - name: Collect release-please outputs
         id: result
         env:
+          BRANCH_NAME: ${{ github.ref_name }}
           FIRST_RELEASE_CREATED: ${{ steps.release_first.outputs.releases_created }}
           FIRST_TAG_NAME: ${{ steps.release_first.outputs.tag_name }}
           EXPECTED_STABLE_VERSION: ${{ steps.promotion.outputs.stable_version }}
@@ -555,11 +556,13 @@ jobs:
           STABLE_RELEASE_PR_MERGED: ${{ steps.stable_release_pr.outputs.merged }}
           SECOND_RELEASE_CREATED: ${{ steps.release_second.outputs.releases_created }}
           SECOND_TAG_NAME: ${{ steps.release_second.outputs.tag_name }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
 
           release_created=false
           release_available=false
+          recovered_beta_release=false
           tag_name=""
           release_commit=""
           if [ "$IS_PROMOTION" = "true" ]; then
@@ -574,7 +577,13 @@ jobs:
             else
               release_details=null
               if [ -n "$stable_commit" ]; then
-                release_details="$(bash apps/desktop/scripts/find-github-release.sh "$expected_tag")"
+                promotion_lookup_args=("$expected_tag")
+                if [ "$STABLE_RELEASE_PR_MERGED" = "true" ] || [ "$PROMOTION_PHASE" = "resume" ]; then
+                  promotion_lookup_args=(--wait-for-visible "$expected_tag")
+                fi
+                release_details="$(
+                  bash apps/desktop/scripts/find-github-release.sh "${promotion_lookup_args[@]}"
+                )"
               fi
               if [ "$release_details" != "null" ]; then
                 if ! jq -e \
@@ -630,6 +639,61 @@ jobs:
             fi
             release_created=true
             tag_name="$FIRST_TAG_NAME"
+          elif [ "$BRANCH_NAME" = "next" ] && [ "$RUN_ATTEMPT" -gt 1 ]; then
+            branch_details="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BRANCH_NAME}")"
+            branch_head="$(jq -r '.object.sha' <<< "$branch_details")"
+            if [ "$branch_head" != "$GITHUB_SHA" ]; then
+              echo "A newer next commit owns release state; not recovering ${GITHUB_SHA}."
+            else
+              current_version="$(jq -r '.version' apps/desktop/package.json)"
+              manifest_version="$(jq -r '."."' .github/release-please/manifest.beta.json)"
+              if [ "$current_version" != "$manifest_version" ]; then
+                echo "::error::beta package version ${current_version} does not match manifest ${manifest_version}"
+                exit 1
+              fi
+              if [[ "$current_version" == *-* ]]; then
+                expected_tag="v${current_version}"
+                release_details="$(
+                  bash apps/desktop/scripts/find-github-release.sh --wait-for-visible "$expected_tag"
+                )"
+                if [ "$release_details" != "null" ]; then
+                  tag_details="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${expected_tag}")"
+                  release_is_current="$(
+                    jq -r --arg commit "$GITHUB_SHA" '.target_commitish == $commit' <<< "$release_details"
+                  )"
+                  tag_is_current="$(
+                    jq -r --arg commit "$GITHUB_SHA" \
+                      '.object.type == "commit" and .object.sha == $commit' <<< "$tag_details"
+                  )"
+                  if [ "$release_is_current" != "$tag_is_current" ]; then
+                    echo "::error::${expected_tag} release and tag disagree about retry commit ${GITHUB_SHA}"
+                    exit 1
+                  fi
+                  if [ "$release_is_current" = "true" ]; then
+                    if jq -e \
+                      '.draft == true and .published_at == null and .prerelease == true' \
+                      <<< "$release_details" > /dev/null; then
+                      release_created=true
+                      recovered_beta_release=true
+                      tag_name="$expected_tag"
+                      echo "Recovering draft ${expected_tag} for release retry ${RUN_ATTEMPT}."
+                    elif jq -e \
+                      '.draft == false and .published_at != null and .prerelease == true' \
+                      <<< "$release_details" > /dev/null; then
+                      release_available=true
+                      recovered_beta_release=true
+                      tag_name="$expected_tag"
+                      echo "${expected_tag} is already published; no delivery recovery is needed."
+                    else
+                      echo "::error::${expected_tag} has invalid beta release state"
+                      exit 1
+                    fi
+                  else
+                    echo "${expected_tag} belongs to an older commit; not recovering it for ${GITHUB_SHA}."
+                  fi
+                fi
+              fi
+            fi
           fi
 
           if [ "$release_created" = "true" ]; then
@@ -650,7 +714,9 @@ jobs:
               echo "::error::promoted release has no verified stable commit"
               exit 1
             fi
-            release_details="$(bash apps/desktop/scripts/find-github-release.sh "$tag_name")"
+            release_details="$(
+              bash apps/desktop/scripts/find-github-release.sh --wait-for-visible "$tag_name"
+            )"
             if [ "$release_details" = "null" ]; then
               echo "::error::promoted draft ${tag_name} does not exist"
               exit 1
@@ -688,7 +754,13 @@ jobs:
               exit 1
             fi
             release_commit="$(jq -r '.object.sha' <<< "$tag_details")"
-            release_details="$(bash apps/desktop/scripts/find-github-release.sh "$tag_name")"
+            release_lookup_args=("$tag_name")
+            if [ "$release_created" = "true" ]; then
+              release_lookup_args=(--wait-for-visible "$tag_name")
+            fi
+            release_details="$(
+              bash apps/desktop/scripts/find-github-release.sh "${release_lookup_args[@]}"
+            )"
             if [ "$release_details" = "null" ]; then
               echo "::error::GitHub release ${tag_name} does not exist"
               exit 1
@@ -703,6 +775,10 @@ jobs:
             fi
             if [ "$IS_PROMOTION" = "true" ] && [ "$release_commit" != "$stable_commit" ]; then
               echo "::error::promoted release commit ${release_commit} does not match generated stable commit ${stable_commit}"
+              exit 1
+            fi
+            if [ "$recovered_beta_release" = "true" ] && [ "$release_commit" != "$GITHUB_SHA" ]; then
+              echo "::error::recovered beta release commit ${release_commit} does not match retry commit ${GITHUB_SHA}"
               exit 1
             fi
           fi
@@ -745,7 +821,9 @@ jobs:
   publish-testflight:
     name: Upload to TestFlight
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    if: >-
+      needs.release-please.outputs.release_created == 'true' ||
+      (github.ref_name == 'next' && needs.release-please.outputs.release_available == 'true')
     uses: ./.github/workflows/testflight.yml
     with:
       commit: ${{ needs.release-please.outputs.release_commit }}
@@ -757,7 +835,16 @@ jobs:
   promote-stable:
     name: Open the stable promotion PR
     needs: [release-please, publish-release, publish-testflight]
-    if: github.ref_name == 'next' && needs.release-please.outputs.release_created == 'true'
+    if: >-
+      always() &&
+      github.ref_name == 'next' &&
+      needs.release-please.result == 'success' &&
+      needs.release-please.outputs.release_available == 'true' &&
+      needs.publish-testflight.result == 'success' &&
+      ((needs.release-please.outputs.release_created == 'true' &&
+        needs.publish-release.result == 'success') ||
+       (needs.release-please.outputs.release_created == 'false' &&
+        needs.publish-release.result == 'skipped'))
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
