@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   FileInfo,
+  FileInfoResolver,
   FileLinkPayload,
   FileLinkResolver,
+  ParsedWikiEmbed,
+  WikiEmbedResolution,
   WikiEmbedResolver,
 } from '@meowdown/core'
 import {
@@ -112,10 +115,21 @@ export interface AssetPersistence {
   resolveAssetOpenPathFromSource: (sourcePath: string, src: string) => string | null
   /** Claim resolved local Markdown attachment links as file pills. */
   resolveFileLink: FileLinkResolver
+  /** Claim a Markdown attachment link authored by an explicitly identified source note. */
+  resolveFileLinkFromSource: (sourcePath: string, payload: FileLinkPayload) => boolean
   /** Classify Obsidian wiki embeds through the current attachment catalog. */
   resolveWikiEmbed: WikiEmbedResolver
+  /** Classify a wiki embed authored by an explicitly identified source note. */
+  resolveWikiEmbedFromSource: (
+    sourcePath: string,
+    embed: ParsedWikiEmbed,
+  ) => WikiEmbedResolution | undefined
   /** Open a vetted graph-relative asset path in the OS default application. */
   openAsset: (path: string) => Promise<void>
+  /** Resolve and open an attachment reference authored by the current source note. */
+  openAttachment: (href: string) => Promise<void>
+  /** Resolve and open an attachment reference authored by an explicitly identified source note. */
+  openAttachmentFromSource: (sourcePath: string, href: string) => Promise<void>
   /**
    * Persist a pasted/dropped file into `assets/`, returning its graph-relative
    * path — or null when declined, failed (the failure lands on
@@ -130,7 +144,12 @@ export interface AssetPersistence {
    * (see {@link resolveAssetFileLink}); undefined for anything else or a
    * file that no longer exists.
    */
-  resolveFileInfo: (href: string) => Promise<FileInfo | undefined>
+  resolveFileInfo: FileInfoResolver
+  /** Resolve file-pill metadata for an explicitly identified source note. */
+  resolveFileInfoFromSource: (
+    sourcePath: string,
+    href: string,
+  ) => Promise<FileInfo | undefined>
   /** Changes when external attachment arrivals/removals require a reparse. */
   attachmentCatalogRevision: number
   /** The most recent failed save; cleared by the next success. */
@@ -308,15 +327,24 @@ export function useAssetPersistence(
     [resolveAssetOpenPathFromSource, sourcePath],
   )
 
-  const resolveFileLink = useCallback<FileLinkResolver>(
-    ({ href }) => resolvedAttachment(sourcePath, href, 'markdown') !== null,
-    [resolvedAttachment, sourcePath],
+  const resolveFileLinkFromSource = useCallback(
+    (authoredSourcePath: string, { href }: FileLinkPayload): boolean =>
+      resolvedAttachment(authoredSourcePath, href, 'markdown') !== null,
+    [resolvedAttachment],
   )
 
-  const resolveWikiEmbed = useCallback<WikiEmbedResolver>(
-    ({ target, display }) => {
+  const resolveFileLink = useCallback<FileLinkResolver>(
+    (payload) => resolveFileLinkFromSource(sourcePath, payload),
+    [resolveFileLinkFromSource, sourcePath],
+  )
+
+  const resolveWikiEmbedFromSource = useCallback(
+    (
+      authoredSourcePath: string,
+      { target, display }: ParsedWikiEmbed,
+    ): WikiEmbedResolution | undefined => {
       const outcome = attachmentCatalog?.resolve({
-        sourcePath,
+        sourcePath: authoredSourcePath,
         reference: target,
         referenceKind: 'wikiEmbed',
       })
@@ -346,21 +374,26 @@ export function useAssetPersistence(
       const fileName = withoutFragment.split('/').at(-1) ?? withoutFragment
       const separator = fileName.lastIndexOf('.')
       const noteLike = separator <= 0 || fileName.slice(separator).toLowerCase() === '.md'
-      return noteLike && indexWikiNoteReference(sourcePath, target) !== null
+      return noteLike && indexWikiNoteReference(authoredSourcePath, target) !== null
         ? { kind: 'note' }
         : undefined
     },
-    [attachmentCatalog, sourcePath],
+    [attachmentCatalog],
   )
 
-  const openAsset = useCallback(
-    async (assetPath: string): Promise<void> => {
+  const resolveWikiEmbed = useCallback<WikiEmbedResolver>(
+    (embed) => resolveWikiEmbedFromSource(sourcePath, embed),
+    [resolveWikiEmbedFromSource, sourcePath],
+  )
+
+  const openAttachmentFromSource = useCallback(
+    async (authoredSourcePath: string, href: string): Promise<void> => {
       if (generation === null) {
         return
       }
       const outcome = await resolveAttachment({
-        sourcePath,
-        reference: vaultAttachmentReference(assetPath),
+        sourcePath: authoredSourcePath,
+        reference: href,
         referenceKind: 'markdown',
         generation,
       })
@@ -371,11 +404,22 @@ export function useAssetPersistence(
         return
       }
       if (outcome.kind !== 'resolved') {
-        throw new Error(`attachment is no longer available: ${assetPath}`)
+        throw new Error(`attachment is no longer available: ${href}`)
       }
       await openAssetCommand(outcome.path, generation)
     },
-    [generation, sourcePath],
+    [generation],
+  )
+
+  const openAttachment = useCallback(
+    (href: string): Promise<void> => openAttachmentFromSource(sourcePath, href),
+    [openAttachmentFromSource, sourcePath],
+  )
+
+  const openAsset = useCallback(
+    (assetPath: string): Promise<void> =>
+      openAttachmentFromSource(sourcePath, vaultAttachmentReference(assetPath)),
+    [openAttachmentFromSource, sourcePath],
   )
 
   const saveFile = useCallback(
@@ -440,12 +484,12 @@ export function useAssetPersistence(
     [generation, sourcePath],
   )
 
-  const resolveFileInfo = useCallback(
-    async (href: string): Promise<FileInfo | undefined> => {
+  const resolveFileInfoFromSource = useCallback(
+    async (authoredSourcePath: string, href: string): Promise<FileInfo | undefined> => {
       if (generation === null) {
         return undefined
       }
-      const resolved = resolvedAttachment(sourcePath, href, 'markdown')
+      const resolved = resolvedAttachment(authoredSourcePath, href, 'markdown')
       if (resolved === null || resolved.unavailable) {
         return undefined
       }
@@ -476,7 +520,12 @@ export function useAssetPersistence(
       const size = cache.get(resolved.path)
       return size === undefined ? undefined : { size }
     },
-    [attachmentCatalog, generation, resolvedAttachment, sourcePath],
+    [attachmentCatalog, generation, resolvedAttachment],
+  )
+
+  const resolveFileInfo = useCallback<FileInfoResolver>(
+    (href) => resolveFileInfoFromSource(sourcePath, href),
+    [resolveFileInfoFromSource, sourcePath],
   )
 
   return useMemo<AssetPersistence>(
@@ -486,23 +535,33 @@ export function useAssetPersistence(
       resolveAssetOpenPath,
       resolveAssetOpenPathFromSource,
       resolveFileLink,
+      resolveFileLinkFromSource,
       resolveWikiEmbed,
+      resolveWikiEmbedFromSource,
       openAsset,
+      openAttachment,
+      openAttachmentFromSource,
       saveFile,
       resolveFileInfo,
+      resolveFileInfoFromSource,
       attachmentCatalogRevision,
       saveError,
     }),
     [
       attachmentCatalogRevision,
+      openAttachment,
+      openAttachmentFromSource,
       openAsset,
       resolveAssetOpenPath,
       resolveAssetOpenPathFromSource,
       resolveFileInfo,
+      resolveFileInfoFromSource,
       resolveFileLink,
+      resolveFileLinkFromSource,
       resolveImageUrl,
       resolveImageUrlFromSource,
       resolveWikiEmbed,
+      resolveWikiEmbedFromSource,
       saveError,
       saveFile,
     ],

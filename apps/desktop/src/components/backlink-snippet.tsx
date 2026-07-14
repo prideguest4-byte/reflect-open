@@ -1,8 +1,15 @@
 import { useCallback, type ReactElement } from 'react'
 import { MarkdownView } from '@meowdown/react'
-import type { WikilinkClickHandler } from '@meowdown/core'
-import type { SnippetTask } from '@reflect/core'
+import type {
+  FileClickHandler,
+  FileInfoResolver,
+  FileLinkResolver,
+  WikiEmbedResolver,
+  WikilinkClickHandler,
+} from '@meowdown/core'
+import { errorMessage, type SnippetTask } from '@reflect/core'
 import { useOpenExternalLink } from '@/editor/open-external-link'
+import type { AssetPersistence } from '@/editor/use-asset-persistence'
 import { useSnippetTaskToggle } from '@/hooks/use-snippet-task-toggle'
 
 interface BacklinkSnippetProps {
@@ -16,6 +23,11 @@ interface BacklinkSnippetProps {
   onWikilinkClick: WikilinkClickHandler
   /** Resolve `![…](…)` sources to displayable URLs. Pass a stable function. */
   resolveImageUrl: (sourcePath: string, src: string) => string | undefined
+  resolveFileLink: AssetPersistence['resolveFileLinkFromSource']
+  resolveWikiEmbed: AssetPersistence['resolveWikiEmbedFromSource']
+  resolveFileInfo: AssetPersistence['resolveFileInfoFromSource']
+  openAttachment: AssetPersistence['openAttachmentFromSource']
+  resolverRevision: number
 }
 
 /**
@@ -38,12 +50,49 @@ export function BacklinkSnippet({
   tasks,
   onWikilinkClick,
   resolveImageUrl,
+  resolveFileLink,
+  resolveWikiEmbed,
+  resolveFileInfo,
+  openAttachment,
+  resolverRevision,
 }: BacklinkSnippetProps): ReactElement {
   const onTaskClick = useSnippetTaskToggle(notePath, tasks)
   const openExternalLink = useOpenExternalLink()
   const resolveSnippetImageUrl = useCallback(
-    (src: string) => resolveImageUrl(notePath, src),
-    [notePath, resolveImageUrl],
+    (src: string) => {
+      void resolverRevision
+      return resolveImageUrl(notePath, src)
+    },
+    [notePath, resolveImageUrl, resolverRevision],
+  )
+  const resolveSnippetFileLink = useCallback<FileLinkResolver>(
+    (payload) => {
+      void resolverRevision
+      return resolveFileLink(notePath, payload)
+    },
+    [notePath, resolveFileLink, resolverRevision],
+  )
+  const resolveSnippetWikiEmbed = useCallback<WikiEmbedResolver>(
+    (embed) => {
+      void resolverRevision
+      return resolveWikiEmbed(notePath, embed)
+    },
+    [notePath, resolveWikiEmbed, resolverRevision],
+  )
+  const resolveSnippetFileInfo = useCallback<FileInfoResolver>(
+    (href) => {
+      void resolverRevision
+      return resolveFileInfo(notePath, href)
+    },
+    [notePath, resolveFileInfo, resolverRevision],
+  )
+  const handleFileClick = useCallback<FileClickHandler>(
+    ({ href }) => {
+      void openAttachment(notePath, href).catch((cause) => {
+        console.error('open attachment failed:', errorMessage(cause))
+      })
+    },
+    [notePath, openAttachment],
   )
   return (
     <div className="reflect-backlink-snippet select-text text-xs text-text">
@@ -54,6 +103,10 @@ export function BacklinkSnippet({
         onLinkClick={openExternalLink}
         {...(onTaskClick ? { onTaskClick } : {})}
         resolveImageUrl={resolveSnippetImageUrl}
+        resolveFileLink={resolveSnippetFileLink}
+        resolveWikiEmbed={resolveSnippetWikiEmbed}
+        resolveFileInfo={resolveSnippetFileInfo}
+        onFileClick={handleFileClick}
       />
     </div>
   )

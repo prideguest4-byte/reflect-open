@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type MutableRefObject,
   type ReactElement,
@@ -11,6 +12,7 @@ import { useKeymap } from '@meowdown/react'
 import { type OpenTask } from '@reflect/core'
 import { markModeFromSyntax } from '@/editor/mark-mode'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
+import { useAssetPersistence } from '@/editor/use-asset-persistence'
 import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
 import { useMarkdownLinkNavigation } from '@/editor/use-markdown-link-navigation'
 import { useTagNavigation } from '@/editor/use-tag-navigation'
@@ -163,6 +165,15 @@ export function TaskEditor({
   const { graph } = useGraph()
   const { settings } = useSettings()
   const generation = graph?.generation ?? null
+  const {
+    resolveImageUrl,
+    resolveAssetOpenPath,
+    resolveFileLink,
+    resolveWikiEmbed,
+    resolveFileInfo,
+    openAsset,
+    attachmentCatalogRevision,
+  } = useAssetPersistence(generation, task.notePath)
   const navigate = useWikiLinkNavigation(generation, task.notePath)
   const navigateMarkdownLink = useMarkdownLinkNavigation(generation, task.notePath)
   const onTagClick = useTagNavigation()
@@ -207,9 +218,14 @@ export function TaskEditor({
     }
   }, [convertControllerRef, apiRef])
 
+  const editorHandleRef = useRef<NoteEditorHandle | null>(null)
   const handleRef = useCallback((handle: NoteEditorHandle | null) => {
+    editorHandleRef.current = handle
     handle?.focus()
   }, [])
+  useEffect(() => {
+    editorHandleRef.current?.refreshMarkdownRendering?.()
+  }, [attachmentCatalogRevision])
 
   return (
     <div data-task-editor className="min-w-0 flex-1">
@@ -221,6 +237,12 @@ export function TaskEditor({
         timeFormat={settings.timeFormat}
         // A one-line editor has nothing to reorder, so keep the gutter grip off.
         blockHandle={false}
+        resolveImageUrl={resolveImageUrl}
+        resolveAssetOpenPath={resolveAssetOpenPath}
+        resolveFileLink={resolveFileLink}
+        resolveWikiEmbed={resolveWikiEmbed}
+        resolveFileInfo={resolveFileInfo}
+        openAsset={openAsset}
         onWikiLinkClick={navigate}
         onMarkdownNoteLinkClick={navigateMarkdownLink}
         onTagClick={onTagClick}

@@ -18,6 +18,11 @@ function mount(onOpen: (path: string, event?: { metaKey: boolean }) => void) {
       onOpen={onOpen}
       onWikilinkClick={() => {}}
       resolveImageUrl={() => undefined}
+      resolveFileLink={() => false}
+      resolveWikiEmbed={() => undefined}
+      resolveFileInfo={async () => undefined}
+      openAttachment={async () => {}}
+      resolverRevision={0}
     />,
   )
 }

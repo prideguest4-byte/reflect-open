@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { fileMetaSchema, type FileMeta } from './schemas'
+import { isAttachmentPath, isSafeVisibleGraphPath } from './paths'
 
 /** The authored syntax used to locate a local attachment. */
 export const attachmentReferenceKindSchema = z.enum(['markdown', 'wikiEmbed'])
@@ -100,29 +101,6 @@ export interface PreparedAttachmentCatalog {
   readonly metadataForPath: (path: string) => AttachmentFileMeta | undefined
 }
 
-const SUPPORTED_EXTENSIONS = new Set([
-  '3gp',
-  'avif',
-  'bmp',
-  'flac',
-  'gif',
-  'jpeg',
-  'jpg',
-  'm4a',
-  'mkv',
-  'mov',
-  'mp3',
-  'mp4',
-  'ogg',
-  'ogv',
-  'pdf',
-  'png',
-  'svg',
-  'wav',
-  'webm',
-  'webp',
-])
-
 const IMAGE_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpeg', 'jpg', 'png', 'svg', 'webp'])
 
 function asciiLower(value: string): string {
@@ -140,25 +118,8 @@ function fileExtension(path: string): string | null {
     : asciiLower(fileName.slice(separator + 1))
 }
 
-function hasSupportedExtension(path: string): boolean {
-  const extension = fileExtension(path)
-  return extension !== null && SUPPORTED_EXTENSIONS.has(extension)
-}
-
-function isVisibleGraphPath(path: string): boolean {
-  if (path === '' || path.startsWith('/') || path.includes('\\') || path.includes('\0')) {
-    return false
-  }
-  const components = path.split('/')
-  const first = components[0]
-  if (first !== undefined && first.length === 2 && first.endsWith(':')) {
-    return false
-  }
-  return components.every((component) => component !== '' && !component.startsWith('.'))
-}
-
 function isSupportedAttachmentPath(path: string): boolean {
-  return isVisibleGraphPath(path) && hasSupportedExtension(path)
+  return isAttachmentPath(path)
 }
 
 function decodeReference(reference: string): string | null {
@@ -212,7 +173,7 @@ function explicitVaultReference(reference: string): string | null {
 }
 
 function sourceDirectory(sourcePath: string): readonly string[] | null {
-  if (!sourcePath.endsWith('.md') || !isVisibleGraphPath(sourcePath)) {
+  if (!sourcePath.endsWith('.md') || !isSafeVisibleGraphPath(sourcePath)) {
     return null
   }
   const components = sourcePath.split('/')
@@ -333,7 +294,7 @@ function resolveWikiEmbedReference(
       ? { kind: 'invalid' }
       : outcomeForCandidates([{ path, presence: presenceForPath(index, path) }])
   }
-  if (!hasSupportedExtension(reference)) {
+  if (!isAttachmentPath(reference)) {
     return { kind: 'invalid' }
   }
 

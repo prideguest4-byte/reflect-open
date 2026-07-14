@@ -13,6 +13,7 @@ import {
   errorMessage,
   listAttachments,
   prepareAttachmentCatalog,
+  subscribeFileCatalogChanged,
   subscribeFileChanges,
   type AttachmentCatalogResolveOutcome,
   type AttachmentFileMeta,
@@ -126,12 +127,23 @@ export function AttachmentCatalogProvider({
         console.error('attachment catalog subscription failed:', errorMessage(cause))
       }
     })
+    const catalogSubscription = subscribeFileCatalogChanged((change) => {
+      if (change.generation === generation) {
+        refresh()
+      }
+    })
+    void catalogSubscription.catch((cause: unknown) => {
+      if (!disposed) {
+        console.error('file catalog subscription failed:', errorMessage(cause))
+      }
+    })
     refresh()
 
     return () => {
       disposed = true
       requestSequence += 1
       void subscription.then((unlisten) => unlisten()).catch(() => {})
+      void catalogSubscription.then((unlisten) => unlisten()).catch(() => {})
     }
   }, [generation])
 

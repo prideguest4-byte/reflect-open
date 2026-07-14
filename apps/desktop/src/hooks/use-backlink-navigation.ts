@@ -1,6 +1,9 @@
 import { useCallback } from 'react'
 import type { WikilinkClickHandler } from '@meowdown/core'
-import { useAssetPersistence } from '@/editor/use-asset-persistence'
+import {
+  useAssetPersistence,
+  type AssetPersistence,
+} from '@/editor/use-asset-persistence'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
 import { useNoteLinkNavigation } from '@/hooks/use-note-link-navigation'
 import type { NewWindowClickEvent } from '@/lib/windows/open-in-new-window'
@@ -26,6 +29,16 @@ export interface BacklinkNavigation {
   onWikilinkClick: WikilinkClickHandler
   /** Resolve `![…](…)` sources inside a snippet to displayable URLs. Stable. */
   resolveImageUrl: (sourcePath: string, src: string) => string | undefined
+  /** Claim source-relative Markdown attachment links inside snippets. */
+  resolveFileLink: AssetPersistence['resolveFileLinkFromSource']
+  /** Classify source-relative wiki embeds inside snippets. */
+  resolveWikiEmbed: AssetPersistence['resolveWikiEmbedFromSource']
+  /** Resolve source-relative attachment metadata inside snippets. */
+  resolveFileInfo: AssetPersistence['resolveFileInfoFromSource']
+  /** Resolve and open a source-relative attachment from an interactive snippet. */
+  openAttachment: AssetPersistence['openAttachmentFromSource']
+  /** Changes when snippets must rebuild their attachment rendering. */
+  resolverRevision: number
 }
 
 /**
@@ -45,7 +58,14 @@ export function useBacklinkNavigation(): BacklinkNavigation {
   )
 
   const navigateWikiLink = useWikiLinkNavigation(graph?.generation ?? null)
-  const { resolveImageUrlFromSource } = useAssetPersistence(graph?.generation ?? null)
+  const {
+    resolveImageUrlFromSource,
+    resolveFileLinkFromSource,
+    resolveWikiEmbedFromSource,
+    resolveFileInfoFromSource,
+    openAttachmentFromSource,
+    attachmentCatalogRevision,
+  } = useAssetPersistence(graph?.generation ?? null)
   const onWikilinkClick = useCallback<WikilinkClickHandler>(
     ({ target, event }) => navigateWikiLink(target, event),
     [navigateWikiLink],
@@ -55,5 +75,14 @@ export function useBacklinkNavigation(): BacklinkNavigation {
     [resolveImageUrlFromSource],
   )
 
-  return { openSource, onWikilinkClick, resolveImageUrl: resolveImageUrlStable }
+  return {
+    openSource,
+    onWikilinkClick,
+    resolveImageUrl: resolveImageUrlStable,
+    resolveFileLink: resolveFileLinkFromSource,
+    resolveWikiEmbed: resolveWikiEmbedFromSource,
+    resolveFileInfo: resolveFileInfoFromSource,
+    openAttachment: openAttachmentFromSource,
+    resolverRevision: attachmentCatalogRevision,
+  }
 }

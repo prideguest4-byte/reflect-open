@@ -6,17 +6,21 @@
 //! path because protocol URLs and open commands are independently forgeable.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, OpenOptions};
 use percent_encoding::percent_decode_str;
+use same_file::Handle;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 
-const SUPPORTED_EXTENSIONS: [&str; 20] = [
-    "3gp", "avif", "bmp", "flac", "gif", "jpeg", "jpg", "m4a", "mkv", "mov", "mp3", "mp4", "ogg",
-    "ogv", "pdf", "png", "svg", "wav", "webm", "webp",
-];
+use super::PinnedGraphRoot;
+
 const IMAGE_EXTENSIONS: [&str; 8] = ["avif", "bmp", "gif", "jpeg", "jpg", "png", "svg", "webp"];
 
 /// The authored syntax determines whether an unqualified filename is a
@@ -76,6 +80,41 @@ enum CandidatePresence {
     Available,
     Unavailable,
     Missing,
+}
+
+/// An attachment opened through the generation-pinned root capability. The
+/// directory handles stay alive with the file so replacing an ancestor after
+/// the open cannot redirect a later read.
+pub(super) struct OpenAttachment {
+    file: fs::File,
+    _root: Arc<Dir>,
+    _directories: Vec<Dir>,
+}
+
+impl OpenAttachment {
+    pub(super) fn read_all(mut self) -> std::io::Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        self.file.read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    fn identity_handle(&self) -> std::io::Result<Handle> {
+        Handle::from_file(self.file.try_clone()?)
+    }
+}
+
+/// Holds the ambient-root re-open, attachment handle, and identity handles
+/// until the OS opener call returns.
+pub(super) struct PathLaunchGuard {
+    absolute_path: PathBuf,
+    _current_attachment: OpenAttachment,
+    _identity_handles: Vec<Handle>,
+}
+
+impl PathLaunchGuard {
+    pub(super) fn absolute_path(&self) -> &Path {
+        &self.absolute_path
+    }
 }
 
 /// Resolve an attachment reference against a graph root.
@@ -268,20 +307,20 @@ fn normalize_reference(base: &[String], reference: &str) -> AppResult<String> {
 /// reference semantics.
 pub(super) fn ensure_supported_path(path: &str) -> AppResult<()> {
     visible_wire_components(path)?;
-    let file_name = path
-        .rsplit('/')
-        .next()
-        .ok_or_else(|| AppError::parse("attachment path has no filename"))?;
-    ensure_supported_file_name(file_name)
+    if reflect_graph_paths::classify_normalized(path)
+        == Some(reflect_graph_paths::GraphPathKind::Attachment)
+    {
+        return Ok(());
+    }
+    Err(AppError::parse(format!(
+        "unsupported local attachment format: {path}"
+    )))
 }
 
 fn ensure_supported_file_name(file_name: &str) -> AppResult<()> {
-    let extension = file_name.rsplit_once('.').map(|(_, extension)| extension);
-    if extension.is_some_and(|extension| {
-        SUPPORTED_EXTENSIONS
-            .iter()
-            .any(|supported| extension.eq_ignore_ascii_case(supported))
-    }) {
+    if reflect_graph_paths::classify_normalized(file_name)
+        == Some(reflect_graph_paths::GraphPathKind::Attachment)
+    {
         return Ok(());
     }
     Err(AppError::parse(format!(
@@ -332,18 +371,119 @@ fn candidate_presence(root: &Path, path: &str) -> AppResult<CandidatePresence> {
     }
 }
 
-/// Resolve a path supplied directly to the protocol or OS opener and verify
-/// that every existing component is a real directory/file, never a symlink.
-pub(super) fn resolve_existing_path(root: &Path, path: &str) -> AppResult<PathBuf> {
-    match candidate_presence(root, path)? {
-        CandidatePresence::Available => super::resolve::resolve(root, path),
-        CandidatePresence::Unavailable => Err(AppError::not_found(format!(
-            "attachment is not available on this device: {path}"
-        ))),
-        CandidatePresence::Missing => {
-            Err(AppError::not_found(format!("attachment not found: {path}")))
-        }
+/// Open an eligible attachment by walking every parent directory and the leaf
+/// with no-follow semantics. Reads must use the returned file handle rather
+/// than resolving `root.path.join(path)` again.
+pub(super) fn open_existing_attachment(
+    root: &PinnedGraphRoot,
+    path: &str,
+) -> AppResult<OpenAttachment> {
+    ensure_supported_path(path)?;
+    open_from_capability(root.capability.clone(), path)
+}
+
+fn open_from_capability(root: Arc<Dir>, path: &str) -> AppResult<OpenAttachment> {
+    let components = visible_wire_components(path)?;
+    let (file_name, parent_components) = components
+        .split_last()
+        .ok_or_else(|| AppError::traversal("attachment path is empty"))?;
+
+    let mut current = root.try_clone()?;
+    let mut directories = Vec::with_capacity(parent_components.len() + 1);
+    for component in parent_components {
+        let next = current
+            .open_dir_nofollow(component)
+            .map_err(|error| safe_open_error(path, error))?;
+        directories.push(current);
+        current = next;
     }
+
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let file = match current.open_with(file_name, &options) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let placeholder_name = format!(".{file_name}.icloud");
+            match current.open_with(&placeholder_name, &options) {
+                Ok(placeholder) if placeholder.metadata()?.is_file() => {
+                    return Err(AppError::not_found(format!(
+                        "attachment is not available on this device: {path}"
+                    )))
+                }
+                Ok(_) => return Err(AppError::not_found(format!("attachment not found: {path}"))),
+                Err(placeholder_error)
+                    if placeholder_error.kind() == std::io::ErrorKind::NotFound =>
+                {
+                    return Err(AppError::not_found(format!("attachment not found: {path}")))
+                }
+                Err(placeholder_error) => return Err(safe_open_error(path, placeholder_error)),
+            }
+        }
+        Err(error) => return Err(safe_open_error(path, error)),
+    };
+    if !file.metadata()?.is_file() {
+        return Err(AppError::not_found(format!("attachment not found: {path}")));
+    }
+    directories.push(current);
+    Ok(OpenAttachment {
+        file: file.into_std(),
+        _root: root,
+        _directories: directories,
+    })
+}
+
+fn safe_open_error(path: &str, error: std::io::Error) -> AppError {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return AppError::not_found(format!("attachment not found: {path}"));
+    }
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        return AppError::io(error.to_string());
+    }
+    AppError::traversal(format!(
+        "attachment path could not be opened without following symlinks: {path}: {error}"
+    ))
+}
+
+/// Re-open the current ambient pathname immediately before handing it to the
+/// OS. Both the root directory and leaf must still identify the capability-
+/// pinned objects. The opener APIs accept only a pathname, not a descriptor,
+/// so on Unix there remains an unavoidable race between this final check and
+/// the external application resolving that pathname.
+pub(super) fn revalidate_for_path_launch(
+    root: &PinnedGraphRoot,
+    path: &str,
+    original: &OpenAttachment,
+) -> AppResult<PathLaunchGuard> {
+    ensure_supported_path(path)?;
+    let current_root = Arc::new(Dir::open_ambient_dir(&root.path, ambient_authority())?);
+
+    let pinned_root_identity = Handle::from_file(root.capability.try_clone()?.into_std_file())?;
+    let current_root_identity = Handle::from_file(current_root.try_clone()?.into_std_file())?;
+    if pinned_root_identity != current_root_identity {
+        return Err(AppError::traversal(
+            "the graph root path changed before the attachment could be opened",
+        ));
+    }
+
+    let current_attachment = open_from_capability(current_root, path)?;
+    let original_identity = original.identity_handle()?;
+    let current_identity = current_attachment.identity_handle()?;
+    if original_identity != current_identity {
+        return Err(AppError::traversal(
+            "the attachment path changed before it could be opened",
+        ));
+    }
+
+    Ok(PathLaunchGuard {
+        absolute_path: root.path.join(path),
+        _current_attachment: current_attachment,
+        _identity_handles: vec![
+            pinned_root_identity,
+            current_root_identity,
+            original_identity,
+            current_identity,
+        ],
+    })
 }
 
 fn reject_symlink_components(root: &Path, path: &Path) -> AppResult<()> {
@@ -477,19 +617,28 @@ fn graph_relative_string(root: &Path, path: &Path) -> AppResult<String> {
 }
 
 fn icloud_placeholder_target(name: &str) -> Option<&str> {
-    let target = name.strip_prefix('.')?.strip_suffix(".icloud")?;
-    (!target.is_empty()).then_some(target)
+    reflect_graph_paths::icloud_placeholder_target(name)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cap_std::ambient_authority;
+    use cap_std::fs::Dir;
     use serde_json::json;
+    use std::sync::Arc;
 
     fn write(root: &Path, relative: &str) {
         let path = root.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, b"content").unwrap();
+    }
+
+    fn pinned(root: &Path) -> PinnedGraphRoot {
+        PinnedGraphRoot {
+            path: root.to_path_buf(),
+            capability: Arc::new(Dir::open_ambient_dir(root, ambient_authority()).unwrap()),
+        }
     }
 
     #[test]
@@ -690,7 +839,7 @@ mod tests {
 
     #[test]
     fn accepts_the_supported_obsidian_extension_set_case_insensitively() {
-        for extension in SUPPORTED_EXTENSIONS {
+        for extension in reflect_graph_paths::ATTACHMENT_EXTENSIONS {
             assert!(
                 ensure_supported_path(&format!("Media/file.{}", extension.to_uppercase())).is_ok(),
                 "{extension}"
@@ -772,6 +921,114 @@ mod tests {
             AttachmentReferenceKind::WikiEmbed,
         )
         .unwrap_err();
+        assert!(matches!(error, AppError::Traversal { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capability_open_rejects_symlinked_parents_and_leaves() {
+        use std::os::unix::fs::symlink;
+
+        let graph = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        write(outside.path(), "escape.png");
+        symlink(outside.path(), graph.path().join("Media")).unwrap();
+        symlink(
+            outside.path().join("escape.png"),
+            graph.path().join("escape.png"),
+        )
+        .unwrap();
+        let root = pinned(graph.path());
+
+        for path in ["Media/escape.png", "escape.png"] {
+            let error = open_existing_attachment(&root, path)
+                .err()
+                .expect("symlinked attachment path must be rejected");
+            assert!(matches!(error, AppError::Traversal { .. }), "{path}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn opened_descriptor_cannot_be_redirected_by_a_leaf_swap() {
+        use std::os::unix::fs::symlink;
+
+        let graph = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(graph.path().join("photo.png"), b"vault bytes").unwrap();
+        fs::write(outside.path().join("photo.png"), b"outside bytes").unwrap();
+        let root = pinned(graph.path());
+        let attachment = open_existing_attachment(&root, "photo.png").unwrap();
+
+        fs::rename(
+            graph.path().join("photo.png"),
+            graph.path().join("original.png"),
+        )
+        .unwrap();
+        symlink(
+            outside.path().join("photo.png"),
+            graph.path().join("photo.png"),
+        )
+        .unwrap();
+
+        assert_eq!(attachment.read_all().unwrap(), b"vault bytes");
+    }
+
+    #[test]
+    fn capability_open_preserves_icloud_unavailable_semantics() {
+        let graph = tempfile::tempdir().unwrap();
+        write(graph.path(), ".remote.png.icloud");
+        let root = pinned(graph.path());
+
+        let error = open_existing_attachment(&root, "remote.png")
+            .err()
+            .expect("placeholder must not be served as attachment bytes");
+        let AppError::NotFound { message } = error else {
+            panic!("placeholder should be unavailable, not readable");
+        };
+        assert!(message.contains("not available on this device"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pinned_root_survives_replacement_but_path_launch_fails_closed() {
+        let parent = tempfile::tempdir().unwrap();
+        let root_path = parent.path().join("vault");
+        let moved_path = parent.path().join("moved-vault");
+        fs::create_dir(&root_path).unwrap();
+        fs::write(root_path.join("photo.png"), b"vault bytes").unwrap();
+        let root = pinned(&root_path);
+
+        fs::rename(&root_path, &moved_path).unwrap();
+        fs::create_dir(&root_path).unwrap();
+        fs::write(root_path.join("photo.png"), b"replacement bytes").unwrap();
+
+        let attachment = open_existing_attachment(&root, "photo.png").unwrap();
+        let launch_error = revalidate_for_path_launch(&root, "photo.png", &attachment)
+            .err()
+            .expect("replaced ambient root must be rejected by the pathname launcher");
+        assert!(matches!(launch_error, AppError::Traversal { .. }));
+        assert_eq!(attachment.read_all().unwrap(), b"vault bytes");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_launch_revalidation_rejects_a_replaced_leaf() {
+        let graph = tempfile::tempdir().unwrap();
+        fs::write(graph.path().join("photo.png"), b"vault bytes").unwrap();
+        let root = pinned(graph.path());
+        let attachment = open_existing_attachment(&root, "photo.png").unwrap();
+
+        fs::rename(
+            graph.path().join("photo.png"),
+            graph.path().join("original.png"),
+        )
+        .unwrap();
+        fs::write(graph.path().join("photo.png"), b"replacement bytes").unwrap();
+
+        let error = revalidate_for_path_launch(&root, "photo.png", &attachment)
+            .err()
+            .expect("a replaced attachment leaf must fail identity validation");
         assert!(matches!(error, AppError::Traversal { .. }));
     }
 

@@ -110,6 +110,11 @@ export {
   type WindowBootstrap,
 } from '../graph/schemas'
 export {
+  FILE_CATALOG_CHANGED_EVENT,
+  subscribeFileCatalogChanged,
+  type FileCatalogChanged,
+} from '../graph/catalog-changes'
+export {
   openGraph,
   openNoteWindow,
   windowBootstrap,

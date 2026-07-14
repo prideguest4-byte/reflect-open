@@ -38,7 +38,16 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
     loadMore,
   } = useBacklinkSources(path)
   const [expanded, setExpanded] = useBacklinksExpanded()
-  const { openSource, onWikilinkClick, resolveImageUrl } = useBacklinkNavigation()
+  const {
+    openSource,
+    onWikilinkClick,
+    resolveImageUrl,
+    resolveFileLink,
+    resolveWikiEmbed,
+    resolveFileInfo,
+    openAttachment,
+    resolverRevision,
+  } = useBacklinkNavigation()
 
   if (isError) {
     return (
@@ -95,6 +104,11 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
             onOpen={openSource}
             onWikilinkClick={onWikilinkClick}
             resolveImageUrl={resolveImageUrl}
+            resolveFileLink={resolveFileLink}
+            resolveWikiEmbed={resolveWikiEmbed}
+            resolveFileInfo={resolveFileInfo}
+            openAttachment={openAttachment}
+            resolverRevision={resolverRevision}
           />
         ))}
         <BacklinkLoadMore

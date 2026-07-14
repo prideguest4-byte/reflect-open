@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { markModeFromSyntax } from '@/editor/mark-mode'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
+import { useAssetPersistence } from '@/editor/use-asset-persistence'
 import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
 import { useMarkdownLinkNavigation } from '@/editor/use-markdown-link-navigation'
 import { useTagNavigation } from '@/editor/use-tag-navigation'
@@ -82,6 +83,15 @@ export function MobileTaskEditSheet({
   const { graph } = useGraph()
   const { settings } = useSettings()
   const generation = graph?.generation ?? null
+  const {
+    resolveImageUrl,
+    resolveAssetOpenPath,
+    resolveFileLink,
+    resolveWikiEmbed,
+    resolveFileInfo,
+    openAsset,
+    attachmentCatalogRevision,
+  } = useAssetPersistence(generation, task.notePath)
   const navigateWikiLink = useWikiLinkNavigation(generation, task.notePath)
   const navigateMarkdownLink = useMarkdownLinkNavigation(generation, task.notePath)
   const navigateTag = useTagNavigation()
@@ -91,6 +101,9 @@ export function MobileTaskEditSheet({
   // been rewritten by an action), so remount it via this seed to re-read it.
   const [editorSeed, setEditorSeed] = useState(0)
   const editorRef = useRef<NoteEditorHandle | null>(null)
+  useEffect(() => {
+    editorRef.current?.refreshMarkdownRendering?.()
+  }, [attachmentCatalogRevision])
   // The editor's live markdown, mirrored from its own onChange stream (the
   // desktop task editor's currentRef pattern) so an edit the state hasn't
   // re-rendered yet is never dropped or clobbered. Tagged with the editor
@@ -256,6 +269,12 @@ export function MobileTaskEditSheet({
             timeFormat={settings.timeFormat}
             // A one-line editor has nothing to reorder, so keep the gutter grip off.
             blockHandle={false}
+            resolveImageUrl={resolveImageUrl}
+            resolveAssetOpenPath={resolveAssetOpenPath}
+            resolveFileLink={resolveFileLink}
+            resolveWikiEmbed={resolveWikiEmbed}
+            resolveFileInfo={resolveFileInfo}
+            openAsset={openAsset}
             onWikiLinkClick={openWikiLink}
             onMarkdownNoteLinkClick={openMarkdownLink}
             onTagClick={openTag}

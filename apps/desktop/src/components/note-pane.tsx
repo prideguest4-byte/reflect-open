@@ -177,10 +177,13 @@ export function NotePaneComponent({
     resolveAssetOpenPath,
     resolveAssetOpenPathFromSource,
     resolveFileLink,
+    resolveFileLinkFromSource,
     resolveWikiEmbed,
+    resolveWikiEmbedFromSource,
     openAsset,
     saveFile,
     resolveFileInfo,
+    resolveFileInfoFromSource,
     attachmentCatalogRevision,
     saveError,
   } = useAssetPersistence(generation, path)
@@ -191,6 +194,9 @@ export function NotePaneComponent({
     resolverRevision: attachmentCatalogRevision,
     resolveImageUrlFromSource,
     resolveAssetOpenPathFromSource,
+    resolveFileLinkFromSource,
+    resolveWikiEmbedFromSource,
+    resolveFileInfoFromSource,
   })
   const onWikiLinkClick = useWikiLinkNavigation(generation, path)
   const onMarkdownNoteLinkClick = useMarkdownLinkNavigation(generation, path)

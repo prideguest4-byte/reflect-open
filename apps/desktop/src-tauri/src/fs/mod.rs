@@ -16,8 +16,10 @@ mod resolve;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use cap_std::ambient_authority;
+use cap_std::fs::Dir;
 use serde::Serialize;
 use tauri::{Emitter, State};
 use tauri_plugin_opener::OpenerExt;
@@ -68,6 +70,7 @@ pub(crate) use reflect_graph_paths::icloud_placeholder_target;
 pub struct GraphInner {
     pub generation: u64,
     pub root: Option<PathBuf>,
+    root_capability: Option<Arc<Dir>>,
     catalog: Option<io::FileCatalog>,
     /// Monotonic invalidation epoch. A scan may run without the graph lock;
     /// it can populate the cache only if no write/watcher invalidated the
@@ -108,6 +111,26 @@ pub struct FileMeta {
     pub placeholder: bool,
 }
 
+/// Event emitted after the active graph's shared note/attachment catalog is
+/// invalidated by a filesystem source that cannot safely use `index:changed`
+/// for every transition (notably iCloud eviction placeholders).
+pub(crate) const FILE_CATALOG_CHANGED_EVENT: &str = "graph:catalog-changed";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileCatalogChanged {
+    generation: u64,
+}
+
+/// A directory handle and its display path captured from one graph generation.
+/// Attachment consumers use the capability for IO; the path is retained only
+/// for iCloud requests and the OS opener, which require an ambient pathname.
+#[derive(Clone)]
+pub(crate) struct PinnedGraphRoot {
+    path: PathBuf,
+    capability: Arc<Dir>,
+}
+
 /// Result of claiming a note path without overwriting an existing file.
 #[derive(Debug, Serialize)]
 #[serde(
@@ -139,10 +162,12 @@ fn graph_info(root: &Path, generation: u64) -> GraphInfo {
 /// Set the active root (bumping the generation atomically), record it in
 /// recents, and return its info.
 fn activate(state: &State<GraphState>, root: &Path) -> AppResult<GraphInfo> {
+    let root_capability = Arc::new(Dir::open_ambient_dir(root, ambient_authority())?);
     let generation = {
         let mut inner = lock_graph(state)?;
         inner.generation += 1;
         inner.root = Some(root.to_path_buf());
+        inner.root_capability = Some(root_capability);
         inner.catalog = None;
         inner.catalog_revision = inner.catalog_revision.wrapping_add(1);
         inner.generation
@@ -198,6 +223,27 @@ pub(crate) fn root_for_generation(
         ));
     }
     inner.root.clone().ok_or_else(AppError::no_graph)
+}
+
+/// The active graph's path and already-open root directory capability, pinned
+/// atomically to the generation that issued an attachment request.
+pub(crate) fn pinned_root_for_generation(
+    state: &State<GraphState>,
+    generation: u64,
+) -> AppResult<PinnedGraphRoot> {
+    let inner = lock_graph(state)?;
+    if inner.generation != generation {
+        return Err(AppError::io(
+            "the graph changed since this command was issued; dropping it",
+        ));
+    }
+    Ok(PinnedGraphRoot {
+        path: inner.root.clone().ok_or_else(AppError::no_graph)?,
+        capability: inner
+            .root_capability
+            .clone()
+            .ok_or_else(AppError::no_graph)?,
+    })
 }
 
 /// `current_root`, or `root_for_generation` when the caller pinned the
@@ -426,9 +472,10 @@ pub fn asset_open(
     app: tauri::AppHandle,
     state: State<GraphState>,
 ) -> AppResult<()> {
-    let root = root_for_generation(&state, generation)?;
-    let abs = attachments::resolve_existing_path(&root, &path)?;
-    open_asset_path(&app, &abs)
+    let root = pinned_root_for_generation(&state, generation)?;
+    let attachment = attachments::open_existing_attachment(&root, &path)?;
+    let launch_guard = attachments::revalidate_for_path_launch(&root, &path, &attachment)?;
+    open_asset_path(&app, launch_guard.absolute_path())
 }
 
 #[cfg(target_os = "ios")]
@@ -566,6 +613,7 @@ pub fn graph_delete(generation: u64, state: State<GraphState>) -> AppResult<()> 
                 ));
             }
             let root = inner.root.take().ok_or_else(AppError::no_graph)?;
+            inner.root_capability = None;
             inner.generation += 1;
             inner.catalog = None;
             inner.catalog_revision = inner.catalog_revision.wrapping_add(1);
@@ -772,16 +820,41 @@ where
 /// Invalidate the catalog only if `root` is still the active generation's
 /// root. A late watcher/iCloud callback for a previous graph is harmless.
 pub(crate) fn invalidate_file_catalog(state: &GraphState, root: &Path) {
+    let _ = invalidate_file_catalog_generation(state, root);
+}
+
+/// Invalidate the active catalog and notify generation-pinned frontend
+/// consumers. This is separate from `index:changed`: an iCloud eviction is
+/// neither an upsert nor a removal, but attachment resolution must immediately
+/// stop serving its previous positive match.
+pub(crate) fn invalidate_file_catalog_and_emit(
+    app: &tauri::AppHandle,
+    state: &GraphState,
+    root: &Path,
+) {
+    if let Some(generation) = invalidate_file_catalog_generation(state, root) {
+        let _ = app.emit(
+            FILE_CATALOG_CHANGED_EVENT,
+            FileCatalogChanged { generation },
+        );
+    }
+}
+
+fn invalidate_file_catalog_generation(state: &GraphState, root: &Path) -> Option<u64> {
     match state.0.lock() {
         Ok(mut inner) if inner.root.as_deref() == Some(root) => {
             inner.catalog = None;
             inner.catalog_revision = inner.catalog_revision.wrapping_add(1);
+            Some(inner.generation)
         }
-        Ok(_) => {}
-        Err(error) => tracing::error!(
-            ?error,
-            "graph state lock poisoned while invalidating catalog"
-        ),
+        Ok(_) => None,
+        Err(error) => {
+            tracing::error!(
+                ?error,
+                "graph state lock poisoned while invalidating catalog"
+            );
+            None
+        }
     }
 }
 
@@ -808,7 +881,11 @@ mod note_create_tests {
 
 #[cfg(test)]
 mod file_catalog_tests {
-    use super::{file_catalog, file_catalog_with, invalidate_file_catalog, GraphInner, GraphState};
+    use super::{
+        file_catalog, file_catalog_with, invalidate_file_catalog,
+        invalidate_file_catalog_generation, FileCatalogChanged, GraphInner, GraphState,
+    };
+    use serde_json::json;
     use std::fs;
     use std::sync::Mutex;
 
@@ -821,6 +898,7 @@ mod file_catalog_tests {
         let graph = GraphState(Mutex::new(GraphInner {
             generation: 7,
             root: Some(vault.path().to_path_buf()),
+            root_capability: None,
             catalog: None,
             catalog_revision: 0,
         }));
@@ -856,6 +934,7 @@ mod file_catalog_tests {
         let graph = GraphState(Mutex::new(GraphInner {
             generation: 3,
             root: Some(vault.path().to_path_buf()),
+            root_capability: None,
             catalog: None,
             catalog_revision: 0,
         }));
@@ -873,6 +952,7 @@ mod file_catalog_tests {
         let graph = GraphState(Mutex::new(GraphInner {
             generation: 5,
             root: Some(vault.path().to_path_buf()),
+            root_capability: None,
             catalog: None,
             catalog_revision: 0,
         }));
@@ -897,6 +977,32 @@ mod file_catalog_tests {
                 .map(|file| file.path.as_str())
                 .collect::<Vec<_>>(),
             vec!["README.md", "arrived.md"]
+        );
+    }
+
+    #[test]
+    fn invalidation_identity_is_generation_pinned_for_event_consumers() {
+        let vault = tempfile::tempdir().expect("vault");
+        let old_vault = tempfile::tempdir().expect("old vault");
+        let graph = GraphState(Mutex::new(GraphInner {
+            generation: 11,
+            root: Some(vault.path().to_path_buf()),
+            root_capability: None,
+            catalog: None,
+            catalog_revision: 0,
+        }));
+
+        assert_eq!(
+            invalidate_file_catalog_generation(&graph, old_vault.path()),
+            None
+        );
+        assert_eq!(
+            invalidate_file_catalog_generation(&graph, vault.path()),
+            Some(11)
+        );
+        assert_eq!(
+            serde_json::to_value(FileCatalogChanged { generation: 11 }).expect("serialize"),
+            json!({ "generation": 11 })
         );
     }
 }

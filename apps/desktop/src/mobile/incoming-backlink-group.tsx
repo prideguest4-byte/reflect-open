@@ -2,6 +2,7 @@ import { useState, type ReactElement } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { WikilinkClickHandler } from '@meowdown/core'
 import { BacklinkSnippet } from '@/components/backlink-snippet'
+import type { BacklinkNavigation } from '@/hooks/use-backlink-navigation'
 import type { BacklinkSource } from '@/lib/group-backlinks'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +21,11 @@ interface IncomingBacklinkGroupProps {
   onWikilinkClick: WikilinkClickHandler
   /** Resolve `![…](…)` sources inside a snippet to displayable URLs. */
   resolveImageUrl: (sourcePath: string, src: string) => string | undefined
+  resolveFileLink: BacklinkNavigation['resolveFileLink']
+  resolveWikiEmbed: BacklinkNavigation['resolveWikiEmbed']
+  resolveFileInfo: BacklinkNavigation['resolveFileInfo']
+  openAttachment: BacklinkNavigation['openAttachment']
+  resolverRevision: number
 }
 
 /**
@@ -40,6 +46,11 @@ export function IncomingBacklinkGroup({
   onOpen,
   onWikilinkClick,
   resolveImageUrl,
+  resolveFileLink,
+  resolveWikiEmbed,
+  resolveFileInfo,
+  openAttachment,
+  resolverRevision,
 }: IncomingBacklinkGroupProps): ReactElement {
   const [expanded, setExpanded] = useState(expandedOverride)
 
@@ -92,6 +103,11 @@ export function IncomingBacklinkGroup({
               tasks={snippet.tasks}
               onWikilinkClick={onWikilinkClick}
               resolveImageUrl={resolveImageUrl}
+              resolveFileLink={resolveFileLink}
+              resolveWikiEmbed={resolveWikiEmbed}
+              resolveFileInfo={resolveFileInfo}
+              openAttachment={openAttachment}
+              resolverRevision={resolverRevision}
             />
           ))}
         </div>

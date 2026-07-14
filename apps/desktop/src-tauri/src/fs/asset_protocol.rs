@@ -126,15 +126,19 @@ fn serve<R: Runtime>(
 ) -> Result<(String, Vec<u8>), StatusCode> {
     let (generation, rel) = parse_request_path(request_path)?;
     let state = app.state::<GraphState>();
-    let root = super::root_for_generation(&state, generation).map_err(|_| StatusCode::FORBIDDEN)?;
-    let abs = super::attachments::resolve_existing_path(&root, rel).map_err(|err| match err {
-        crate::error::AppError::NotFound { .. } => StatusCode::NOT_FOUND,
-        _ => StatusCode::FORBIDDEN,
-    })?;
+    let root =
+        super::pinned_root_for_generation(&state, generation).map_err(|_| StatusCode::FORBIDDEN)?;
+    let attachment =
+        super::attachments::open_existing_attachment(&root, rel).map_err(|err| match err {
+            crate::error::AppError::NotFound { .. } => StatusCode::NOT_FOUND,
+            _ => StatusCode::FORBIDDEN,
+        })?;
     // On an iCloud graph this read blocks until the file is materialized on
     // the device — acceptable here on the blocking pool, and exactly the wait
     // that must never happen on the UI thread.
-    let bytes = std::fs::read(&abs).map_err(|err| match err.kind() {
+    // Read from the already-open descriptor: resolving the pathname again here
+    // would reintroduce a symlink-swap window after validation.
+    let bytes = attachment.read_all().map_err(|err| match err.kind() {
         std::io::ErrorKind::NotFound => StatusCode::NOT_FOUND,
         std::io::ErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
@@ -204,7 +208,21 @@ fn parse_request_path(request_path: &str) -> Result<(u64, &str), StatusCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cap_std::ambient_authority;
+    use cap_std::fs::Dir;
+    use std::path::Path;
+    use std::sync::Arc;
     use tauri::Manager;
+
+    fn set_graph<R: tauri::Runtime>(app: &tauri::App<R>, root: &Path, generation: u64) {
+        let state: tauri::State<GraphState> = app.state();
+        let mut inner = state.0.lock().unwrap();
+        inner.generation = generation;
+        inner.root = Some(root.to_path_buf());
+        inner.root_capability = Some(Arc::new(
+            Dir::open_ambient_dir(root, ambient_authority()).unwrap(),
+        ));
+    }
 
     #[test]
     fn parses_a_generation_pinned_asset_path() {
@@ -296,12 +314,7 @@ mod tests {
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
         app.manage(GraphState::default());
-        {
-            let state: tauri::State<GraphState> = app.state();
-            let mut inner = state.0.lock().unwrap();
-            inner.generation = 7;
-            inner.root = Some(graph.path().to_path_buf());
-        }
+        set_graph(&app, graph.path(), 7);
 
         let response = response_for(app.handle(), "7/Projects/media/photo.png", true);
         assert_eq!(response.status(), StatusCode::OK);
@@ -325,12 +338,7 @@ mod tests {
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
         app.manage(GraphState::default());
-        {
-            let state: tauri::State<GraphState> = app.state();
-            let mut inner = state.0.lock().unwrap();
-            inner.generation = 1;
-            inner.root = Some(graph.path().to_path_buf());
-        }
+        set_graph(&app, graph.path(), 1);
 
         let response = response_for(app.handle(), "1/photo.png", false);
         assert_eq!(response.status(), StatusCode::OK);
@@ -353,12 +361,7 @@ mod tests {
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
         app.manage(GraphState::default());
-        {
-            let state: tauri::State<GraphState> = app.state();
-            let mut inner = state.0.lock().unwrap();
-            inner.generation = 2;
-            inner.root = Some(graph.path().to_path_buf());
-        }
+        set_graph(&app, graph.path(), 2);
 
         let response = response_for(app.handle(), "2/diagram.svg", false);
         assert_eq!(response.status(), StatusCode::OK);
@@ -386,16 +389,35 @@ mod tests {
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
         app.manage(GraphState::default());
-        {
-            let state: tauri::State<GraphState> = app.state();
-            let mut inner = state.0.lock().unwrap();
-            inner.generation = 3;
-            inner.root = Some(graph.path().to_path_buf());
-        }
+        set_graph(&app, graph.path(), 3);
 
         assert_eq!(
             response_for(app.handle(), "3/link.png", false).status(),
             StatusCode::FORBIDDEN,
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn protocol_reads_from_the_generation_pinned_root_after_path_replacement() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("vault");
+        let moved_root = parent.path().join("moved-vault");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("photo.png"), b"\x89PNG\r\n\x1a\nvault").unwrap();
+
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(GraphState::default());
+        set_graph(&app, &root, 4);
+
+        std::fs::rename(&root, &moved_root).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("photo.png"), b"\x89PNG\r\n\x1a\nreplacement").unwrap();
+
+        let response = response_for(app.handle(), "4/photo.png", false);
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.body().as_ref(), b"\x89PNG\r\n\x1a\nvault");
     }
 }

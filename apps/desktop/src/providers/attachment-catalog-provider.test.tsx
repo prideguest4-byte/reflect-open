@@ -1,7 +1,12 @@
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import { emitFileChanges, setBridge, type FileMeta } from '@reflect/core'
+import {
+  emitFileChanges,
+  FILE_CATALOG_CHANGED_EVENT,
+  setBridge,
+  type FileMeta,
+} from '@reflect/core'
 import {
   AttachmentCatalogProvider,
   useAttachmentCatalog,
@@ -125,6 +130,39 @@ describe('AttachmentCatalogProvider', () => {
         referenceKind: 'wikiEmbed',
       }),
     ).toEqual({ kind: 'resolved', path: 'Media/new.png', renderKind: 'image' })
+  })
+
+  it('refreshes only matching generation catalog events and cleans up both subscriptions', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>()
+    const unlistened: string[] = []
+    const invoke = vi.fn(async (command: string) =>
+      command === 'list_attachments' ? [] : null,
+    )
+    setBridge({
+      invoke,
+      listen: async (event, handler) => {
+        handlers.set(event, handler)
+        return () => {
+          handlers.delete(event)
+          unlistened.push(event)
+        }
+      },
+    })
+    const view = render(
+      <AttachmentCatalogProvider generation={4}>
+        <Probe />
+      </AttachmentCatalogProvider>,
+    )
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1))
+
+    act(() => handlers.get(FILE_CATALOG_CHANGED_EVENT)?.({ generation: 3 }))
+    expect(invoke).toHaveBeenCalledTimes(1)
+    act(() => handlers.get(FILE_CATALOG_CHANGED_EVENT)?.({ generation: 4 }))
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2))
+
+    view.unmount()
+    await waitFor(() => expect(unlistened).toHaveLength(2))
+    expect(handlers.size).toBe(0)
   })
 
   it('fails closed after a refresh error and recovers through ambiguity and eviction', async () => {

@@ -46,6 +46,7 @@ pub fn classify_normalized(path: &str) -> Option<GraphPathKind> {
         || path.ends_with('/')
         || path.contains('\\')
         || has_windows_drive_prefix(path)
+        || path.contains('\0')
     {
         return None;
     }
@@ -139,9 +140,11 @@ fn visible_components(path: &Path) -> Option<Vec<&str>> {
     let components: Vec<&str> = path
         .components()
         .map(|component| match component {
-            Component::Normal(value) => value
-                .to_str()
-                .filter(|component| !component.starts_with('.') && !component.contains('\\')),
+            Component::Normal(value) => value.to_str().filter(|component| {
+                !component.starts_with('.')
+                    && !component.contains('\\')
+                    && !component.contains('\0')
+            }),
             _ => None,
         })
         .collect::<Option<_>>()?;

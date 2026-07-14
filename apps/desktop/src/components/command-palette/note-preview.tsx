@@ -1,6 +1,7 @@
-import { type ReactElement } from 'react'
+import { useCallback, type ReactElement } from 'react'
+import type { FileClickHandler } from '@meowdown/core'
 import { useQuery } from '@tanstack/react-query'
-import { isAppError, readNote, splitFrontmatter } from '@reflect/core'
+import { errorMessage, isAppError, readNote, splitFrontmatter } from '@reflect/core'
 import { MarkdownPreview } from '@/editor/markdown-preview'
 import { useAssetPersistence } from '@/editor/use-asset-persistence'
 import { formatDayLabel } from '@/lib/dates'
@@ -37,9 +38,21 @@ async function readNoteForPreview(path: string): Promise<string | null> {
 export function NotePreview({ entry }: NotePreviewProps): ReactElement {
   const { graph } = useGraph()
   const { settings } = useSettings()
-  const { resolveImageUrl, attachmentCatalogRevision } = useAssetPersistence(
-    graph?.generation ?? null,
-    entry.path,
+  const {
+    resolveImageUrl,
+    resolveFileLink,
+    resolveWikiEmbed,
+    resolveFileInfo,
+    openAttachment,
+    attachmentCatalogRevision,
+  } = useAssetPersistence(graph?.generation ?? null, entry.path)
+  const handleFileClick = useCallback<FileClickHandler>(
+    ({ href }) => {
+      void openAttachment(href).catch((cause) => {
+        console.error('open attachment failed:', errorMessage(cause))
+      })
+    },
+    [openAttachment],
   )
   const { data, isError } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'note-preview', entry.path],
@@ -61,6 +74,10 @@ export function NotePreview({ entry }: NotePreviewProps): ReactElement {
       <MarkdownPreview
         content={body}
         resolveImageUrl={resolveImageUrl}
+        resolveFileLink={resolveFileLink}
+        resolveWikiEmbed={resolveWikiEmbed}
+        resolveFileInfo={resolveFileInfo}
+        onFileClick={handleFileClick}
         resolverRevision={attachmentCatalogRevision}
       />
     )

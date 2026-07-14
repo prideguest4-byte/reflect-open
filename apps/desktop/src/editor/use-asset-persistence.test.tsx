@@ -214,9 +214,9 @@ describe('resolveAssetFileLink', () => {
 
 describe('useAssetPersistence catalog resolution', () => {
   it('resolves nested Markdown paths and unique wiki embeds through the graph catalog', async () => {
-    const invoke = vi.fn(async (command: string) =>
-      command === 'list_attachments'
-        ? [
+    const invoke = vi.fn(async (command: string) => {
+      if (command === 'list_attachments') {
+        return [
             {
               path: 'Projects/images/photo one.png',
               size: 40,
@@ -225,8 +225,12 @@ describe('useAssetPersistence catalog resolution', () => {
             { path: 'Media/manual.pdf', size: 80, modifiedMs: 2 },
             { path: 'Media/diagram.png', size: 60, modifiedMs: 3 },
           ]
-        : null,
-    )
+      }
+      if (command === 'attachment_resolve') {
+        return { kind: 'resolved', path: 'Media/manual.pdf', renderKind: 'file' }
+      }
+      return null
+    })
     setBridge({ invoke, invokeBinary: async () => null, listen: async () => () => {} })
     render(
       <AttachmentCatalogProvider generation={7}>
@@ -248,6 +252,44 @@ describe('useAssetPersistence catalog resolution', () => {
       }),
     ).toEqual({ kind: 'image', src: '/Media/diagram.png', alt: 'Diagram' })
     await expect(persistence!.resolveFileInfo('../Media/manual.pdf')).resolves.toEqual({ size: 80 })
+
+    expect(
+      persistence!.resolveFileLinkFromSource(
+        'Archive/2025/Review.md',
+        fileLink('../../Media/manual.pdf'),
+      ),
+    ).toBe(true)
+    expect(
+      persistence!.resolveWikiEmbedFromSource('Archive/2025/Review.md', {
+        target: 'diagram.png',
+        display: '',
+        width: null,
+        height: null,
+      }),
+    ).toEqual({ kind: 'image', src: '/Media/diagram.png' })
+    await expect(
+      persistence!.resolveFileInfoFromSource(
+        'Archive/2025/Review.md',
+        '../../Media/manual.pdf',
+      ),
+    ).resolves.toEqual({ size: 80 })
+    await persistence!.openAttachmentFromSource(
+      'Archive/2025/Review.md',
+      '../../Media/manual.pdf',
+    )
+    expect(invoke).toHaveBeenCalledWith(
+      'attachment_resolve',
+      expect.objectContaining({
+        request: expect.objectContaining({
+          sourcePath: 'Archive/2025/Review.md',
+          reference: '../../Media/manual.pdf',
+        }),
+      }),
+    )
+    expect(invoke).toHaveBeenCalledWith('asset_open', {
+      path: 'Media/manual.pdf',
+      generation: 7,
+    })
   })
 
   it('leaves missing or ambiguous attachments literal and falls back to note embeds', async () => {

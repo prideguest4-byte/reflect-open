@@ -2,6 +2,7 @@ import { useCallback, type ReactNode } from 'react'
 import type { WikilinkHoverHit } from '@meowdown/core'
 import { resolveExistingWikiTarget, splitFrontmatter, type DateFormat } from '@reflect/core'
 import { WikiLinkHoverPreview } from '@/components/wiki-link-hover-preview'
+import type { AssetPersistence } from '@/editor/use-asset-persistence'
 import { readExistingNoteSource } from '@/lib/read-existing-note-source'
 
 interface WikiLinkHoverPreviewOptions {
@@ -11,6 +12,9 @@ interface WikiLinkHoverPreviewOptions {
   resolverRevision: number
   resolveImageUrlFromSource: (sourcePath: string, src: string) => string | null
   resolveAssetOpenPathFromSource: (sourcePath: string, src: string) => string | null
+  resolveFileLinkFromSource: AssetPersistence['resolveFileLinkFromSource']
+  resolveWikiEmbedFromSource: AssetPersistence['resolveWikiEmbedFromSource']
+  resolveFileInfoFromSource: AssetPersistence['resolveFileInfoFromSource']
 }
 
 function isSvgAsset(path: string): boolean {
@@ -37,6 +41,9 @@ export function useWikiLinkHoverPreview({
   resolverRevision,
   resolveImageUrlFromSource,
   resolveAssetOpenPathFromSource,
+  resolveFileLinkFromSource,
+  resolveWikiEmbedFromSource,
+  resolveFileInfoFromSource,
 }: WikiLinkHoverPreviewOptions): (hit: WikilinkHoverHit) => Promise<ReactNode> {
   return useCallback(
     async ({ target }: WikilinkHoverHit): Promise<ReactNode> => {
@@ -67,6 +74,9 @@ export function useWikiLinkHoverPreview({
             markdown={splitFrontmatter(source).body}
             dateFormat={dateFormat}
             resolveImageUrl={resolvePreviewImageUrl}
+            resolveFileLinkFromSource={resolveFileLinkFromSource}
+            resolveWikiEmbedFromSource={resolveWikiEmbedFromSource}
+            resolveFileInfoFromSource={resolveFileInfoFromSource}
             resolverRevision={resolverRevision}
           />
         )
@@ -80,7 +90,10 @@ export function useWikiLinkHoverPreview({
       graphKey,
       resolverRevision,
       resolveAssetOpenPathFromSource,
+      resolveFileInfoFromSource,
+      resolveFileLinkFromSource,
       resolveImageUrlFromSource,
+      resolveWikiEmbedFromSource,
     ],
   )
 }
