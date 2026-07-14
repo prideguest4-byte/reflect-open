@@ -63,12 +63,14 @@ export function buildAutocompleteEntries(
   // canonical answer for that contact. Put it ahead of a different same-name
   // note so Enter follows stable email identity; keep that other note visible
   // immediately after it for an intentional name-based choice.
-  const preferredContact = contactSuggestions.find(
+  const exactOwnedContacts = contactSuggestions.filter(
     (suggestion) =>
-      suggestion.linkable &&
       suggestion.existingPersonNote &&
       contactNamesEqual(suggestion.contact.fullName, title),
   )
+  const preferredContact = exactOwnedContacts.find((suggestion) => suggestion.linkable)
+  const blocksExactSuggestion =
+    preferredContact === undefined && exactOwnedContacts.length > 0
   const preferredTargetKey =
     preferredContact === undefined ? null : foldKey(preferredContact.target)
   const entries: AutocompleteEntry[] = []
@@ -78,8 +80,21 @@ export function buildAutocompleteEntries(
   entries.push(
     ...suggestions
       .filter(
-        (suggestion) =>
-          preferredTargetKey === null || foldKey(suggestion.target) !== preferredTargetKey,
+        (suggestion) => {
+          if (
+            preferredTargetKey !== null &&
+            foldKey(suggestion.target) === preferredTargetKey
+          ) {
+            return false
+          }
+          if (!blocksExactSuggestion) {
+            return true
+          }
+          return (
+            !contactNamesEqual(suggestion.target, title) &&
+            (suggestion.alias === null || !contactNamesEqual(suggestion.alias, title))
+          )
+        },
       )
       .map((suggestion) => ({ kind: 'suggestion' as const, suggestion })),
   )

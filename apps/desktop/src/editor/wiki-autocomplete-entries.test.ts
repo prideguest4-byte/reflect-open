@@ -259,4 +259,56 @@ describe('buildAutocompleteEntries', () => {
     })
     expect(entries).toEqual([])
   })
+
+  it('hides exact note and alias bypasses for an un-linkable email owner', () => {
+    const entries = buildAutocompleteEntries(
+      'Ada Lovelace',
+      [
+        suggestion({ target: 'Ada Lovelace', title: 'Ada Lovelace' }),
+        suggestion({ target: 'People/Ada', title: 'People/Ada', alias: 'Ada Lovelace' }),
+        suggestion({ target: 'Ada Lovelace Notes', title: 'Ada Lovelace Notes' }),
+      ],
+      {
+        offerCreate: true,
+        contacts: [
+          contactSuggestion({}, {
+            target: 'Ada [Private]',
+            existingPersonNote: true,
+            linkable: false,
+          }),
+        ],
+      },
+    )
+
+    expect(entries).toEqual([
+      {
+        kind: 'suggestion',
+        suggestion: expect.objectContaining({ target: 'Ada Lovelace Notes' }),
+      },
+    ])
+  })
+
+  it('keeps exact note suggestions for a prefix query', () => {
+    const entries = buildAutocompleteEntries(
+      'Ada',
+      [suggestion({ target: 'Ada', title: 'Ada' })],
+      {
+        offerCreate: true,
+        contacts: [
+          contactSuggestion({}, {
+            target: 'Ada [Private]',
+            existingPersonNote: true,
+            linkable: false,
+          }),
+        ],
+      },
+    )
+
+    expect(entries).toEqual([
+      {
+        kind: 'suggestion',
+        suggestion: expect.objectContaining({ target: 'Ada' }),
+      },
+    ])
+  })
 })

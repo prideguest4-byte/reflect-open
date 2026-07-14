@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ContactMatch } from '@reflect/core'
+import type { ContactMatch, ResolveOrCreateNoteResult } from '@reflect/core'
 import type { NoteSession } from '@/editor/note-session'
 
 const readNote = vi.hoisted(() => vi.fn<(path: string) => Promise<string>>())
 const writeNote = vi.hoisted(() => vi.fn(async () => {}))
 const openSession = vi.hoisted(() => vi.fn<(path: string) => NoteSession | null>(() => null))
 const resolveOrCreateNoteWithTitle = vi.hoisted(() =>
-  vi.fn(async () => ({ kind: 'created' as const, path: 'notes/created.md' })),
+  vi.fn<() => Promise<ResolveOrCreateNoteResult>>(async () => ({
+    kind: 'created',
+    path: 'notes/created.md',
+  })),
 )
 const personNoteOwnerForContact = vi.hoisted(() =>
   vi.fn<() => Promise<{ title: string; email: string; linkable: boolean } | null>>(
@@ -23,9 +26,11 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 }))
 vi.mock('@/editor/open-documents', () => ({ openSession }))
 
-const { addContactToNote, createPersonNoteFromContact, ignoreContactSuggestion } = await import(
-  './note-contact'
-)
+const {
+  addContactToNote,
+  ignoreContactSuggestion,
+  resolvePersonNoteTargetFromContact,
+} = await import('./note-contact')
 
 const ADA: ContactMatch = {
   fullName: 'Ada Lovelace',
@@ -149,24 +154,64 @@ describe('addContactToNote', () => {
   })
 })
 
-describe('createPersonNoteFromContact', () => {
+describe('resolvePersonNoteTargetFromContact', () => {
   it('resolves or creates the person note with the details block as its seed', async () => {
-    await createPersonNoteFromContact(ADA, 3)
+    await expect(resolvePersonNoteTargetFromContact(ADA, 3)).resolves.toBe(
+      'Ada Lovelace',
+    )
 
     expect(resolveOrCreateNoteWithTitle).toHaveBeenCalledWith('Ada Lovelace', 3, ADA_BLOCK)
   })
 
-  it('skips creation for any email owner, even when its title is ambiguous', async () => {
+  it('returns a linkable email owner instead of creating a duplicate', async () => {
+    personNoteOwnerForContact.mockResolvedValue({
+      title: 'Augusta Ada King',
+      email: 'ada@example.com',
+      linkable: true,
+    })
+
+    await expect(resolvePersonNoteTargetFromContact(ADA, 3)).resolves.toBe(
+      'Augusta Ada King',
+    )
+
+    expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
+  })
+
+  it('cancels the link for an ambiguous email owner', async () => {
     personNoteOwnerForContact.mockResolvedValue({
       title: 'Ada Lovelace',
       email: 'ada@example.com',
       linkable: false,
     })
 
-    await createPersonNoteFromContact(ADA, 3)
+    await expect(resolvePersonNoteTargetFromContact(ADA, 3)).resolves.toBeNull()
 
     expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
   })
+
+  it('cancels the link for an owner whose title is unsafe in wiki syntax', async () => {
+    personNoteOwnerForContact.mockResolvedValue({
+      title: 'Ada | Lovelace',
+      email: 'ada@example.com',
+      linkable: true,
+    })
+
+    await expect(resolvePersonNoteTargetFromContact(ADA, 3)).resolves.toBeNull()
+
+    expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
+  })
+
+  it.each(['ambiguous', 'unavailable'] as const)(
+    'cancels the link when name resolution is %s',
+    async (kind) => {
+      resolveOrCreateNoteWithTitle.mockResolvedValue({
+        kind,
+        paths: ['notes/ada-lovelace.md'],
+      })
+
+      await expect(resolvePersonNoteTargetFromContact(ADA, 3)).resolves.toBeNull()
+    },
+  )
 })
 
 describe('ignoreContactSuggestion', () => {

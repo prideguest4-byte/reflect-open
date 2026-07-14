@@ -18,7 +18,7 @@ import { reportAmbiguousNoteTitle } from '@/editor/ambiguous-note-feedback'
 import { buildAutocompleteEntries } from '@/editor/wiki-autocomplete-entries'
 import { useContactsAuthorization } from '@/hooks/use-contacts-authorization'
 import { formatDayLabel, todayIso } from '@/lib/dates'
-import { createPersonNoteFromContact } from '@/lib/note-contact'
+import { resolvePersonNoteTargetFromContact } from '@/lib/note-contact'
 import { startOperation } from '@/lib/operations'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
@@ -117,28 +117,28 @@ export function useEditorAutocomplete(): EditorAutocomplete {
             existingPersonNote && target !== contact.fullName
               ? `${primaryDetail} → ${target}`
               : primaryDetail
-          if (existingPersonNote) {
-            return {
-              target,
-              label: contact.fullName,
-              detail,
-            }
-          }
           return {
             target,
             label: contact.fullName,
             detail,
-            // Like the create row: the menu inserts the link text; the person
-            // note is born in the background, prefilled from the contact.
-            onSelect: () => {
-              if (generation !== null) {
-                void createPersonNoteFromContact(contact, generation).catch(
-                  (error: unknown) => {
-                    console.error('create-person-note failed:', error)
+            ...(generation === null
+              ? {}
+              : {
+                  // The Contacts query is cached menu state. Resolve email
+                  // ownership again before this provisional target becomes
+                  // durable; Meowdown maps the link through intervening edits.
+                  resolveTarget: async () => {
+                    try {
+                      return await resolvePersonNoteTargetFromContact(
+                        contact,
+                        generation,
+                      )
+                    } catch (error: unknown) {
+                      console.error('resolve-person-note-target failed:', error)
+                      throw error
+                    }
                   },
-                )
-              }
-            },
+                }),
           }
         }
         const { target, title, alias, date, path, generated } = entry.suggestion

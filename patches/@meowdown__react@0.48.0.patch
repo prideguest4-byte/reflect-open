@@ -1,0 +1,66 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 84422e7229dcd74bd45b3ccc51b03091c46e16fc..5f5814a10f7dde98278c230a58d16af0c19f7e5d 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -130,6 +130,13 @@ interface WikilinkItem {
+   label?: string;
+   /** Secondary text shown beside the label. */
+   detail?: string;
++  /**
++   * Resolves the final target after the provisional link is inserted. A
++   * different target replaces only that mapped link; null removes it. If the
++   * resolver rejects or the user edits the provisional link first, its text
++   * is left unchanged.
++   */
++  resolveTarget?: (target: string) => string | null | Promise<string | null>;
+   /** Side effect run after the link is inserted (e.g. create the note). */
+   onSelect?: () => void;
+ }
+diff --git a/dist/index.js b/dist/index.js
+index ec7f1c2b55c183df6a18362b0182c20049b4e1dc..3bc1f7e1261673bc6c9e11b524d20550502a946c 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1457,6 +1457,33 @@ const regex = new RegExp(String.raw`(?:\[\[[^[\]]*|` + (canUseRegexLookbehind()
+ function queryFromRegexMatch(match) {
+ 	return match[0].replace(/^(?:\[\[|@)/, "").trim();
+ }
++let nextTargetResolutionId = 0;
++function resolveItemTarget(editor, item, from, to) {
++	if (!item.resolveTarget) return;
++	const id = `wikilink-target-${++nextTargetResolutionId}`;
++	const source = `[[${item.target}]]`;
++	if (!editor.commands.trackWikilinkTargetResolution({
++		id,
++		from,
++		to,
++		source
++	})) return;
++	let target;
++	try {
++		target = item.resolveTarget(item.target);
++	} catch {
++		editor.commands.discardWikilinkTargetResolution(id);
++		return;
++	}
++	Promise.resolve(target).then((resolvedTarget) => {
++		editor.commands.settleWikilinkTargetResolution({
++			id,
++			target: resolvedTarget
++		});
++	}, () => {
++		editor.commands.discardWikilinkTargetResolution(id);
++	});
++}
+ function WikilinkMenu({ onWikilinkSearch }) {
+ 	const editor = useEditor$1();
+ 	const [open, setOpen] = useState(false);
+@@ -1500,7 +1527,9 @@ function WikilinkMenu({ onWikilinkSearch }) {
+ 				children: [items.map((item) => /* @__PURE__ */ jsxs(AutocompleteItem, {
+ 					className: autocomplete_menu_module_default.Item,
+ 					onSelect: () => {
++						const from = editor.state.selection.from;
+ 						editor.commands.insertText({ text: `[[${item.target}]]` });
++						resolveItemTarget(editor, item, from, editor.state.selection.from);
+ 						item.onSelect?.();
+ 					},
+ 					children: [/* @__PURE__ */ jsx("span", {

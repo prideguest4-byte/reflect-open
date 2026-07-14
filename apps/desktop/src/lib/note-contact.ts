@@ -8,6 +8,7 @@ import {
   personNoteOwnerForContact,
   resolveOrCreateNoteWithTitle,
   splitFrontmatter,
+  wikiLinkSafe,
   writeNote,
   type ContactMatch,
 } from '@reflect/core'
@@ -82,26 +83,32 @@ export async function addContactToNote(
 }
 
 /**
- * Create a person note from a `[[` link-menu contact row (v1's backlink-menu
- * behavior): titled with the contact's name and prefilled with the same
- * details block Add writes. The row only appears when no suggestion resolves
- * to the name or any email owns an existing person note. Both are rechecked at
- * action time: email ownership closes the ordinary search-to-selection race,
- * while the title resolver reuses an existing title or alias and atomically
- * guards the creation path against index lag.
+ * Resolve a `[[` link-menu contact row at selection time. Email ownership may
+ * have changed since autocomplete ran, so an existing, uniquely addressable
+ * person note becomes the final target even when its title differs from the
+ * Contact's name. An ambiguous or wiki-syntax-unsafe owner returns null rather
+ * than linking a different same-name note. With no owner, resolve or create a
+ * person note under the Contact's name, prefilled with the same details block
+ * Add writes, and keep that name as the target.
  */
-export async function createPersonNoteFromContact(
+export async function resolvePersonNoteTargetFromContact(
   contact: ContactMatch,
   generation: number,
-): Promise<void> {
-  if ((await personNoteOwnerForContact(contact)) !== null) {
-    return
+): Promise<string | null> {
+  const owner = await personNoteOwnerForContact(contact)
+  if (owner !== null) {
+    return owner.linkable && wikiLinkSafe(owner.title) === owner.title
+      ? owner.title
+      : null
   }
-  await resolveOrCreateNoteWithTitle(
+  const outcome = await resolveOrCreateNoteWithTitle(
     contact.fullName,
     generation,
     contactDetailsMarkdown(contact),
   )
+  return outcome.kind === 'ambiguous' || outcome.kind === 'unavailable'
+    ? null
+    : contact.fullName
 }
 
 /**

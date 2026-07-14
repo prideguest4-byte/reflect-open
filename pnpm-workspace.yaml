@@ -24,6 +24,11 @@ minimumReleaseAgeExclude:
   - '@floating-ui/utils@0.2.12'
   - prosemirror-model@1.25.11
 
+# Remove after a Meowdown release includes https://github.com/prosekit/meowdown/pull/309.
+patchedDependencies:
+  '@meowdown/core@0.48.0': patches/@meowdown__core@0.48.0.patch
+  '@meowdown/react@0.48.0': patches/@meowdown__react@0.48.0.patch
+
 # overrides:
 #   '@meowdown/core': https://pkg.pr.new/prosekit/meowdown/@meowdown/core@623bc43
 #   '@meowdown/react': https://pkg.pr.new/prosekit/meowdown/@meowdown/react@623bc43

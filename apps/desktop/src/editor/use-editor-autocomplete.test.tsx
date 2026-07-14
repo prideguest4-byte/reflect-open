@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ContactLinkSuggestion } from '@reflect/core'
+import type { ContactLinkSuggestion, ContactMatch } from '@reflect/core'
 import { useEditorAutocomplete } from './use-editor-autocomplete'
 
 const resolveOrCreateNoteWithTitle = vi.hoisted(() => vi.fn())
@@ -9,7 +9,11 @@ const startOperation = vi.hoisted(() => vi.fn(() => ({ fail: operationFail })))
 const contactLinkSuggestions = vi.hoisted(() =>
   vi.fn<() => Promise<ContactLinkSuggestion[]>>(async () => []),
 )
-const createPersonNoteFromContact = vi.hoisted(() => vi.fn(async () => {}))
+const resolvePersonNoteTargetFromContact = vi.hoisted(() =>
+  vi.fn<(contact: ContactMatch, generation: number) => Promise<string | null>>(
+    async (contact) => contact.fullName,
+  ),
+)
 const contactsState = vi.hoisted(() => ({ enabled: false, authorization: null as string | null }))
 
 vi.mock('@reflect/core', async (importOriginal) => ({
@@ -36,7 +40,7 @@ vi.mock('@/hooks/use-contacts-authorization', () => ({
   useContactsAuthorization: () => contactsState.authorization,
 }))
 vi.mock('@/lib/operations', () => ({ startOperation }))
-vi.mock('@/lib/note-contact', () => ({ createPersonNoteFromContact }))
+vi.mock('@/lib/note-contact', () => ({ resolvePersonNoteTargetFromContact }))
 
 beforeEach(() => {
   resolveOrCreateNoteWithTitle.mockReset()
@@ -44,7 +48,10 @@ beforeEach(() => {
   startOperation.mockClear()
   contactLinkSuggestions.mockReset()
   contactLinkSuggestions.mockResolvedValue([])
-  createPersonNoteFromContact.mockClear()
+  resolvePersonNoteTargetFromContact.mockReset()
+  resolvePersonNoteTargetFromContact.mockImplementation(
+    async (contact) => contact.fullName,
+  )
   contactsState.enabled = false
   contactsState.authorization = null
 })
@@ -129,32 +136,70 @@ describe('useEditorAutocomplete', () => {
   it('links an existing person note found by contact email without creating', async () => {
     contactsState.enabled = true
     contactsState.authorization = 'authorized'
+    const contact: ContactMatch = {
+      fullName: 'Jane Smith',
+      givenName: 'Jane',
+      familyName: 'Smith',
+      emails: ['<Jane@Corp.com>'],
+      phones: [],
+    }
     contactLinkSuggestions.mockResolvedValue([
       {
-        contact: {
-          fullName: 'Jane Smith',
-          givenName: 'Jane',
-          familyName: 'Smith',
-          emails: ['<Jane@Corp.com>'],
-          phones: [],
-        },
+        contact,
         target: 'Jane Doe',
         email: 'jane@corp.com',
         existingPersonNote: true,
         linkable: true,
       },
     ])
+    resolvePersonNoteTargetFromContact.mockResolvedValue('Jane Doe')
     const { result } = renderHook(() => useEditorAutocomplete())
 
     const items = await result.current.onWikilinkSearch('Jane Smith')
 
     expect(items).toEqual([
-      {
+      expect.objectContaining({
         target: 'Jane Doe',
         label: 'Jane Smith',
         detail: 'jane@corp.com → Jane Doe',
+        resolveTarget: expect.any(Function),
+      }),
+    ])
+
+    await expect(items[0]!.resolveTarget?.(items[0]!.target)).resolves.toBe(
+      'Jane Doe',
+    )
+    expect(resolvePersonNoteTargetFromContact).toHaveBeenCalledWith(contact, 7)
+  })
+
+  it('revalidates a new-contact row before committing its link target', async () => {
+    contactsState.enabled = true
+    contactsState.authorization = 'authorized'
+    const contact: ContactMatch = {
+      fullName: 'Jane Smith',
+      givenName: 'Jane',
+      familyName: 'Smith',
+      emails: ['jane@corp.com'],
+      phones: [],
+    }
+    contactLinkSuggestions.mockResolvedValue([
+      {
+        contact,
+        target: 'Jane Smith',
+        email: 'jane@corp.com',
+        existingPersonNote: false,
+        linkable: true,
       },
     ])
-    expect(createPersonNoteFromContact).not.toHaveBeenCalled()
+    resolvePersonNoteTargetFromContact.mockResolvedValue('Jane Doe')
+    const { result } = renderHook(() => useEditorAutocomplete())
+
+    const items = await result.current.onWikilinkSearch('Jane Smith')
+
+    expect(items).toHaveLength(1)
+    await expect(items[0]!.resolveTarget?.(items[0]!.target)).resolves.toBe(
+      'Jane Doe',
+    )
+    expect(resolvePersonNoteTargetFromContact).toHaveBeenCalledWith(contact, 7)
   })
 })
