@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseNote } from '../markdown'
+import { foldKey } from '../markdown/keys'
 import {
   mergeDateSuggestions,
   rankWikiSuggestions,
@@ -210,5 +211,50 @@ describe('mergeDateSuggestions', () => {
     })
     expect(result).toHaveLength(5)
     expect(result[0]!.target).toBe('2020-01-02')
+  })
+})
+
+describe('rankWikiSuggestions — rich titles', () => {
+  const rich = note('Meeting with [[Ada Lovelace|Ada]]', 0, {
+    path: 'notes/meeting.md',
+  })
+
+  it('targets the linkable form while the title stays raw', () => {
+    const [row] = rankWikiSuggestions('meeting', [rich], [], 8)
+    expect(row).toMatchObject({
+      target: 'Meeting with Ada',
+      title: 'Meeting with [[Ada Lovelace|Ada]]',
+      alias: null,
+    })
+  })
+
+  it('folds the derived alias row into a plain suggestion (no self-alias)', () => {
+    const derived = alias(rich, 'Meeting with Ada')
+    const [row] = rankWikiSuggestions('meeting with ada', [], [derived], 8)
+    expect(row).toMatchObject({ target: 'Meeting with Ada', alias: null })
+  })
+
+  it('keeps a real alias as display text on a rich-title note', () => {
+    const standup = alias(rich, 'Standup')
+    const [row] = rankWikiSuggestions('standup', [], [standup], 8)
+    expect(row).toMatchObject({ target: 'Meeting with Ada', alias: 'Standup' })
+  })
+})
+
+describe('mergeDateSuggestions — rich titles', () => {
+  it('an exact raw-title hit keeps the top slot ahead of generated dates', () => {
+    const [ranked] = rankWikiSuggestions(
+      foldKey('3 days ago [[Trip]]'),
+      [note('3 days ago [[Trip]]')],
+      [],
+      8,
+    )
+    const merged = mergeDateSuggestions(
+      [ranked!],
+      [{ date: '2026-07-14', phrase: '3 days ago' }],
+      { key: foldKey('3 days ago [[Trip]]'), limit: 8 },
+    )
+    expect(merged[0]).toBe(ranked)
+    expect(merged[1]).toMatchObject({ date: '2026-07-14' })
   })
 })

@@ -85,6 +85,8 @@ export {
   type ConflictSegment,
   type ConflictSide,
   parseBody,
+  displayNoteTitle,
+  wikiLinkTargetForTitle,
   scanInlineWikiLinks,
   scanInlineImages,
   scanInlineSegments,

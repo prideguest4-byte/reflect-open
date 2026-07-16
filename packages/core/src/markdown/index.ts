@@ -51,6 +51,7 @@ export {
   toggleTaskMarker,
   TaskStaleError,
 } from './edit'
+export { displayNoteTitle, wikiLinkTargetForTitle } from './note-title'
 export { parseTaskMarker } from './task-marker'
 export {
   conflictMarkerBlockCount,

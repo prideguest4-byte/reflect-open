@@ -7,6 +7,7 @@
  */
 
 import { foldKey } from '../markdown/keys'
+import { wikiLinkTargetForTitle } from '../markdown/note-title'
 import type { DateSuggestion } from './date-suggestions'
 
 /**
@@ -23,7 +24,7 @@ export interface GeneratedDate {
 
 /** A ranked note/date suggestion used by navigation and autocomplete surfaces. */
 export interface WikiSuggestion {
-  /** Canonical resolution target (a note title, or an ISO date). */
+  /** Canonical resolution target (a linkable title form, or an ISO date). */
   target: string
   /** The note it resolves to — `null` for a daily whose file doesn't exist yet. */
   path: string | null
@@ -108,6 +109,26 @@ interface Scored {
 }
 
 /**
+ * One candidate scored for ranking. The target is the note's linkable form
+ * ({@link wikiLinkTargetForTitle}), not the raw title — for a rich title the
+ * two differ, and only the linkable form can live inside `[[…]]`. An alias
+ * that folds to the same key as the target is display noise (the derived
+ * linkable-form alias row matching itself), so it collapses to `null`;
+ * without that, address serialization would emit a self-referential
+ * `Meeting with Ada|Meeting with Ada`.
+ */
+function toScored(row: TitleCandidate, matchedAlias: string | null, score: number): Scored {
+  const target = row.dailyDate ?? wikiLinkTargetForTitle(row.title)
+  const alias =
+    matchedAlias !== null && foldKey(matchedAlias) === foldKey(target) ? null : matchedAlias
+  return {
+    suggestion: { target, path: row.path, title: row.title, alias, date: row.dailyDate },
+    score,
+    mtime: row.mtime,
+  }
+}
+
+/**
  * Merge and order candidates for `key` (the case-folded query). Alias hits
  * rank just behind the equivalent title hit, ties break on file recency, and a
  * note appears once — its best-scoring entry wins (so a note whose title *and*
@@ -120,29 +141,9 @@ export function rankWikiSuggestions(
   limit: number,
 ): WikiSuggestion[] {
   const scored: Scored[] = [
-    ...titles.map((row) => ({
-      suggestion: {
-        target: row.dailyDate ?? row.title,
-        path: row.path,
-        title: row.title,
-        alias: null,
-        date: row.dailyDate,
-      },
-      // ×2 leaves room for the alias penalty between match ranks.
-      score: matchRank(key, row.titleKey) * 2,
-      mtime: row.mtime,
-    })),
-    ...aliases.map((row) => ({
-      suggestion: {
-        target: row.dailyDate ?? row.title,
-        path: row.path,
-        title: row.title,
-        alias: row.alias,
-        date: row.dailyDate,
-      },
-      score: matchRank(key, row.aliasKey) * 2 + 1,
-      mtime: row.mtime,
-    })),
+    // ×2 leaves room for the alias penalty between match ranks.
+    ...titles.map((row) => toScored(row, null, matchRank(key, row.titleKey) * 2)),
+    ...aliases.map((row) => toScored(row, row.alias, matchRank(key, row.aliasKey) * 2 + 1)),
   ]
 
   scored.sort(
@@ -219,6 +220,7 @@ export function mergeDateSuggestions(
   const exactIndex = rest.findIndex(
     (suggestion) =>
       foldKey(suggestion.target) === options.key ||
+      foldKey(suggestion.title) === options.key ||
       (suggestion.alias !== null && foldKey(suggestion.alias) === options.key),
   )
   const exact = exactIndex >= 0 ? rest[exactIndex] : undefined

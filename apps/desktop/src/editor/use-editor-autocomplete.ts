@@ -7,6 +7,7 @@ import {
 } from '@meowdown/react'
 import {
   contactLinkSuggestions,
+  displayNoteTitle,
   errorMessage,
   hasBridge,
   isContactsReadable,
@@ -139,10 +140,12 @@ export function useEditorAutocomplete(): EditorAutocomplete {
         if (generated !== undefined && date !== null) {
           return { target, label: generated.phrase, detail: formatDayLabel(date, settings.dateFormat) }
         }
-        const label = date !== null ? formatDayLabel(date, settings.dateFormat) : title
+        // A rich title reads as its rendered form; the raw form stays the identity.
+        const displayedTitle = displayNoteTitle(title)
+        const label = date !== null ? formatDayLabel(date, settings.dateFormat) : displayedTitle
         const detail =
           alias !== null
-            ? `${alias} → ${title}`
+            ? `${alias} → ${displayedTitle}`
             : date !== null
               ? path === null
                 ? `${date} · new`

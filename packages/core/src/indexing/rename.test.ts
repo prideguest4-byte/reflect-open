@@ -171,3 +171,46 @@ describe('nextAliases', () => {
     expect(nextAliases([], { from: 'Old', to: 'New', previousAutoAlias: null })).toEqual(['Old'])
   })
 })
+
+describe('rewriteLinksForTitleChange — rich titles', () => {
+  it('rewrites links in the derived linkable space, not the raw title', async () => {
+    const { io, writes } = fakeIo({
+      'notes/source.md': 'See [[Meeting with Ada]] tomorrow.',
+    })
+    const result = await rewriteLinksForTitleChange({
+      path: 'notes/meeting.md',
+      from: 'Meeting with [[Ada Lovelace|Ada]]',
+      to: 'Meeting with [[Grace Hopper|Grace]]',
+      io,
+    })
+    expect(result).toEqual({
+      rewritten: ['notes/source.md'],
+      failed: [],
+      collision: false,
+    })
+    expect(writes['notes/source.md']).toBe('See [[Meeting with Grace]] tomorrow.')
+  })
+
+  it('keeps a trivial title byte-for-byte (double spaces survive)', async () => {
+    const { io, writes } = fakeIo({
+      'notes/source.md': 'See [[Old  Title]].',
+    })
+    await rewriteLinksForTitleChange({
+      path: 'notes/old.md',
+      from: 'Old  Title',
+      to: 'New Title',
+      io,
+    })
+    expect(writes['notes/source.md']).toBe('See [[New Title]].')
+  })
+
+  it('nextAliases preserves the raw rich title, not its derived form', () => {
+    expect(
+      nextAliases([], {
+        from: 'Meeting with [[Ada Lovelace|Ada]]',
+        to: 'Weekly Sync',
+        previousAutoAlias: null,
+      }),
+    ).toEqual(['Meeting with [[Ada Lovelace|Ada]]'])
+  })
+})
