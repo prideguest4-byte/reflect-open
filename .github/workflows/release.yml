@@ -88,8 +88,11 @@ jobs:
           - name: Apple Silicon
             runner: macos-26
             target: aarch64-apple-darwin
+          # Cross-compiled on the Apple Silicon runner; the sidecar launch
+          # checks run the x86_64 binaries under Rosetta 2, which GitHub's
+          # arm64 macOS images preinstall.
           - name: Intel
-            runner: macos-26-intel
+            runner: macos-26
             target: x86_64-apple-darwin
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -159,6 +162,10 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          # Both matrix legs run on the same runner image, so rust-cache's
+          # default key (OS, rustc, Cargo.lock, job id) would collide across
+          # legs and they would clobber each other's caches.
+          key: ${{ matrix.target }}
           # A failed notarization still compiled everything; keep the cache.
           cache-on-failure: true
 
