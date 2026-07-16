@@ -13,7 +13,7 @@ import { RouterProvider, useRouter } from '@/routing/router'
 import type { Route } from '@/routing/route'
 import { addDaysIso, formatDayLabel, parseIsoDate, todayIso } from '@/lib/dates'
 import { monthLabel, monthOf } from '@/lib/month-grid'
-import { weekOf } from './calendar'
+import { createWeekWindow, weekOf } from './calendar'
 import { MobileShell } from './mobile-shell'
 import { publishKeyboardHeight } from './use-keyboard'
 
@@ -107,6 +107,7 @@ vi.mock('@/mobile/haptics', () => ({
 }))
 
 const indexFns = vi.hoisted(() => ({
+  dailyDatesInRange: vi.fn(async () => [] as string[]),
   getBacklinksWithContext: vi.fn(async () => ({
     contexts: [],
     nextCursor: null,
@@ -116,6 +117,7 @@ const indexFns = vi.hoisted(() => ({
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
+  dailyDatesInRange: indexFns.dailyDatesInRange,
   getBacklinksWithContext: indexFns.getBacklinksWithContext,
 }))
 // vaul needs browser APIs jsdom doesn't provide (matchMedia, pointer
@@ -192,6 +194,7 @@ beforeEach(() => {
   editorProbe.selectionCalls = []
   mockInvoke.mockReset()
   hapticImpactLight.mockClear()
+  indexFns.dailyDatesInRange.mockReset().mockResolvedValue([])
   mockInvoke.mockImplementation(async (command, args) => {
     if (command === 'note_read') {
       const content = files[(args as { path: string }).path]
@@ -351,6 +354,26 @@ describe('MobileShell', () => {
     expect(todayButton.hasAttribute('inert')).toBe(true)
     expect(view.getByRole('button', { name: dayCellLabel(today) }).getAttribute('aria-current')).toBe(
       'date',
+    )
+  })
+
+  it('marks dates with daily-note content across the pageable strip window', async () => {
+    const today = todayIso()
+    const week = weekOf(today, 'monday')
+    const notedDay = week.find((day) => day !== today) ?? week[0]!
+    const emptyDay = week.find((day) => day !== today && day !== notedDay) ?? week[1]!
+    indexFns.dailyDatesInRange.mockResolvedValue([notedDay])
+
+    const view = mount({ kind: 'today' })
+
+    await view.findByTestId(`note-dot-${notedDay}`)
+    expect(view.queryByTestId(`note-dot-${emptyDay}`)).toBeNull()
+    expect(view.getByRole('button', { name: `${dayCellLabel(notedDay)}, has content` })).toBeTruthy()
+
+    const weekWindow = createWeekWindow(today, 'monday')
+    expect(indexFns.dailyDatesInRange).toHaveBeenCalledWith(
+      weekWindow.start,
+      addDaysIso(weekWindow.start, weekWindow.count * 7 - 1),
     )
   })
 

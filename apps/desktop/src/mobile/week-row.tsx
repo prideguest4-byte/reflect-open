@@ -11,6 +11,8 @@ interface WeekRowProps {
   selectedDay: string | null
   /** Today when it falls in this week, else `null`. */
   todayDay: string | null
+  /** Dates backed by an indexed daily note (and therefore real content). */
+  notedDates: ReadonlySet<string>
   /** Select a day — drives the carousel and the route. */
   onSelect: (date: string) => void
 }
@@ -27,6 +29,7 @@ function WeekRowComponent({
   weekStart,
   selectedDay,
   todayDay,
+  notedDates,
   onSelect,
 }: WeekRowProps): ReactElement {
   const days = Array.from({ length: 7 }, (_, index) => addDaysIso(weekStart, index))
@@ -57,11 +60,12 @@ function WeekRowComponent({
       {days.map((day) => {
         const selected = day === selectedDay
         const isToday = day === todayDay
+        const hasContent = notedDates.has(day)
         return (
           <button
             key={day}
             type="button"
-            aria-label={format(parseIsoDate(day), 'EEEE, MMMM do')}
+            aria-label={`${format(parseIsoDate(day), 'EEEE, MMMM do')}${hasContent ? ', has content' : ''}`}
             aria-current={selected ? 'date' : undefined}
             onClick={() => {
               hapticImpactLight()
@@ -82,13 +86,18 @@ function WeekRowComponent({
             >
               {format(parseIsoDate(day), 'd')}
             </span>
-            {/* Today dot (V1) — a fixed-height slot so cells stay aligned;
-                shown only when today isn't the selected (circled) day. */}
+            {/* Content takes the strip's single marker slot; otherwise it
+                keeps V1's Today dot when today isn't selected. */}
             <span
               aria-hidden
+              data-testid={hasContent ? `note-dot-${day}` : undefined}
               className={cn(
                 'size-1 rounded-full',
-                !selected && isToday ? 'bg-primary' : 'bg-transparent',
+                hasContent
+                  ? 'bg-surface-inverse/50 dark:bg-white/50'
+                  : !selected && isToday
+                    ? 'bg-primary'
+                    : 'bg-transparent',
               )}
             />
           </button>
