@@ -26,6 +26,7 @@ const SAFE_EXCEPTION_TYPES = new Set([
   'RangeError',
   'ReferenceError',
   'SyntaxError',
+  'TransformError',
   'TypeError',
   'URIError',
 ])
@@ -38,6 +39,18 @@ const SAFE_MECHANISM_TYPES = new Set([
 ])
 
 const SAFE_SCRIPT_BASENAME = /^[A-Za-z0-9_.-]+\.(?:js|jsx|mjs|ts|tsx)$/
+// These are the structural StepResult failures emitted by ProseMirror. Unknown or
+// newly introduced TransformError values stay redacted until they are audited.
+const SAFE_TRANSFORM_ERROR_VALUES = [
+  /^Cannot join [A-Za-z_][A-Za-z0-9_]* onto [A-Za-z_][A-Za-z0-9_]*$/,
+  /^Content does not fit in gap$/,
+  /^Gap is not a flat range$/,
+  /^Inconsistent open depths$/,
+  /^Inserted content deeper than insertion position$/,
+  /^Invalid content for node [A-Za-z_][A-Za-z0-9_]*$/,
+  /^No node at (?:attribute|mark) step's position$/,
+  /^Structure (?:gap-)?replace would overwrite content$/,
+]
 const SAFE_RELEASE = /^reflect@\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$/
 const SAFE_EVENT_ID = /^[a-f0-9]{32}$/
 const SAFE_DEBUG_ID = /^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/
@@ -68,6 +81,18 @@ function scrubExceptionType(type: string | undefined): string {
     return SAFE_EXCEPTION_TYPES.has(causeType) ? `ReactErrorBoundary<${causeType}>` : 'ReactErrorBoundary<Error>'
   }
   return type && SAFE_EXCEPTION_TYPES.has(type) ? type : 'Error'
+}
+
+function scrubExceptionValue(exception: Exception): string {
+  const value = exception.value
+  if (
+    exception.type === 'TransformError' &&
+    value &&
+    SAFE_TRANSFORM_ERROR_VALUES.some((pattern) => pattern.test(value))
+  ) {
+    return value
+  }
+  return REDACTED_VALUE
 }
 
 function scrubFilename(filename: string | undefined): string | undefined {
@@ -113,7 +138,7 @@ function scrubDebugMeta(debugMeta: ErrorEvent['debug_meta']): ErrorEvent['debug_
 function scrubException(exception: Exception): Exception {
   const scrubbed: Exception = {
     type: scrubExceptionType(exception.type),
-    value: REDACTED_VALUE,
+    value: scrubExceptionValue(exception),
   }
   if (exception.mechanism) {
     scrubbed.mechanism = {

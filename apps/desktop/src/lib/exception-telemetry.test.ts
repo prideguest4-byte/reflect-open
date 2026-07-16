@@ -185,6 +185,36 @@ describe('scrubExceptionEvent', () => {
     })
   })
 
+  it('keeps allow-listed ProseMirror transform diagnostics', () => {
+    const event: ErrorEvent = {
+      type: undefined,
+      exception: {
+        values: [
+          { type: 'TransformError', value: 'Inconsistent open depths' },
+          { type: 'TransformError', value: 'Cannot join paragraph onto bullet_list' },
+        ],
+      },
+    }
+
+    expect(scrubExceptionEvent(event)?.exception?.values).toEqual([
+      { type: 'TransformError', value: 'Inconsistent open depths' },
+      { type: 'TransformError', value: 'Cannot join paragraph onto bullet_list' },
+    ])
+  })
+
+  it('redacts free-form values from otherwise trusted exception types', () => {
+    const event: ErrorEvent = {
+      type: undefined,
+      exception: {
+        values: [{ type: 'TransformError', value: 'Private roadmap note content' }],
+      },
+    }
+
+    expect(scrubExceptionEvent(event)?.exception?.values).toEqual([
+      { type: 'TransformError', value: '[redacted]' },
+    ])
+  })
+
   it('drops non-exception events', () => {
     expect(scrubExceptionEvent({ type: undefined, message: 'note content' })).toBeNull()
   })
