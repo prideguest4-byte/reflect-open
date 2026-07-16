@@ -1,4 +1,4 @@
-# Reflect
+# Reflect HELLO
 
 Plain-file notes for Mac and iPhone: daily notes, wiki links, local search,
 and optional AI over your own Markdown.
