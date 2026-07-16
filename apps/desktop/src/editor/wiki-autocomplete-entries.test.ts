@@ -243,3 +243,30 @@ describe('buildAutocompleteEntries', () => {
     expect(entries.map((entry) => entry.kind)).toEqual(['contact'])
   })
 })
+
+describe('buildAutocompleteEntries — rich titles', () => {
+  it('does not offer create when the raw rich title is already claimed', () => {
+    const entries = buildAutocompleteEntries(
+      'Meeting with [[Ada Lovelace|Ada]]',
+      [
+        suggestion({
+          target: 'Meeting with Ada',
+          title: 'Meeting with [[Ada Lovelace|Ada]]',
+        }),
+      ],
+      {
+        offerCreate: true,
+        claimedTargetKeys: ['meeting with [[ada lovelace|ada]]'],
+      },
+    )
+    expect(entries.some((entry) => entry.kind === 'create')).toBe(false)
+  })
+
+  it('does not offer create for a derived form whose key is claimed by a filtered note', () => {
+    const entries = buildAutocompleteEntries('Meeting with Ada', [], {
+      offerCreate: true,
+      claimedTargetKeys: ['meeting with ada'],
+    })
+    expect(entries).toEqual([])
+  })
+})
