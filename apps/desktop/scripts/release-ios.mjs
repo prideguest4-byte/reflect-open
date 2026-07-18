@@ -15,7 +15,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const DEFAULT_EXPORT_METHOD = 'app-store-connect'
@@ -93,6 +93,12 @@ export function createAltoolListAppsArgs({ authArgs, bundleIdentifier }) {
 /** Return the standard App Store Connect API key lookup locations for altool. */
 export function appStoreConnectPrivateKeySearchPaths({ cwd, homeDir, keyId }) {
   const fileName = `AuthKey_${keyId}.p8`
+  
+  // Validate keyId to prevent path traversal
+  if (keyId.includes('..') || isAbsolute(keyId) || keyId.includes('/') || keyId.includes('\\')) {
+    throw new Error('Invalid keyId');
+  }
+  
   return [
     join(cwd, 'private_keys', fileName),
     join(homeDir, 'private_keys', fileName),
@@ -279,11 +285,11 @@ function readKeychainCredentials() {
   return { account, password: password.output.trim() }
 }
 
-function listFilesRecursive(root) {
+export function listFilesRecursive(root) {
   if (!existsSync(root)) return []
   const entries = []
   for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const path = join(root, entry.name)
+    const path = join(root, entry.name.replace(/\.\./g, ''))
     if (entry.isDirectory()) entries.push(...listFilesRecursive(path))
     else entries.push(path)
   }
@@ -298,10 +304,12 @@ function newestIpa() {
   return candidates[0]?.path ?? null
 }
 
-function resolveInputPath(path) {
-  const direct = resolve(path)
+export function resolveInputPath(inputPath) {
+  const direct = resolve(repoRoot, inputPath)
+  const rel = relative(repoRoot, direct)
+  if (rel.startsWith('..') || isAbsolute(rel)) throw new Error('Invalid path')
   if (existsSync(direct)) return direct
-  const repoRelative = resolve(repoRoot, path)
+  const repoRelative = resolve(repoRoot, inputPath)
   if (existsSync(repoRelative)) return repoRelative
   return direct
 }
