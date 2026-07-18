@@ -13,9 +13,7 @@ on:
   push:
     branches: [master]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: release-please
@@ -25,6 +23,9 @@ jobs:
   release-please:
     name: Maintain the Release PRs
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     # The package lives at the repo root ("."), so each pass emits its outputs
     # without a path prefix. The channels never release from the same push:
     # a push merges at most one Release PR, and the two passes only create
@@ -68,6 +69,9 @@ jobs:
     name: Build and publish the stable release
     needs: release-please
     if: needs.release-please.outputs.stable_created == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.release-please.outputs.stable_tag }}
@@ -78,6 +82,9 @@ jobs:
     name: Build and publish the beta release
     needs: release-please
     if: needs.release-please.outputs.beta_created == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.release-please.outputs.beta_tag }}
@@ -92,6 +99,9 @@ jobs:
     name: Upload the stable release to TestFlight
     needs: release-please
     if: needs.release-please.outputs.stable_created == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
     uses: ./.github/workflows/testflight.yml
     with:
       commit: ${{ needs.release-please.outputs.stable_commit }}
@@ -101,6 +111,9 @@ jobs:
     name: Upload the beta release to TestFlight
     needs: release-please
     if: needs.release-please.outputs.beta_created == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
     uses: ./.github/workflows/testflight.yml
     with:
       commit: ${{ needs.release-please.outputs.beta_commit }}
