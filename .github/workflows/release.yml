@@ -32,13 +32,14 @@ concurrency:
 # Publish uploads assets into the release-please draft release and undrafts
 # it; the manual fallback path still creates the release itself via
 # `gh release create`.
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   preflight:
     name: Preflight release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -76,6 +77,8 @@ jobs:
     needs: preflight
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    permissions:
+      contents: read
     env:
       # Cargo registry fetches can intermittently fail on GitHub macOS runners
       # with curl HTTP/2 framing errors. HTTP/1.1 is slower but steadier for
@@ -207,6 +210,8 @@ jobs:
     name: Publish release
     needs: macos
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       prerelease: ${{ steps.channel.outputs.prerelease }}
     steps:
@@ -253,6 +258,8 @@ jobs:
     needs: publish
     if: needs.publish.outputs.prerelease == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
