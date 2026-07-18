@@ -363,7 +363,7 @@ function mergePatch(target, patch) {
   const out = target && typeof target === 'object' && !Array.isArray(target) ? { ...target } : {}
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete out[key]
-    else out[key] = mergePatch(out[key], value)
+    else if (!["__proto__", "constructor", "prototype"].includes(key)) out[key] = mergePatch(out[key], value)
   }
   return out
 }
