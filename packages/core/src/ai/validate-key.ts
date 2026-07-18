@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import type { AiProviderId } from '../settings/schema'
 import { anthropicDirectBrowserAccessHeaders } from './anthropic-headers'
 import { APP_REVIEW_STUB_KEY } from './audio-memo-review-stub'
@@ -65,7 +66,9 @@ export async function validateApiKey(
   // Providers know nothing about the App Review demo key, so a probe would
   // reject it; accept it here so it can be saved and reach the canned
   // transcription path.
-  if (apiKey === APP_REVIEW_STUB_KEY) {
+  const actual = crypto.createHash('sha256').update(apiKey).digest()
+  const expected = crypto.createHash('sha256').update(APP_REVIEW_STUB_KEY).digest()
+  if (crypto.timingSafeEqual(actual, expected)) {
     return 'valid'
   }
   const probe = PROBES[provider]
